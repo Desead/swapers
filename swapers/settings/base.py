@@ -1,4 +1,6 @@
+import os
 from pathlib import Path
+from django.utils.translation import gettext_lazy as _
 from csp.constants import SELF  # опционально, если используешь константы
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -11,9 +13,20 @@ ALLOWED_HOSTS: list[str] = []
 
 SITE_ID = 1
 LANGUAGE_CODE = "ru-ru"
-TIME_ZONE = "Europe/Moscow"
+TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
+
+# Языки интерфейса
+LANGUAGES = [
+    ("ru", _("Russian")),
+    ("en", _("English")),
+]
+
+# Где лежат файлы переводов (.po/.mo)
+LOCALE_PATHS = [
+    BASE_DIR / "locale",
+]
 
 INSTALLED_APPS = [
     "swapers.admin.OTPAdminConfig",  # админка под OTP
@@ -41,6 +54,9 @@ MIDDLEWARE = [
 
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+
+    # ВАЖНО: LocaleMiddleware ДОЛЖЕН идти сразу после SessionMiddleware и до CommonMiddleware
+    "django.middleware.locale.LocaleMiddleware",
 
     # ловим ?ref=... как можно раньше, когда сессия уже есть
     "app_main.middleware.ReferralMiddleware",
@@ -74,9 +90,14 @@ TEMPLATES = [{
         "context_processors": [
             "django.template.context_processors.debug",
             "django.template.context_processors.request",
-            "django.contrib.auth.context_processors.auth",
+            "django.template.context_processors.i18n",
+            "django.contrib.auth.context_processors.auth",   # нужно для admin
             "django.contrib.messages.context_processors.messages",
+            "django.template.context_processors.static",
+            "django.template.context_processors.media",
+            "django.template.context_processors.tz",
             "app_main.context_processors.site_settings",
+
         ],
     },
 }]
