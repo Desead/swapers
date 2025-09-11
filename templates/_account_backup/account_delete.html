@@ -1,23 +1,23 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Удаление аккаунта — NewUser{% endblock %}
 {% block content %}
-  <h1>Удаление аккаунта</h1>
-  <p><strong>Внимание!</strong> Действие необратимо. Будут удалены ваш аккаунт и связанные данные.</p>
+  <h1>{% trans "Удаление аккаунта" %}</h1>
+  <p><strong>{% trans "Внимание!" %}</strong>{% trans "Действие необратимо. Будут удалены ваш аккаунт и связанные данные." %}</p>
 
   {% if user.is_superuser %}
-    <p>Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin.</p>
+    <p>{% trans "Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin." %}</p>
   {% else %}
     <form method="post" action="{% url 'account_delete' %}">
       {% csrf_token %}
       <p>
-        <label for="password">Подтвердите пароль:</label><br>
+        <label for="password">{% trans "Подтвердите пароль:" %}</label><br>
         <input type="password" id="password" name="password" required>
       </p>
-      <p>
-        Для подтверждения введите слово <code>DELETE</code>:<br>
+      <p>{% trans "Для подтверждения введите слово" %}<code>DELETE</code>:<br>
         <input type="text" name="confirm_text" placeholder="DELETE" required>
       </p>
-      <button type="submit" class="btn">Да, удалить мой аккаунт</button>
+      <button type="submit" class="btn">{% trans "Да, удалить мой аккаунт" %}</button>
     </form>
   {% endif %}
 {% endblock %}

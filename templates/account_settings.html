@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Настройки аккаунта — NewUser{% endblock %}
 {% block content %}
-  <h1>Настройки аккаунта</h1>
+  <h1>{% trans "Настройки аккаунта" %}</h1>
 
   <form method="post">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit" class="btn">Сохранить</button>
+    <button type="submit" class="btn">{% trans "Сохранить" %}</button>
   </form>
 {% endblock %}

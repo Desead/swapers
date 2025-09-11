@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Выход — NewUser{% endblock %}
 {% block content %}
-  <h1>Выход</h1>
-  <p>Вы действительно хотите выйти?</p>
+  <h1>{% trans "Выход" %}</h1>
+  <p>{% trans "Вы действительно хотите выйти?" %}</p>
   <form method="post" action="{% url 'account_logout' %}">
     {% csrf_token %}
-    <button type="submit" class="btn">Выйти</button>
+    <button type="submit" class="btn">{% trans "Выйти" %}</button>
   </form>
 {% endblock %}

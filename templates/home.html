@@ -1,6 +1,7 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Главная — NewUser{% endblock %}
 {% block content %}
-  <h1>Главная</h1>
-  <p>Минимальная стартовая страница.</p>
+  <h1>{% trans "Главная" %}</h1>
+  <p>{% trans "Минимальная стартовая страница." %}</p>
 {% endblock %}

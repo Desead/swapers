@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Регистрация — NewUser{% endblock %}
 {% block content %}
-  <h1>Регистрация</h1>
+  <h1>{% trans "Регистрация" %}</h1>
   <form method="post" action="{% url 'account_signup' %}">
     {% csrf_token %}
     {{ form.as_p }}
-    <button type="submit" class="btn">Создать аккаунт</button>
+    <button type="submit" class="btn">{% trans "Создать аккаунт" %}</button>
   </form>
-  <p>Уже есть аккаунт? <a href="{% url 'account_login' %}">Войти</a>.</p>
+  <p>{% trans "Уже есть аккаунт?" %}<a href="{% url 'account_login' %}">{% trans "Войти" %}</a>.</p>
 {% endblock %}

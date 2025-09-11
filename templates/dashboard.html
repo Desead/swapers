@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% load i18n %}
 {% block title %}Личный кабинет — NewUser{% endblock %}
 {% block content %}
-  <h1>Личный кабинет</h1>
+  <h1>{% trans "Личный кабинет" %}</h1>
 
-  <h2>Аккаунт</h2>
+  <h2>{% trans "Аккаунт" %}</h2>
   <ul>
     <li>Email: {{ request.user.email }}</li>
     <li>Имя: {{ request.user.first_name|default:"—" }}</li>
@@ -17,17 +18,17 @@
     {% endif %}
   </ul>
 
-  <h2>Партнёрская программа</h2>
+  <h2>{% trans "Партнёрская программа" %}</h2>
   <ul>
     <li>
       Ваша партнёрская ссылка:
       {% if ref_link %}
         <code>{{ ref_link }}</code>
       {% else %}
-        <em>код ещё не сгенерирован</em>
+        <em>{% trans "код ещё не сгенерирован" %}</em>
       {% endif %}
     </li>
-    <li>Привлечено партнёров: <strong>{{ request.user.count }}</strong></li>
-    <li>Партнёрский баланс: <strong>${{ request.user.balance }}</strong></li>
+    <li>{% trans "Привлечено партнёров:" %}<strong>{{ request.user.count }}</strong></li>
+    <li>{% trans "Партнёрский баланс:" %}<strong>${{ request.user.balance }}</strong></li>
   </ul>
 {% endblock %}
