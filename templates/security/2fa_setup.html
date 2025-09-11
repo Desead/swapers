@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Двухфакторная аутентификация — Swapers{% endblock %}
+{% block content %}
+  <h1>Двухфакторная аутентификация (TOTP)</h1>
+
+  {% if already_enabled %}
+    <p>2FA уже включена. Можете перейти в <a href="{% url 'admin:index' %}">админку</a>.</p>
+  {% else %}
+    <ol>
+      <li>Откройте приложение-аутентификатор (Google Authenticator / Authy / 1Password) и отсканируйте QR:</li>
+    </ol>
+    <p>
+      <img alt="QR" src="data:image/png;base64,{{ qr_b64 }}" style="image-rendering: pixelated; border:1px solid #eee; padding:6px; border-radius:8px;">
+    </p>
+    <ol start="2">
+      <li>Введите 6-значный код из приложения:</li>
+    </ol>
+    <form method="post">
+      {% csrf_token %}
+      <p>
+        <input type="text" name="token" inputmode="numeric" pattern="[0-9]*" placeholder="123456" maxlength="6" required>
+        <button type="submit" class="btn">Подтвердить</button>
+      </p>
+    </form>
+  {% endif %}
+{% endblock %}
