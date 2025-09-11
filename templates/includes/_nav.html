@@ -32,19 +32,19 @@
                 {% trans "Вы вошли как" %} <strong>{% trans "Анонимный пользователь" %}</strong>
             {% endif %}
         </div>
-    </div>
 
-    <form action="{% url 'set_language' %}" method="post" style="display:inline">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{{ request.get_full_path }}">
-        <select name="language" onchange="this.form.submit()">
-            {% get_available_languages as LANGS %}
-            {% get_language_info_list for LANGS as languages %}
-            {% for lang in languages %}
-                <option value="{{ lang.code }}"{% if lang.code == CUR_LANG %} selected{% endif %}>
-                    {{ lang.name_local }}
-                </option>
-            {% endfor %}
-        </select>
-    </form>
+        <form action="{% url 'set_language' %}" method="post" style="display:inline">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <select name="language" onchange="this.form.submit()">
+                {% get_available_languages as LANGS %}
+                {% get_language_info_list for LANGS as languages %}
+                {% for lang in languages %}
+                    <option value="{{ lang.code }}"{% if lang.code == CUR_LANG %} selected{% endif %}>
+                        {{ lang.name_local }}
+                    </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
 </header>

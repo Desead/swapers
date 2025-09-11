@@ -1,31 +1,74 @@
-{% load i18n %}
+{% load static i18n %}
 {% get_current_language as CUR_LANG %}
 <!doctype html>
 <html lang="{{ CUR_LANG }}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}NewUser{% endblock %}</title>
-  {% load static %}
-  {% block extra_head %}{% endblock %}
-  <style>{% trans "/* Лёгкая сетка, чтобы было аккуратно без фреймворков */
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; line-height:1.5; color:#111; }
-    header, footer { background:#f6f6f6; }
-    .container { max-width: 960px; margin: 0 auto; padding: 16px; }
-    nav a { margin-right: 12px; }
-    code { background:#fafafa; padding:2px 4px; border:1px solid #eee; border-radius:4px; }
-    .messages { padding: 8px 12px; margin: 12px 0; border-radius: 8px; background:#fff; border:1px solid #eee; }
-    .messages li { margin: 6px 0; }
-    .muted { color:#666; }
-    .btn { display:inline-block; padding:8px 12px; border:1px solid #ddd; border-radius:8px; text-decoration:none; }" %}</style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}NewUser{% endblock %}</title>
+    {% block extra_head %}{% endblock %}
+    <style>
+        /* Лёгкая сетка, чтобы было аккуратно без фреймворков */
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+            line-height: 1.5;
+            color: #111;
+        }
+
+        header, footer {
+            background: #f6f6f6;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 16px;
+        }
+
+        nav a {
+            margin-right: 12px;
+        }
+
+        code {
+            background: #fafafa;
+            padding: 2px 4px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+
+        .messages {
+            padding: 8px 12px;
+            margin: 12px 0;
+            border-radius: 8px;
+            background: #fff;
+            border: 1px solid #eee;
+        }
+
+        .messages li {
+            margin: 6px 0;
+        }
+
+        .muted {
+            color: #666;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            text-decoration: none;
+        }
+    </style>
 </head>
 <body>
-  {% include "includes/_nav.html" %}
-  <main class="container">
+{% include "includes/_nav.html" %}
+<main class="container">
     {% include "includes/_messages.html" %}
     {% block content %}{% endblock %}
-  </main>
-  {% include "includes/_footer.html" %}
-  {% block extra_js %}{% endblock %}
+</main>
+{% include "includes/_footer.html" %}
+{% block extra_js %}{% endblock %}
 </body>
 </html>

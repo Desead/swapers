@@ -7,13 +7,15 @@ from django.shortcuts import redirect
 from django.urls import reverse
 
 from .models import SiteSetup
+from django.utils.translation import gettext_lazy as _
+
 
 User = get_user_model()
 
 
 class UserCreationForm(forms.ModelForm):
-    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput)
-    password2 = forms.CharField(label="Подтверждение пароля", widget=forms.PasswordInput)
+    password1 = forms.CharField(label=_("Пароль"), widget=forms.PasswordInput)
+    password2 = forms.CharField(label=_("Подтверждение пароля"), widget=forms.PasswordInput)
 
     class Meta:
         model = User
@@ -35,7 +37,7 @@ class UserCreationForm(forms.ModelForm):
 
 
 class UserChangeForm(forms.ModelForm):
-    password = ReadOnlyPasswordHashField(label="Хэш пароля")
+    password = ReadOnlyPasswordHashField(label=_("Хэш пароля"))
 
     class Meta:
         model = User
@@ -113,7 +115,7 @@ class SiteSetupAdmin(admin.ModelAdmin):
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         messages.warning(
             request,
-            "Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
-            "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах.",
+            _("Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
+            "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах."),
         )
         return super().changeform_view(request, object_id, form_url, extra_context)

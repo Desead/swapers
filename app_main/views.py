@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect
 from django.contrib import messages
 from django.contrib.auth import logout
 from .forms import AccountForm
+from django.utils.translation import gettext_lazy as _
 
 
 def home(request):
@@ -29,9 +30,9 @@ def account_settings(request):
         form = AccountForm(request.POST, instance=user)
         if form.is_valid():
             form.save()
-            messages.success(request, "Настройки сохранены.")
+            messages.success(request, _("Настройки сохранены."))
             return redirect("account_settings")
-        messages.error(request, "Проверьте форму — есть ошибки.")
+        messages.error(request, _("Проверьте форму — есть ошибки."))
     else:
         form = AccountForm(instance=user)
 
@@ -47,7 +48,7 @@ def account_delete(request):
     user = request.user
 
     if user.is_superuser:
-        messages.error(request, "Удаление суперпользователя запрещено из интерфейса. Используйте админку.")
+        messages.error(request, _("Удаление суперпользователя запрещено из интерфейса. Используйте админку."))
         return redirect("account_settings")
 
     if request.method == "POST":
@@ -55,17 +56,17 @@ def account_delete(request):
         confirm = request.POST.get("confirm_text", "").strip()
 
         if confirm != "DELETE":
-            messages.error(request, "Подтверждение не совпало. Введите слово DELETE.")
+            messages.error(request, _("Подтверждение не совпало. Введите слово DELETE."))
             return redirect("account_delete")
 
         if not user.check_password(password):
-            messages.error(request, "Неверный пароль.")
+            messages.error(request, _("Неверный пароль."))
             return redirect("account_delete")
 
         email = user.email
         logout(request)
         user.delete()
-        messages.success(request, f"Аккаунт {email} удалён.")
+        messages.success(request, _("Аккаунт удалён."))
         return redirect("home")
 
     return render(request, "account/account_delete.html")

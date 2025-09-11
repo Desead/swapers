@@ -6,6 +6,8 @@ from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.validators import RegexValidator
 from django.core.exceptions import ValidationError
+from django.utils.translation import gettext_lazy as _
+
 
 
 class UserManager(BaseUserManager):
@@ -13,7 +15,7 @@ class UserManager(BaseUserManager):
 
     def _create_user(self, email, password, **extra_fields):
         if not email:
-            raise ValueError("Email обязателен")
+            raise ValueError(_("Email обязателен"))
         email = self.normalize_email(email)
         validate_email(email)
         user = self.model(email=email, **extra_fields)
@@ -32,19 +34,19 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
         if extra_fields.get("is_staff") is not True:
-            raise ValueError("Суперпользователь должен иметь is_staff=True.")
+            raise ValueError(_("Суперпользователь должен иметь is_staff=True."))
         if extra_fields.get("is_superuser") is not True:
-            raise ValueError("Суперпользователь должен иметь is_superuser=True.")
+            raise ValueError(_("Суперпользователь должен иметь is_superuser=True."))
         return self._create_user(email, password, **extra_fields)
 
 
 class User(AbstractBaseUser, PermissionsMixin):
     # аутентификация
-    email = models.EmailField("Email", unique=True, db_index=True)
-    first_name = models.CharField("Имя", max_length=150, blank=True)
-    last_name = models.CharField("Фамилия", max_length=150, blank=True)
-    phone = models.CharField("Телефон", max_length=32, blank=True)
-    company = models.CharField("Компания", max_length=255, blank=True)
+    email = models.EmailField(verbose_name=_("Email"), unique=True, db_index=True)
+    first_name = models.CharField(verbose_name=_("Имя"), max_length=150, blank=True)
+    last_name = models.CharField(verbose_name=_("Фамилия"), max_length=150, blank=True)
+    phone = models.CharField(verbose_name=_("Телефон"), max_length=32, blank=True)
+    company = models.CharField(verbose_name=_("Компания"), max_length=255, blank=True)
 
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -53,11 +55,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     # партнёрка
     referred_by = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL,
-        related_name="referrals", verbose_name="Кто привёл"
+        related_name="referrals", verbose_name=_("Кто привёл")
     )
-    referral_code = models.CharField("Партнёрский код", max_length=16, unique=True, blank=True)
-    count = models.PositiveIntegerField("Партнёров привлечено", default=0)
-    balance = models.DecimalField("Партнёрский баланс, $", max_digits=12, decimal_places=2, default=0)
+    referral_code = models.CharField(verbose_name=_("Партнёрский код"), max_length=16, unique=True, blank=True)
+    count = models.PositiveIntegerField(verbose_name=_("Партнёров привлечено"), default=0)
+    balance = models.DecimalField(verbose_name=_("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []
@@ -65,8 +67,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     class Meta:
-        verbose_name = "Пользователь"
-        verbose_name_plural = "Пользователи"
+        verbose_name = _("Пользователь")
+        verbose_name_plural = _("Пользователи")
         # Индексы под аналитику рефералок
         indexes = [
             models.Index(fields=["referred_by", "date_joined"], name="user_ref_by_date_idx"),
@@ -92,24 +94,24 @@ class SiteSetup(models.Model):
     # сторож для единственности
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
 
-    admin_path = models.CharField("Путь к админке", max_length=50, default="admin",
-                                  validators=[RegexValidator(regex=r"^[a-z0-9-]+$", message="Разрешены только маленькие латинские буквы,цифры и дефис", )],
-                                  help_text="Например: supera-dmin", )
-    otp_issuer = models.CharField("Название сервиса для 2FA", max_length=64, default="Swapers", validators=[
-        RegexValidator(regex=r"^[A-Za-z0-9 ._-]+$", message="Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание.", )],
-                                  help_text='Отобразится в приложении-аутентификаторе (например: "Swapers").', )
+    admin_path = models.CharField(verbose_name=_("Путь к админке"), max_length=50, default="admin",
+                                  validators=[RegexValidator(regex=r"^[a-z0-9-]+$", message=_("Разрешены только маленькие латинские буквы,цифры и дефис"), )],
+                                  help_text=_("Например: supera-dmin"), )
+    otp_issuer = models.CharField(verbose_name=_("Название сервиса для 2FA"), max_length=64, default="Swapers", validators=[
+        RegexValidator(regex=r"^[A-Za-z0-9 ._-]+$", message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."), )],
+                                  help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'), )
 
     class Meta:
-        verbose_name = "Настройки сайта"
-        verbose_name_plural = "Настройки сайта"
+        verbose_name = _("Настройки сайта")
+        verbose_name_plural = _("Настройки сайта")
 
     def __str__(self) -> str:
-        return "Настройки сайта"
+        return _("Настройки сайта")
 
     def clean(self):
         # Бизнес-валидация: запрет некоторых префиксов.
         if self.admin_path in RESERVED_ADMIN_PREFIXES:
-            raise ValidationError({"admin_path": "Этот путь зарезервирован системой."})
+            raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
 
     def save(self, *args, **kwargs):
         # Нормализация ПЕРЕД full_clean(): так валидатор проверит уже нормализованное значение

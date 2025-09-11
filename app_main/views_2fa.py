@@ -11,6 +11,8 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 import qrcode
 from django.conf import settings
 from app_main.services.site_setup import get_site_setup
+from django.utils.translation import gettext_lazy as _
+
 
 
 @login_required
@@ -46,10 +48,10 @@ def twofa_setup(request):
             device.save(update_fields=["confirmed"])
             # пометить текущую сессию как “верифицированную” по OTP
             otp_login(request, device)
-            messages.success(request, "Двухфакторная аутентификация включена.")
+            messages.success(request, _("Двухфакторная аутентификация включена."))
             return redirect(reverse("admin:index"))
         else:
-            messages.error(request, "Неверный код. Попробуйте ещё раз.")
+            messages.error(request, _("Неверный код. Попробуйте ещё раз."))
 
     return render(request, "security/2fa_setup.html", {
         "already_enabled": False,

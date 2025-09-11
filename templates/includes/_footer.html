@@ -1,6 +1,9 @@
 {% load i18n %}
+{% now "Y" as current_year %}
 <footer>
   <div class="container">
-    <p class="muted">{% trans "© Обменник для умных" %}</p>
+    <p class="muted">
+      {% blocktrans with year=current_year %}© {{ year }} Обменник для умных{% endblocktrans %}
+    </p>
   </div>
 </footer>
