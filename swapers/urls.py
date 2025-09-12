@@ -3,8 +3,59 @@ from django.urls import path, include
 from django.http import HttpResponsePermanentRedirect
 from django.shortcuts import redirect
 from django.utils import translation
+from django.contrib.sitemaps.views import sitemap as sitemap_view
+from app_main.sitemaps import StaticViewSitemap
+from django.conf import settings
+from django.contrib.sites.models import Site
+from django.urls import reverse
+from django.http import HttpResponse
+from app_main.models import SiteSetup
 
 from app_main.views_security import csp_report
+
+sitemaps = {
+    "static": StaticViewSitemap,
+}
+
+
+def robots_txt(request):
+    # Схема
+    scheme = request.META.get("HTTP_X_FORWARDED_PROTO") or (
+        "https" if not settings.DEBUG else request.scheme
+    )
+    # Домен
+    try:
+        domain = Site.objects.get_current(request).domain
+    except Exception:
+        domain = request.get_host()
+
+    # Полный URL sitemap.xml
+    sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
+
+    # Префикс админки из настроек сайта
+    try:
+        admin_path = SiteSetup.get_solo().admin_path.strip("/")
+    except Exception:
+        admin_path = "admin"
+
+    lines = []
+    if settings.DEBUG:
+        # На деве/стейдже лучше закрыть всё
+        lines += [
+            "User-agent: *",
+            "Disallow: /",
+            f"Sitemap: {sitemap_url}",
+        ]
+    else:
+        lines += [
+            "User-agent: *",
+            f"Disallow: /{admin_path}/",
+            "Disallow: /accounts/",
+            f"Sitemap: {sitemap_url}",
+        ]
+
+    return HttpResponse("\n".join(lines), content_type="text/plain")
+
 
 # берём префикс через сервис (с кэшем); если таблицы ещё нет — падаем в "admin"
 try:
@@ -55,8 +106,15 @@ urlpatterns = [
     path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 
     # Корень сайта редиректит на актуальный язык
+    # sitemap + robots
+    path("sitemap.xml", sitemap_view, {"sitemaps": sitemaps}, name="sitemap"),
+    path("robots.txt", robots_txt, name="robots_txt"),
+
+    # Остальной сайт
+    path("", include("app_main.urls")),
+    path("rosetta/", include("rosetta.urls")),
     path("", _root_redirect_to_language, name="root_redirect"),
-    path("rosetta/", include("rosetta.urls"))
+
 ]
 
 # Пользовательские маршруты — под префиксом языка
