@@ -10,7 +10,7 @@
   <main class="container">
     <h1>{% trans "Внутренняя ошибка сервера" %}</h1>
     <p>{% trans "Мы уже работаем над решением. Попробуйте обновить страницу чуть позже." %}</p>
-    <p><a class="btn" href="/{% get_current_language %}/">{% trans "Вернуться на главную" %}</a></p>
+    <p><a class="btn" href="/{{ CUR_LANG }}/">{% trans "На главную" %}</a></p>
   </main>
 </body>
 </html>
