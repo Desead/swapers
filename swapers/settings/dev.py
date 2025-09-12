@@ -2,7 +2,7 @@ from .base import *
 
 ALLOWED_HOSTS = ["*"]
 CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:8000"]
-
+ALLOW_INDEXING = False  # на проде True, на стейдже/деве False
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = "dev@localhost"
 

@@ -1,4 +1,5 @@
-from django.contrib import admin
+# app_main/admin.py
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
@@ -8,14 +9,12 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _
-import django.contrib.sites.admin  # НЕ УДАЛЯТЬ — чтобы модель "Site" зарегистрировалась, затем мы её скрываем.
-
+import django.contrib.sites.admin  # НЕ УДАЛЯТЬ
 from .models import SiteSetup
+from django.conf import settings
 
 User = get_user_model()
 
-
-# -------- Пользователи --------
 
 class UserCreationForm(forms.ModelForm):
     password1 = forms.CharField(label=_("Пароль"), widget=forms.PasswordInput)
@@ -29,8 +28,7 @@ class UserCreationForm(forms.ModelForm):
         p1 = self.cleaned_data.get("password1")
         p2 = self.cleaned_data.get("password2")
         if p1 and p2 and p1 != p2:
-            from django.core.exceptions import ValidationError
-            raise ValidationError(_("Пароли не совпадают."))
+            raise forms.ValidationError(_("Пароли не совпадают."))
         return p2
 
     def save(self, commit=True):
@@ -88,27 +86,10 @@ class UserAdmin(BaseUserAdmin):
     )
 
 
-# -------- Настройки сайта / robots.txt --------
-
-class SiteSetupAdminForm(forms.ModelForm):
-    class Meta:
-        model = SiteSetup
-        fields = "__all__"
-        widgets = {
-            "robots_txt": forms.Textarea(attrs={
-                "rows": 16,
-                "style": "font-family:monospace; white-space:pre; font-size:13px;",
-            }),
-        }
-
-
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
-    form = SiteSetupAdminForm
-    save_on_top = True
-
-    list_display = ("domain", "domain_view", "admin_path", "otp_issuer")
-    readonly_fields = ("robots_txt_link",)
+    list_display = ("domain", "domain_view", "admin_path", "otp_issuer", "updated_at")
+    readonly_fields = ("robots_link", "sitemap_example", "updated_at")
 
     fieldsets = (
         (_("Общие"), {
@@ -121,32 +102,43 @@ class SiteSetupAdmin(admin.ModelAdmin):
                   "<strong>перезапуска приложения/процесса</strong>.")
             ),
         }),
-        (_("SEO / robots.txt"), {
-            "fields": ("robots_txt_link", "robots_txt"),
-            "description": mark_safe(_(
-                "Задайте полный текст ответа <code>/robots.txt</code>. "
-                "Строка вида <code>Sitemap: https://&lt;host&gt;/sitemap.xml</code> "
-                "добавляется автоматически во view."
-            )),
+        (_("Поисковые роботы"), {
+            "fields": ("robots_txt", "robots_link", "sitemap_example"),
+            "description": mark_safe(
+                _(
+                    "Строка <code>Sitemap: https://&lt;host&gt;/sitemap.xml</code> "
+                    "будет <strong>добавлена автоматически</strong>, если её нет в тексте. "
+                )
+            ),
+        }),
+        (_("Служебно"), {
+            "fields": ("updated_at",),
         }),
     )
 
-    def robots_txt_link(self, obj):
-        return mark_safe('<a href="/robots.txt" target="_blank" rel="noopener">/robots.txt ↗</a>')
-    robots_txt_link.short_description = _("Текущий robots.txt")
-
-    # это синглтон — добавлять/удалять нельзя
     def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    # вместо списка — сразу форма единственной записи
     def changelist_view(self, request, extra_context=None):
         obj = SiteSetup.get_solo()
         url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
         return redirect(url)
+
+    # --- Подсказки/ссылки рядом с robots.txt ---
+    def robots_link(self, obj):
+        # кликабельная ссылка на /robots.txt текущего домена
+        url = f"https://{obj.domain}/robots.txt"
+        return mark_safe(f'<a href="{url}" target="_blank" rel="noopener noreferrer">{_("Открыть robots.txt")}</a>')
+    robots_link.short_description = _("Ссылка на robots.txt")
+
+    def sitemap_example(self, obj):
+        # кликабельный пример на /sitemap.xml
+        url = f"https://{obj.domain}/sitemap.xml"
+        return mark_safe(f'<a href="{url}" target="_blank" rel="noopener noreferrer">{_("Sitemap:")}</a> {url}')
+    sitemap_example.short_description = _("Пример Sitemap")
 
 
 # Скрываем стандартную модель "Сайты" из админки

@@ -103,13 +103,10 @@ class SiteSetup(models.Model):
         max_length=253,
         default="swap.com",
         help_text=_("Например: example.com или localhost (без http/https)."),
-        validators=[
-            RegexValidator(
-                # допускаем localhost ИЛИ обычные домены вида sub.example.com
-                regex=r"^(localhost|(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63})$",
-                message=_("Введите корректное доменное имя, например: example.com"),
-            )
-        ],
+        validators=[RegexValidator(
+            regex=r"^(localhost|(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63})$",
+            message=_("Введите корректное доменное имя, например: example.com"),
+        )],
     )
     domain_view = models.CharField(
         verbose_name=_("Отображаемое имя сайта"),
@@ -122,41 +119,40 @@ class SiteSetup(models.Model):
         verbose_name=_("Путь к админке"),
         max_length=50,
         default="admin",
-        validators=[
-            RegexValidator(
-                regex=r"^[a-z0-9-]+$",
-                message=_("Разрешены только маленькие латинские буквы, цифры и дефис"),
-            )
-        ],
+        validators=[RegexValidator(
+            regex=r"^[a-z0-9-]+$",
+            message=_("Разрешены только маленькие латинские буквы, цифры и дефис"),
+        )],
         help_text=_("Например: supera-dmin"),
     )
     otp_issuer = models.CharField(
         verbose_name=_("Название сервиса для 2FA"),
         max_length=64,
         default="Swapers",
-        validators=[
-            RegexValidator(
-                regex=r"^[A-Za-z0-9 ._-]+$",
-                message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
-            )
-        ],
+        validators=[RegexValidator(
+            regex=r"^[A-Za-z0-9 ._-]+$",
+            message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
+        )],
         help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
     )
 
-    # --- поле для robots.txt ---
+    # содержимое robots.txt
     robots_txt = models.TextField(
         verbose_name=_("Содержимое robots.txt"),
-        help_text=_("Текст, который будет отдан по /robots.txt. Данные обновляются раз в 1 час. Строка 'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."),
+        help_text=_("Текст, который будет отдан по /robots.txt. Строка 'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."),
         blank=True,
         default="User-agent: *\nDisallow:\n",
     )
+
+    # для инвалидации кеша и заголовков Last-Modified
+    updated_at = models.DateTimeField(_("Обновлено"), auto_now=True)
 
     class Meta:
         verbose_name = _("Настройки сайта")
         verbose_name_plural = _("Настройки сайта")
 
     def __str__(self) -> str:
-        return _gettext("Настройки сайта")  # runtime-строка, не lazy
+        return _gettext("Настройки сайта")
 
     @staticmethod
     def _normalize_domain(value: str) -> str:
@@ -173,7 +169,6 @@ class SiteSetup(models.Model):
             raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
 
     def save(self, *args, **kwargs):
-        # Нормализация → валидация → сохранение
         self.admin_path = (self.admin_path or "admin").strip().strip("/").lower() or "admin"
         self.domain = self._normalize_domain(self.domain or "swap.com")
         self.singleton = "main"
@@ -181,7 +176,7 @@ class SiteSetup(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
-        # Синхронизируем django.contrib.sites по SITE_ID
+        # синхронизация django.contrib.sites
         site, _ = Site.objects.get_or_create(
             id=getattr(settings, "SITE_ID", 1),
             defaults={"domain": self.domain, "name": self.domain_view},
