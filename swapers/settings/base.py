@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'app_main.apps.AppMainConfig',  # <= так, чтобы сработал ready()
 
     "django.contrib.sites",
+    "django.contrib.sitemaps",
     "allauth",
     "allauth.account",
 
@@ -91,7 +92,7 @@ TEMPLATES = [{
             "django.template.context_processors.debug",
             "django.template.context_processors.request",
             "django.template.context_processors.i18n",
-            "django.contrib.auth.context_processors.auth",   # нужно для admin
+            "django.contrib.auth.context_processors.auth",  # нужно для admin
             "django.contrib.messages.context_processors.messages",
             "django.template.context_processors.static",
             "django.template.context_processors.media",
@@ -140,7 +141,11 @@ ACCOUNT_RATE_LIMITS = {
     "reset_password": "5/m/ip,3/m/key",
     "reset_password_from_key": "10/m/ip",
 }
-ACCOUNT_ADAPTER = "app_main.allauth_adapter.AccountAdapter"
+# ACCOUNT_ADAPTER = "app_main.allauth_adapter.AccountAdapter"
+
+LANGUAGE_COOKIE_NAME = "sw_lang"
+LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
+LANGUAGE_COOKIE_SAMESITE = "Lax"
 
 # Куда слать после успешного входа
 LOGIN_REDIRECT_URL = "/dashboard/"
