@@ -63,6 +63,7 @@ MIDDLEWARE = [
     "app_main.middleware.ReferralMiddleware",
 
     "django.middleware.common.CommonMiddleware",
+    "app_main.middleware_noindex.GlobalNoIndexMiddleware",  # <-- добавить
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
 

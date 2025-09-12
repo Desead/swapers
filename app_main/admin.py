@@ -1,17 +1,16 @@
-# app_main/admin.py
-from django.contrib import admin, messages
+import django.contrib.sites.admin  # НЕ УДАЛЯТЬ
+from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django import forms
-from django.shortcuts import redirect
-from django.urls import reverse
-from django.utils.safestring import mark_safe
-from django.contrib.sites.models import Site
-from django.utils.translation import gettext_lazy as _
-import django.contrib.sites.admin  # НЕ УДАЛЯТЬ
-from .models import SiteSetup
 from django.conf import settings
+from django.urls import reverse
+from django.contrib.sites.models import Site
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
+from django.shortcuts import redirect
+from .models import SiteSetup
 
 User = get_user_model()
 
@@ -88,12 +87,12 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
-    list_display = ("domain", "domain_view", "admin_path", "otp_issuer", "updated_at")
-    readonly_fields = ("robots_link", "sitemap_example", "updated_at")
+    list_display = ("domain", "domain_view", "admin_path", "otp_issuer", "block_indexing")
 
     fieldsets = (
         (_("Общие"), {
             "fields": ("domain", "domain_view"),
+            "description": None,
         }),
         (_("Требует перезагрузки сервера"), {
             "fields": ("admin_path", "otp_issuer"),
@@ -102,43 +101,45 @@ class SiteSetupAdmin(admin.ModelAdmin):
                   "<strong>перезапуска приложения/процесса</strong>.")
             ),
         }),
-        (_("Поисковые роботы"), {
-            "fields": ("robots_txt", "robots_link", "sitemap_example"),
-            "description": mark_safe(
-                _(
-                    "Строка <code>Sitemap: https://&lt;host&gt;/sitemap.xml</code> "
-                    "будет <strong>добавлена автоматически</strong>, если её нет в тексте. "
-                )
-            ),
-        }),
-        (_("Служебно"), {
-            "fields": ("updated_at",),
+        (_("SEO / robots.txt"), {
+            "fields": ("block_indexing", "robots_txt"),
+            "description": "",  # наполним динамически в render_change_form
         }),
     )
 
+    # запрещаем добавление/удаление — это синглтон
     def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):
         return False
 
+    # вместо списка — сразу форма единственной записи
     def changelist_view(self, request, extra_context=None):
         obj = SiteSetup.get_solo()
         url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
         return redirect(url)
 
-    # --- Подсказки/ссылки рядом с robots.txt ---
-    def robots_link(self, obj):
-        # кликабельная ссылка на /robots.txt текущего домена
-        url = f"https://{obj.domain}/robots.txt"
-        return mark_safe(f'<a href="{url}" target="_blank" rel="noopener noreferrer">{_("Открыть robots.txt")}</a>')
-    robots_link.short_description = _("Ссылка на robots.txt")
+    def render_change_form(self, request, context, *args, **kwargs):
+        # Подготовим кликабельные ссылки на robots/sitemap под текущим доменом:
+        scheme = "https" if not settings.DEBUG else "http"
 
-    def sitemap_example(self, obj):
-        # кликабельный пример на /sitemap.xml
-        url = f"https://{obj.domain}/sitemap.xml"
-        return mark_safe(f'<a href="{url}" target="_blank" rel="noopener noreferrer">{_("Sitemap:")}</a> {url}')
-    sitemap_example.short_description = _("Пример Sitemap")
+        domain = request.get_host()
+
+        robots_url = f"{scheme}://{domain}{reverse('robots_txt')}"
+        sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
+
+        # Также дополним help_text у поля robots_txt ссылками (удобно рядом с textarea)
+        form = context.get("adminform").form
+        if "robots_txt" in form.fields:
+            base_help = form.fields["robots_txt"].help_text or ""
+            form.fields["robots_txt"].help_text = mark_safe(
+                f'{base_help}<br>'
+                f'<a href="{robots_url}" target="_blank">↗ robots.txt</a> &nbsp;|&nbsp; '
+                f'<a href="{sitemap_url}" target="_blank">↗ sitemap.xml</a>'
+            )
+
+        return super().render_change_form(request, context, *args, **kwargs)
 
 
 # Скрываем стандартную модель "Сайты" из админки

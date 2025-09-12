@@ -139,9 +139,21 @@ class SiteSetup(models.Model):
     # содержимое robots.txt
     robots_txt = models.TextField(
         verbose_name=_("Содержимое robots.txt"),
-        help_text=_("Текст, который будет отдан по /robots.txt. Строка 'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."),
+        help_text=_(
+            "Текст, который будет отдан по /robots.txt. Строка "
+            "'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."
+        ),
         blank=True,
         default="User-agent: *\nDisallow:\n",
+    )
+
+    block_indexing = models.BooleanField(
+        verbose_name=_("Запретить индексацию всего сайта"),
+        help_text=_(
+            "Если включено, robots.txt будет отдавать 'Disallow: /', а во всех ответах "
+            "будет заголовок 'X-Robots-Tag: noindex, nofollow'"
+        ),
+        default=False,
     )
 
     # для инвалидации кеша и заголовков Last-Modified
@@ -201,6 +213,7 @@ class SiteSetup(models.Model):
                 "domain": "swap.com",
                 "domain_view": "Swap",
                 "robots_txt": "User-agent: *\nDisallow:\n",
+                "block_indexing": False,  # <-- добавлено
             },
         )
         return obj

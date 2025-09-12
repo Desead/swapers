@@ -4,17 +4,12 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_GET
-from django.views.decorators.cache import cache_page
-from django.views.decorators.vary import vary_on_headers
 from django.conf import settings
+from django.views.decorators.http import require_GET
+from django.http import HttpResponse
 from django.contrib.sites.models import Site
 from django.core.cache import cache
-from django.http import HttpResponse, HttpResponseNotModified
-from django.urls import reverse
-from django.utils import timezone
-from django.utils.http import http_date, parse_http_date_safe
-import hashlib
+import re
 
 from .models import SiteSetup
 
@@ -85,68 +80,64 @@ def account_delete(request):
     return render(request, "account/account_delete.html")
 
 
+# app_main/views.py (фрагмент)
+
+from django.conf import settings
+from django.views.decorators.http import require_GET
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
+from django.http import HttpResponse
+from django.contrib.sites.models import Site
+from django.core.cache import cache
+import re
+
+from .models import SiteSetup
+
+
 @require_GET
+@vary_on_headers("Host")
+@cache_page(60 * 60)  # 1 hour
 def robots_txt(request):
-    """
-    Единый robots.txt:
-    - если settings.ALLOW_INDEXING=False → закрываем весь сайт;
-    - иначе берём текст из SiteSetup.robots_txt, нормализуем переносы,
-      автодобавляем строку Sitemap (если её нет), без дублей;
-    - кешируем на 1 час с «версией» по updated_at;
-    - выставляем ETag и Last-Modified, поддерживаем 304.
-    """
-    allow_indexing = bool(getattr(settings, "ALLOW_INDEXING", True))
 
-    # схема/хост
-    scheme = request.META.get("HTTP_X_FORWARDED_PROTO") or ("https" if not settings.DEBUG else request.scheme)
-    try:
-        domain = Site.objects.get_current(request).domain
-    except Exception:
-        domain = request.get_host()
-    sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
-
-    # данные настроек
     setup = SiteSetup.get_solo()
-    ver = int(setup.updated_at.timestamp()) if setup.updated_at else 0
 
-    cache_key = f"robots_txt::{domain}::{int(allow_indexing)}::{ver}"
+    # Схема зафиксирована как прод: всегда HTTPS
+    scheme = "https"
+
+    # Хост: сперва django.contrib.sites, потом SiteSetup.domain, потом Host, потом localhost
+    try:
+        site_domain = (Site.objects.get_current(request).domain or "").strip().strip("/")
+    except Exception:
+        site_domain = ""
+    raw_host = (request.get_host() or "").strip().strip("/").split(":", 1)[0]
+    host = site_domain or (setup.domain or "").strip().strip("/") or raw_host or "localhost"
+
+    # Кэш-ключ (версионированный)
+    cache_key = f"robots:prod:v1:{host}"
     cached = cache.get(cache_key)
     if cached is not None:
-        content = cached
-    else:
-        if not allow_indexing:
-            content = "User-agent: *\nDisallow: /\n"
-        else:
-            base = (setup.robots_txt or "").replace("\r\n", "\n").replace("\r", "\n")
-            if not base.endswith("\n"):
-                base += "\n"
-            # не дублируем Sitemap
-            if "sitemap:" not in base.lower():
-                base += f"Sitemap: {sitemap_url}\n"
-            content = base
+        return HttpResponse(cached, content_type="text/plain; charset=utf-8")
 
-        cache.set(cache_key, content, timeout=3600)
+    # База из админки, но без любых строк 'Sitemap:'
+    base = (setup.robots_txt or "")
+    base = base.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [ln for ln in base.split("\n") if ln.strip()]
+    lines = [ln for ln in lines if not re.match(r"(?i)^\s*sitemap\s*:", ln)]
 
-    # заголовки кэширования
-    last_modified_dt = setup.updated_at or timezone.now()
-    last_modified_http = http_date(last_modified_dt.timestamp())
-    etag = hashlib.md5(content.encode("utf-8")).hexdigest()
+    # Гарантированные запреты служебных путей
+    admin_path = (setup.admin_path or "admin").strip("/")
+    must_have = {
+        f"disallow: /{admin_path}/": f"Disallow: /{admin_path}/",
+        "disallow: /accounts/": "Disallow: /accounts/",
+    }
+    existing_lower = {ln.strip().lower() for ln in lines}
+    for key_lower, canonical in must_have.items():
+        if key_lower not in existing_lower:
+            lines.append(canonical)
 
-    # условные заголовки → 304
-    inm = request.META.get("HTTP_IF_NONE_MATCH")
-    ims = request.META.get("HTTP_IF_MODIFIED_SINCE")
-    if inm and inm == etag:
-        return HttpResponseNotModified()
-    if ims:
-        try:
-            ims_ts = parse_http_date_safe(ims)
-            if ims_ts and int(last_modified_dt.timestamp()) <= int(ims_ts):
-                return HttpResponseNotModified()
-        except Exception:
-            pass
+    # Ровно одна строка Sitemap (в конце)
+    lines.append(f"Sitemap: {scheme}://{host}/sitemap.xml")
 
-    resp = HttpResponse(content, content_type="text/plain; charset=utf-8")
-    resp["ETag"] = etag
-    resp["Last-Modified"] = last_modified_http
-    resp["Cache-Control"] = "public, max-age=3600"
-    return resp
+    body = "\n".join(lines) + "\n"
+    cache.set(cache_key, body, 60 * 60)
+    return HttpResponse(body, content_type="text/plain; charset=utf-8")
