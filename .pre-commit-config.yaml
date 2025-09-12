@@ -19,7 +19,9 @@ repos:
           (?x)
           (^\.venv/|^venv/|^env/|^\.git/)|
           (^app_main/migrations/)|
-          (^manage\.py$)
+          (^manage\.py$)|
+          (^tools/)              # ← исключаем сами тулзы-хуки
+          |(^app_main/tests/)    # ← опционально: позволяем кириллицу в тестах
 
       # без инлайновых style/script
       - id: templates-no-inline-assets
