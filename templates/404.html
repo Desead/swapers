@@ -1,0 +1,16 @@
+{% load i18n %}
+{% get_current_language as CUR_LANG %}
+<!doctype html>
+<html lang="{{ CUR_LANG }}">
+<head>
+  <meta charset="utf-8">
+  <title>{% trans "Страница не найдена" %}</title>
+</head>
+<body>
+  <main class="container">
+    <h1>{% trans "Страница не найдена" %}</h1>
+    <p>{% trans "Похоже, вы перешли по неверной ссылке или страница была удалена." %}</p>
+    <p><a class="btn" href="/{% get_current_language %}/">{% trans "На главную" %}</a></p>
+  </main>
+</body>
+</html>
