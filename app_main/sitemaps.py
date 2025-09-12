@@ -4,14 +4,12 @@ from django.urls import reverse
 class StaticViewSitemap(Sitemap):
     changefreq = "daily"
     priority = 0.6
-    i18n = True  # ← джанго сам добавит alternate hreflang для LANGUAGES
+    i18n = True          # генерить URL на все языки
+    alternates = True    # добавлять <xhtml:link hreflang="..."> к каждому URL
+    # x_default = True   # (опционально) добавить hreflang="x-default"
 
     def items(self):
-        # перечисляем именованные урлы публичной части
-        return [
-            "home",
-            # "faq", "pricing", "contacts", ...  ← добавишь по мере появления
-        ]
+        return ["home"]
 
     def location(self, item):
         return reverse(item)

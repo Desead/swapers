@@ -1,115 +1,174 @@
-#!/usr/bin/env python
-import sys
+#!/usr/bin/env python3
 import ast
+import pathlib
 import re
-from pathlib import Path
+import sys
 
-CYR = re.compile(r"[А-Яа-яЁё]")
+CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+IGNORE_TOKEN = "i18n: ignore"
 
-GETTEXT_FUNCS = {
-    "_", "gettext", "gettext_lazy", "ngettext", "pgettext", "npgettext",
+DEFAULT_FUNCS = {
+    "_",
+    "gettext",
+    "ngettext",
+    "pgettext",
+    "npgettext",
+    "ugettext",
+    "ungettext",
+    "gettext_lazy",
 }
 
-def is_docstring_node(node, parent) -> bool:
-    # первый Expr(Str) в модуле/классе/функции — это докстринг
-    if isinstance(parent, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-        body = parent.body
-        if body and body[0] is node:
-            return isinstance(node.value, (ast.Str, ast.Constant)) and isinstance(getattr(node.value, "s", None) or getattr(node.value, "value", None), str)
-    return False
+def _ascii_safe(snippet: str, max_len: int = 60) -> str:
+    s = snippet
+    if len(s) > max_len:
+        s = s[: max_len - 3] + "..."
+    # Безопасный вывод в Windows-консоль (cp1251 и пр.)
+    return s.encode("ascii", "backslashreplace").decode("ascii")
+
 
 class I18NChecker(ast.NodeVisitor):
-    def __init__(self, filename: str):
+    """
+    Ищем «сырую» кириллицу в .py, но:
+    - разрешаем, если строка внутри вызова _(…)/gettext(…)/… (с учётом алиасов)
+    - игнорируем докстринги (module/class/def)
+    - игнорируем отдельные строковые выражения-«комментарии» (Expr(Constant(str)))
+    - уважаем подавление строкой '# i18n: ignore'
+    """
+
+    def __init__(self, source_text: str, filename: str):
         self.filename = filename
-        self.issues = []
-        self.stack = []  # track parents
+        self.lines = source_text.splitlines()
+        self.issues: list[tuple[int, int, str]] = []
 
-    def visit(self, node):
-        self.stack.append(node)
-        super().visit(node)
-        self.stack.pop()
+        self.allowed_funcs = set(DEFAULT_FUNCS)
+        self.allowed_string_nodes: set[int] = set()
+        self.docstring_nodes: set[int] = set()
+        self.expr_comment_string_nodes: set[int] = set()
 
-    def in_gettext_context(self) -> bool:
-        # true, если где-то выше есть Call к gettext-функции
-        for node in reversed(self.stack):
-            if isinstance(node, ast.Call):
-                fn = node.func
-                name = None
-                if isinstance(fn, ast.Name):
-                    name = fn.id
-                elif isinstance(fn, ast.Attribute):
-                    name = fn.attr
-                if name in GETTEXT_FUNCS:
-                    return True
-        return False
+        self.suppressed_lines = {
+            i for i, line in enumerate(self.lines, start=1) if IGNORE_TOKEN in line
+        }
 
-    def current_parent(self):
-        return self.stack[-2] if len(self.stack) >= 2 else None
-
-    def report_if_cyrillic(self, node, s: str):
-        if not isinstance(s, str):
-            return
-        if not CYR.search(s):
-            return
-        if self.in_gettext_context():
-            return
-        parent = self.current_parent()
-        # Игнорируем докстринги (модуль/класс/функция)
-        if isinstance(parent, ast.Expr) and is_docstring_node(parent, self.stack[-3] if len(self.stack) >= 3 else None):
-            return
-        # Разрешаем локально отключить проверку через комментарий
-        if hasattr(node, "lineno"):
-            try:
-                # прочитать строку и поискать маркер
-                line = Path(self.filename).read_text(encoding="utf-8", errors="ignore").splitlines()[node.lineno-1]
-                if "# i18n: ignore" in line:
-                    return
-            except Exception:
-                pass
-        self.issues.append((node.lineno, getattr(node, "col_offset", 0), s[:80]))
-
-    def visit_Constant(self, node: ast.Constant):
-        # Py3.8+: строковые литералы — это Constant
-        if isinstance(node.value, str):
-            self._check_string(node.value, node)
+    # ---- сбор алиасов ----
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        mod = node.module or ""
+        if "translation" in mod or mod == "gettext":
+            for alias in node.names:
+                base = alias.name
+                asname = alias.asname or alias.name
+                if base in DEFAULT_FUNCS:
+                    self.allowed_funcs.add(asname)
         self.generic_visit(node)
 
+    # ---- помечаем строки внутри разрешённых функций ----
+    def visit_Call(self, node: ast.Call) -> None:
+        func_name = None
+        if isinstance(node.func, ast.Name):
+            func_name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            func_name = node.func.attr  # module.gettext(...)
 
-    def visit_JoinedStr(self, node: ast.JoinedStr):  # f-strings
-        # соберём только константные части
-        text = "".join([part.value for part in node.values if isinstance(part, ast.Constant) and isinstance(part.value, str)])
-        if text:
-            self.report_if_cyrillic(node, text)
+        if func_name in self.allowed_funcs:
+            def mark_strings(tree: ast.AST) -> None:
+                for sub in ast.walk(tree):
+                    if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                        self.allowed_string_nodes.add(id(sub))
+                    elif isinstance(sub, ast.JoinedStr):  # f-строки
+                        for v in sub.values:
+                            if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                                self.allowed_string_nodes.add(id(v))
+
+            for arg in node.args:
+                mark_strings(arg)
+            for kw in node.keywords:
+                mark_strings(kw.value)
+
         self.generic_visit(node)
 
-def check_file(path: Path):
+    # ---- помечаем докстринги заранее ----
+    def _mark_docstring_in_body(self, body: list[ast.stmt]) -> None:
+        if not body:
+            return
+        first = body[0]
+        if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            self.docstring_nodes.add(id(first.value))
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self._mark_docstring_in_body(node.body)
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._mark_docstring_in_body(node.body)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._mark_docstring_in_body(node.body)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._mark_docstring_in_body(node.body)
+        self.generic_visit(node)
+
+    # ---- помечаем строковые «комментарии» (Expr("...")) ----
+    def visit_Expr(self, node: ast.Expr) -> None:
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            self.expr_comment_string_nodes.add(id(node.value))
+        self.generic_visit(node)
+
+    # ---- ищем «сырую» кириллицу ----
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if not (isinstance(node.value, str) and CYRILLIC_RE.search(node.value)):
+            return
+
+        node_id = id(node)
+        if (
+            node_id in self.allowed_string_nodes
+            or node_id in self.docstring_nodes
+            or node_id in self.expr_comment_string_nodes
+        ):
+            return
+
+        lineno = getattr(node, "lineno", 0)
+        if lineno in self.suppressed_lines:
+            return
+
+        col = getattr(node, "col_offset", 0)
+        self.issues.append((lineno, col, node.value))
+
+
+def check_file(path: str):
+    p = pathlib.Path(path)
     try:
-        src = path.read_text(encoding="utf-8", errors="ignore")
-        tree = ast.parse(src, filename=str(path))
-    except SyntaxError:
-        return []  # не валим коммит, пусть линтеры разбираются
+        text = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        text = p.read_text(encoding="utf-8", errors="ignore")
 
-    checker = I18NChecker(str(path))
+    tree = ast.parse(text, filename=path)
+    checker = I18NChecker(text, path)
     checker.visit(tree)
     return checker.issues
 
+
 def main():
-    any_failed = False
-    for fname in sys.argv[1:]:
-        p = Path(fname)
-        if not p.is_file():
-            continue
-        if p.match("*/migrations/*.py"):
-            continue
-        issues = check_file(p)
-        if issues:
-            any_failed = True
-            for ln, col, snippet in issues:
-                print(f"[i18n-python] {fname}:{ln}:{col}: raw Cyrillic string not wrapped in gettext: {snippet}")
-    if any_failed:
-        print("\nHint: wrap user-visible Russian strings with _(...), gettext(...), ngettext(...), etc.")
-        print("Add '# i18n: ignore' to the line to suppress (e.g. logs/tests).")
+    paths = [p for p in sys.argv[1:] if p.endswith(".py")]
+    bad = False
+
+    for path in paths:
+        issues = check_file(path)
+        for lineno, col, s in issues:
+            print(
+                f"[i18n-python] {path}:{lineno}:{col}: "
+                f"raw Cyrillic string not wrapped in gettext: {_ascii_safe(s)}"
+            )
+            bad = True
+
+    if bad:
+        print(
+            "Hint: wrap user-visible Russian strings with _(...), gettext(...), "
+            "ngettext(...), etc. Add '# i18n: ignore' to the line to suppress (e.g. logs/tests)."
+        )
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

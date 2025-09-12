@@ -1,34 +1,36 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}Личный кабинет — NewUser{% endblock %}
+
+{% block title %}{% trans "Личный кабинет — NewUser" %}{% endblock %}
+
 {% block content %}
   <h1>{% trans "Личный кабинет" %}</h1>
 
   <h2>{% trans "Аккаунт" %}</h2>
   <ul>
-    <li>Email: {{ request.user.email }}</li>
-    <li>Имя: {{ request.user.first_name|default:"—" }}</li>
-    <li>Фамилия: {{ request.user.last_name|default:"—" }}</li>
-    <li>Телефон: {{ request.user.phone|default:"—" }}</li>
-    <li>Компания: {{ request.user.company|default:"—" }}</li>
-    <li>Дата регистрации: {{ request.user.date_joined|date:"d.m.Y H:i" }}</li>
-    <li>Последний вход: {{ request.user.last_login|date:"d.m.Y H:i" }}</li>
+    <li>{% trans "Email" %}: {{ request.user.email }}</li>
+    <li>{% trans "Имя" %}: {{ request.user.first_name|default:"—" }}</li>
+    <li>{% trans "Фамилия" %}: {{ request.user.last_name|default:"—" }}</li>
+    <li>{% trans "Телефон" %}: {{ request.user.phone|default:"—" }}</li>
+    <li>{% trans "Компания" %}: {{ request.user.company|default:"—" }}</li>
+    <li>{% trans "Дата регистрации" %}: {{ request.user.date_joined|date:"d.m.Y H:i" }}</li>
+    <li>{% trans "Последний вход" %}: {{ request.user.last_login|date:"d.m.Y H:i" }}</li>
     {% if request.user.referred_by %}
-      <li>Вас пригласил: {{ request.user.referred_by.email }}</li>
+      <li>{% trans "Вас пригласил" %}: {{ request.user.referred_by.email }}</li>
     {% endif %}
   </ul>
 
   <h2>{% trans "Партнёрская программа" %}</h2>
   <ul>
     <li>
-      Ваша партнёрская ссылка:
+      {% trans "Ваша партнёрская ссылка" %}:
       {% if ref_link %}
         <code>{{ ref_link }}</code>
       {% else %}
         <em>{% trans "код ещё не сгенерирован" %}</em>
       {% endif %}
     </li>
-    <li>{% trans "Привлечено партнёров:" %}<strong>{{ request.user.count }}</strong></li>
-    <li>{% trans "Партнёрский баланс:" %}<strong>${{ request.user.balance }}</strong></li>
+    <li>{% trans "Привлечено партнёров" %}: <strong>{{ request.user.count }}</strong></li>
+    <li>{% trans "Партнёрский баланс" %}: <strong>${{ request.user.balance }}</strong></li>
   </ul>
 {% endblock %}

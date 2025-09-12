@@ -1,17 +1,12 @@
 from django.db import models
-from django.contrib.auth.models import (
-    AbstractBaseUser, PermissionsMixin, BaseUserManager
-)
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils import timezone
-from django.core.validators import validate_email
-from django.core.validators import RegexValidator
+from django.core.validators import validate_email, RegexValidator
 from django.core.exceptions import ValidationError
 from django.conf import settings
-
-# ленивые строки — для verbose_name, help_text, labels и т.п.
-from django.utils.translation import gettext_lazy as _
-# обычный gettext — чтобы вернуть уже готовую str в __str__
-from django.utils.translation import gettext as _gettext
+from django.contrib.sites.models import Site
+from django.utils.translation import gettext_lazy as _  # lazy — для verbose_name/help_text
+from django.utils.translation import gettext as _gettext  # runtime — для __str__ и сообщений
 
 
 class UserManager(BaseUserManager):
@@ -65,13 +60,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     count = models.PositiveIntegerField(verbose_name=_("Партнёров привлечено"), default=0)
     balance = models.DecimalField(verbose_name=_("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
 
-    # НОВОЕ: предпочитаемый язык пользователя
+    # предпочитаемый язык пользователя
     language = models.CharField(
         verbose_name=_("Язык общения"),
         max_length=8,
         choices=[(code, name) for code, name in settings.LANGUAGES],
         default=(settings.LANGUAGE_CODE.split("-")[0] if hasattr(settings, "LANGUAGE_CODE") else "ru"),
     )
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []
 
@@ -80,12 +76,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = _("Пользователь")
         verbose_name_plural = _("Пользователи")
-        # Индексы под аналитику рефералок
         indexes = [
             models.Index(fields=["referred_by", "date_joined"], name="user_ref_by_date_idx"),
             models.Index(fields=["date_joined"], name="user_joined_idx"),
         ]
-        # Кастомные права для ролей
+        # ВАЖНО: оставить на английском — это имя уйдёт в БД при миграциях
         permissions = [
             ("export_users", "Can export users"),
             ("view_finance", "Can view finance dashboards"),
@@ -95,15 +90,33 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.email
 
 
-RESERVED_ADMIN_PREFIXES = {"static", "media", "api", "accounts", }
+RESERVED_ADMIN_PREFIXES = {"static", "media", "api", "accounts", "rosetta"}
 
 
 class SiteSetup(models.Model):
-    """
-    Синглтон с настройками сайта.
-    """
-    # сторож для единственности
+    """Singleton with site settings."""
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
+
+    # домен и отображаемое имя сайта
+    domain = models.CharField(
+        verbose_name=_("Домен (без http/https)"),
+        max_length=253,
+        default="swap.com",
+        help_text=_("Например: example.com или localhost (без http/https)."),
+        validators=[
+            RegexValidator(
+                # допускаем localhost ИЛИ обычные домены вида sub.example.com
+                regex=r"^(localhost|(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63})$",
+                message=_("Введите корректное доменное имя, например: example.com"),
+            )
+        ],
+    )
+    domain_view = models.CharField(
+        verbose_name=_("Отображаемое имя сайта"),
+        max_length=100,
+        default="Swap",
+        help_text=_('Название для заголовков/письма и т.п., например: "Swap".'),
+    )
 
     admin_path = models.CharField(
         verbose_name=_("Путь к админке"),
@@ -112,7 +125,7 @@ class SiteSetup(models.Model):
         validators=[
             RegexValidator(
                 regex=r"^[a-z0-9-]+$",
-                message=_("Разрешены только маленькие латинские буквы,цифры и дефис"),
+                message=_("Разрешены только маленькие латинские буквы, цифры и дефис"),
             )
         ],
         help_text=_("Например: supera-dmin"),
@@ -135,27 +148,55 @@ class SiteSetup(models.Model):
         verbose_name_plural = _("Настройки сайта")
 
     def __str__(self) -> str:
-        # Возвращаем уже вычисленную строку, не lazy-объект
-        return _gettext("Настройки сайта")
+        return _gettext("Настройки сайта")  # runtime-строка, не lazy
+
+    @staticmethod
+    def _normalize_domain(value: str) -> str:
+        """Strip scheme/path and lowercase."""
+        v = (value or "").strip().strip("/")
+        if "://" in v:
+            v = v.split("://", 1)[1]
+        if "/" in v:
+            v = v.split("/", 1)[0]
+        return v.lower().rstrip(".")
 
     def clean(self):
-        # Бизнес-валидация: запрет некоторых префиксов.
         if self.admin_path in RESERVED_ADMIN_PREFIXES:
             raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
 
     def save(self, *args, **kwargs):
-        # Нормализация ПЕРЕД full_clean(): так валидатор проверит уже нормализованное значение
-        value = (self.admin_path or "admin").strip().strip("/").lower()
-        self.admin_path = value or "admin"
+        # Нормализация → валидация → сохранение
+        self.admin_path = (self.admin_path or "admin").strip().strip("/").lower() or "admin"
+        self.domain = self._normalize_domain(self.domain or "swap.com")
         self.singleton = "main"
-        # Запускаем валидаторы полей + clean() + validate_unique()
+
         self.full_clean()
-        return super().save(*args, **kwargs)
+        super().save(*args, **kwargs)
+
+        # Синхронизируем django.contrib.sites по SITE_ID
+        site, _ = Site.objects.get_or_create(
+            id=getattr(settings, "SITE_ID", 1),
+            defaults={"domain": self.domain, "name": self.domain_view},
+        )
+        changed = False
+        if site.domain != self.domain:
+            site.domain = self.domain
+            changed = True
+        if site.name != self.domain_view:
+            site.name = self.domain_view
+            changed = True
+        if changed:
+            site.save(update_fields=["domain", "name"])
 
     @classmethod
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(
             singleton="main",
-            defaults={"admin_path": "admin", "otp_issuer": "Swapers"},
+            defaults={
+                "admin_path": "admin",
+                "otp_issuer": "Swapers",
+                "domain": "swap.com",
+                "domain_view": "Swap",
+            },
         )
         return obj

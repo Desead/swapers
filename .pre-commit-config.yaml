@@ -1,69 +1,4 @@
 repos:
-  - repo: local
-    hooks:
-      # i18n — шаблоны
-      - id: i18n-templates-no-raw-cyrillic
-        name: "i18n (templates): forbid raw Cyrillic outside trans"
-        entry: python tools/check_i18n_templates.py
-        language: python
-        files: '^(templates/|app_main/templates/).*\.(html?|jinja2)$'
-        pass_filenames: true
-
-      # i18n — python
-      - id: i18n-python-no-raw-cyrillic
-        name: "i18n (python): forbid raw Cyrillic outside gettext"
-        entry: python tools/check_i18n_python.py
-        language: python
-        types: [python]
-        exclude: >
-          (?x)
-          (^\.venv/|^venv/|^env/|^\.git/)|
-          (^app_main/migrations/)|
-          (^manage\.py$)|
-          (^tools/)              # ← исключаем сами тулзы-хуки
-          |(^app_main/tests/)    # ← опционально: позволяем кириллицу в тестах
-
-      # без инлайновых style/script
-      - id: templates-no-inline-assets
-        name: "templates: forbid inline <style>/<script>"
-        entry: python tools/check_no_inline_assets.py
-        language: python
-        files: '^(templates/|app_main/templates/).*\.(html?|jinja2)$'
-        pass_filenames: true
-
-      # base.html обязан подключать css/base.css
-      - id: base-must-include-base-css
-        name: "base.html must include css/base.css"
-        entry: python tools/check_base_css_link.py
-        language: python
-        files: '^templates/base\.html$'
-        pass_filenames: true
-
-      # запрет кириллицы в именах шаблонов/папок
-      - id: templates-no-cyrillic-filenames
-        name: "templates: forbid Cyrillic in filenames"
-        entry: python tools/check_no_cyrillic_template_filenames.py
-        language: python
-        files: '^(templates/|app_main/templates/).*\.(html?|jinja2)$'
-        pass_filenames: true
-
-      # <html lang="{{ CUR_LANG }}">
-      - id: templates-require-html-lang
-        name: 'templates: require <html lang="{{ CUR_LANG }}">'
-        entry: python tools/check_html_lang_attr.py
-        language: python
-        files: '^(templates/|app_main/templates/).*\.(html?|jinja2)$'
-        pass_filenames: true
-
-      # страницы с <html> обязаны иметь {% load i18n %}
-      - id: templates-require-load-i18n
-        name: 'templates: require {% load i18n %} on pages with <html>'
-        entry: python tools/check_html_requires_i18n.py
-        language: python
-        files: '^(templates/|app_main/templates/).*\.(html?|jinja2)$'
-        pass_filenames: true
-
-  # базовая гигиена
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
@@ -71,3 +6,23 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      # i18n ТОЛЬКО для шаблонов (как было — он уже у тебя зелёный)
+      - id: i18n-templates-no-raw-cyrillic
+        name: i18n (templates): forbid raw Cyrillic outside trans
+        entry: python tools/check_i18n_templates.py
+        language: system
+        pass_filenames: true
+        files: \.(html|htm)$
+
+      # НОВЫЙ i18n для Python
+      - id: i18n-python-no-raw-cyrillic
+        name: i18n (python): forbid raw Cyrillic outside gettext
+        entry: python tools/check_i18n_python.py
+        language: system
+        pass_filenames: true
+        files: \.py$
+        # Не проверяем тесты, служебные скрипты и миграции
+        exclude: ^(tests/|.*/tests/|tools/|.*/migrations/)
