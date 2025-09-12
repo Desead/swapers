@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-12 17:22+0300\n"
+"POT-Creation-Date: 2025-09-12 18:00+0300\n"
 "PO-Revision-Date: 2025-09-12 17:24+0000\n"
 "Last-Translator:   <news-piter@mail.ru>\n"
 "Language-Team: \n"
@@ -143,8 +143,7 @@ msgstr "Name of the service for 2FA"
 #: .\app_main\models.py:127
 msgid "Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."
 msgstr ""
-"Latin letters, numbers, spaces, periods, hyphens, underscores are "
-"acceptable."
+"Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
 
 #: .\app_main\models.py:130
 msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
@@ -200,6 +199,20 @@ msgstr "Русский"
 msgid "English"
 msgstr "Английский"
 
+#: .\templates\404.html:7 .\templates\404.html:11
+msgid "Страница не найдена"
+msgstr ""
+
+#: .\templates\404.html:12
+msgid "Похоже, вы перешли по неверной ссылке или страница была удалена."
+msgstr ""
+
+#: .\templates\404.html:13
+#, fuzzy
+#| msgid "Главная"
+msgid "На главную"
+msgstr "Home"
+
 #: .\templates\_account_backup\account_delete.html:5
 msgid "Удаление аккаунта"
 msgstr "Deleting an account"
@@ -215,8 +228,7 @@ msgstr ""
 
 #: .\templates\_account_backup\account_delete.html:9
 msgid ""
-"Удаление суперпользователя запрещено из интерфейса. Используйте Django "
-"Admin."
+"Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin."
 msgstr ""
 "Deleting a superuser is prohibited from the interface. Use Django Admin."
 
@@ -293,8 +305,7 @@ msgid "Вход"
 msgstr "Input"
 
 #: .\templates\_account_backup\login.html:9
-#: .\templates\_account_backup\signup.html:11
-#: .\templates\includes\_nav.html:19
+#: .\templates\_account_backup\signup.html:11 .\templates\includes\_nav.html:19
 msgid "Войти"
 msgstr "Log in"
 
@@ -366,8 +377,8 @@ msgstr "The email has been sent"
 
 #: .\templates\_account_backup\password_reset_done.html:6
 msgid ""
-"Если указанный email зарегистрирован, мы отправили на него письмо со ссылкой"
-" для сброса пароля."
+"Если указанный email зарегистрирован, мы отправили на него письмо со ссылкой "
+"для сброса пароля."
 msgstr ""
 "If the specified email address is registered, we have sent an email to it "
 "with a link to reset the password."
@@ -523,11 +534,25 @@ msgstr ""
 msgid "Введите 6-значный код из приложения:"
 msgstr "Enter the 6-digit code from the application:"
 
+#: .\templates\security\500.html:7 .\templates\security\500.html:11
+#, fuzzy
+#| msgid "Требует перезагрузки сервера"
+msgid "Внутренняя ошибка сервера"
+msgstr "Requires a reboot of the server"
+
+#: .\templates\security\500.html:12
+msgid "Мы уже работаем над решением. Попробуйте обновить страницу чуть позже."
+msgstr ""
+
+#: .\templates\security\500.html:13
+msgid "Вернуться на главную"
+msgstr ""
+
 #~ msgid ""
-#~ "Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
-#~ "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех "
-#~ "воркерах."
+#~ "Внимание: изменения «Путь к админке» и «Название сервиса для 2FA "
+#~ "(issuer)» требуют перезагрузки приложения/процесса, чтобы вступить в силу "
+#~ "во всех воркерах."
 #~ msgstr ""
 #~ "Attention: The changes to the \"Admin Panel path\" and \"Service name for "
-#~ "2FA (issuer)\" require a reboot of the application/process to take effect in"
-#~ " all workshops."
+#~ "2FA (issuer)\" require a reboot of the application/process to take effect "
+#~ "in all workshops."
