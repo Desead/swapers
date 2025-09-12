@@ -6,6 +6,8 @@ from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
 from django.conf import settings
 from django.views.decorators.http import require_GET
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
 from django.http import HttpResponse
 from django.contrib.sites.models import Site
 from django.core.cache import cache
@@ -80,29 +82,14 @@ def account_delete(request):
     return render(request, "account/account_delete.html")
 
 
-# app_main/views.py (фрагмент)
-
-from django.conf import settings
-from django.views.decorators.http import require_GET
-from django.views.decorators.cache import cache_page
-from django.views.decorators.vary import vary_on_headers
-from django.http import HttpResponse
-from django.contrib.sites.models import Site
-from django.core.cache import cache
-import re
-
-from .models import SiteSetup
-
-
 @require_GET
 @vary_on_headers("Host")
 @cache_page(60 * 60)  # 1 hour
 def robots_txt(request):
-
     setup = SiteSetup.get_solo()
 
     # Схема зафиксирована как прод: всегда HTTPS
-    scheme = "https"
+    scheme = "https" if not settings.DEBUG else "http"
 
     # Хост: сперва django.contrib.sites, потом SiteSetup.domain, потом Host, потом localhost
     try:
