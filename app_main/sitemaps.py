@@ -3,16 +3,11 @@ from django.urls import reverse
 
 class StaticViewSitemap(Sitemap):
     changefreq = "daily"
-    priority = 0.6
-    i18n = True          # генерить URL на все языки
-    alternates = True    # добавлять <xhtml:link hreflang="..."> к каждому URL
-    # x_default = True   # (опционально) добавить hreflang="x-default"
+    priority = 1.0
 
     def items(self):
-        return ["home"]
+        # укажи имена URL, которые должны попасть в sitemap
+        return ["home"]  # добавляй сюда свои именованные маршруты
 
-    def location(self, item):
-        return reverse(item)
-
-    def priority(self, item):
-        return 1.0 if item == "home" else 0.6
+    def location(self, name):
+        return reverse(name)

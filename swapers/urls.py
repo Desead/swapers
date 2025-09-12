@@ -10,11 +10,12 @@ from django.contrib.sites.models import Site
 from django.urls import reverse
 from django.http import HttpResponse
 from app_main.models import SiteSetup
-
 from app_main.views_security import csp_report
 
+from django.contrib.sitemaps.views import sitemap
+
 sitemaps = {
-    "static": StaticViewSitemap,
+    "static": StaticViewSitemap(),
 }
 
 
