@@ -1,0 +1,479 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-09-11 23:00+0300\n"
+"PO-Revision-Date: 2025-09-11 23:30+0300\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.7\n"
+
+#: .\app_main\admin.py:17
+msgid "Пароль"
+msgstr "Password"
+
+#: .\app_main\admin.py:18
+msgid "Подтверждение пароля"
+msgstr "Password confirmation"
+
+#: .\app_main\admin.py:40
+msgid "Хэш пароля"
+msgstr "Password hash"
+
+#: .\app_main\admin.py:118
+msgid ""
+"Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
+"требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех "
+"воркерах."
+msgstr ""
+"Attention: The changes to the \"Admin Panel path\" and \"Service name for "
+"2FA (issuer)\" require a reboot of the application/process to take effect in "
+"all workshops."
+
+#: .\app_main\models.py:18
+msgid "Email обязателен"
+msgstr "Email is required"
+
+#: .\app_main\models.py:37
+msgid "Суперпользователь должен иметь is_staff=True."
+msgstr "The superuser must have is_staff=True."
+
+#: .\app_main\models.py:39
+msgid "Суперпользователь должен иметь is_superuser=True."
+msgstr "The superuser must have is_superuser=True."
+
+#: .\app_main\models.py:45
+msgid "Email"
+msgstr "Email"
+
+#: .\app_main\models.py:46
+msgid "Имя"
+msgstr "Name"
+
+#: .\app_main\models.py:47
+msgid "Фамилия"
+msgstr "Surname"
+
+#: .\app_main\models.py:48
+msgid "Телефон"
+msgstr "Telephone"
+
+#: .\app_main\models.py:49
+msgid "Компания"
+msgstr "Company"
+
+#: .\app_main\models.py:58
+msgid "Кто привёл"
+msgstr "Referal"
+
+#: .\app_main\models.py:60
+msgid "Партнёрский код"
+msgstr "Referal code"
+
+#: .\app_main\models.py:61
+msgid "Партнёров привлечено"
+msgstr "Total partners"
+
+#: .\app_main\models.py:62
+msgid "Партнёрский баланс, $"
+msgstr "Partner balance, $"
+
+#: .\app_main\models.py:70
+msgid "Пользователь"
+msgstr "User"
+
+#: .\app_main\models.py:71
+msgid "Пользователи"
+msgstr "Users"
+
+#: .\app_main\models.py:97
+msgid "Путь к админке"
+msgstr "The path to the admin area"
+
+#: .\app_main\models.py:98
+msgid "Разрешены только маленькие латинские буквы,цифры и дефис"
+msgstr "Only small Latin letters, numbers and hyphens are allowed"
+
+#: .\app_main\models.py:99
+msgid "Например: supera-dmin"
+msgstr "For example: supera-dmin"
+
+#: .\app_main\models.py:100
+msgid "Название сервиса для 2FA"
+msgstr "Name of the service for 2FA"
+
+#: .\app_main\models.py:101
+msgid "Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."
+msgstr "Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
+
+#: .\app_main\models.py:102
+msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
+msgstr "Displayed in the authenticator application (for example: \"Swapers\")."
+
+#: .\app_main\models.py:105 .\app_main\models.py:106 .\app_main\models.py:109
+msgid "Настройки сайта"
+msgstr "Site Settings"
+
+#: .\app_main\models.py:114
+msgid "Этот путь зарезервирован системой."
+msgstr "This path is reserved by the system."
+
+#: .\app_main\views.py:33
+msgid "Настройки сохранены."
+msgstr "Save settings."
+
+#: .\app_main\views.py:35
+msgid "Проверьте форму — есть ошибки."
+msgstr "Check the form — there are errors."
+
+#: .\app_main\views.py:51
+msgid "Удаление суперпользователя запрещено из интерфейса. Используйте админку."
+msgstr "Deleting a superuser is not allowed from the interface. Use the admin area."
+
+#: .\app_main\views.py:59
+msgid "Подтверждение не совпало. Введите слово DELETE."
+msgstr "The confirmation did not match. Enter the word DELETE."
+
+#: .\app_main\views.py:63
+msgid "Неверный пароль."
+msgstr "Invalid password."
+
+#: .\app_main\views.py:69
+msgid "Аккаунт удалён."
+msgstr "The account has been deleted."
+
+#: .\app_main\views_2fa.py:51
+msgid "Двухфакторная аутентификация включена."
+msgstr "Two-factor authentication is enabled."
+
+#: .\app_main\views_2fa.py:54
+msgid "Неверный код. Попробуйте ещё раз."
+msgstr "Invalid code. Try again."
+
+#: .\swapers\settings\base.py:22
+msgid "Russian"
+msgstr "Русский"
+
+#: .\swapers\settings\base.py:23
+msgid "English"
+msgstr "Английский"
+
+#: .\templates\_account_backup\account_delete.html:5
+msgid "Удаление аккаунта"
+msgstr "Deleting an account"
+
+#: .\templates\_account_backup\account_delete.html:6
+msgid "Внимание!"
+msgstr "Attention!"
+
+#: .\templates\_account_backup\account_delete.html:6
+msgid "Действие необратимо. Будут удалены ваш аккаунт и связанные данные."
+msgstr "The action is irreversible. Your account and related data will be deleted."
+
+#: .\templates\_account_backup\account_delete.html:9
+msgid "Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin."
+msgstr "Deleting a superuser is prohibited from the interface. Use Django Admin."
+
+#: .\templates\_account_backup\account_delete.html:14
+msgid "Подтвердите пароль:"
+msgstr "Confirm the password:"
+
+#: .\templates\_account_backup\account_delete.html:17
+msgid "Для подтверждения введите слово"
+msgstr "To confirm, enter the word"
+
+#: .\templates\_account_backup\account_delete.html:20
+msgid "Да, удалить мой аккаунт"
+msgstr "Yes, delete my account"
+
+#: .\templates\_account_backup\account_inactive.html:5
+msgid "Аккаунт не активен"
+msgstr "The account is inactive"
+
+#: .\templates\_account_backup\account_inactive.html:6
+msgid "Ваш аккаунт не активирован. Проверьте почту или обратитесь к администратору."
+msgstr "Your account has not been activated. Check your email or contact your administrator."
+
+#: .\templates\_account_backup\confirm_email.html:5
+msgid "Подтверждение email"
+msgstr "Email confirmation"
+
+#: .\templates\_account_backup\confirm_email.html:7
+msgid "Подтвердить адрес"
+msgstr "Confirm the address"
+
+#: .\templates\_account_backup\confirm_email.html:10
+#: .\templates\security\2fa_setup.html:23
+msgid "Подтвердить"
+msgstr "Confirm"
+
+#: .\templates\_account_backup\confirm_email.html:13
+msgid "Ссылка на подтверждение недействительна или уже использована."
+msgstr "The confirmation link is invalid or has already been used."
+
+#: .\templates\_account_backup\email.html:5 .\templates\includes\_nav.html:12
+msgid "Email-адреса"
+msgstr "Email addresses"
+
+#: .\templates\_account_backup\email.html:22
+msgid "Сделать основным"
+msgstr "Make it the main one"
+
+#: .\templates\_account_backup\email.html:23
+msgid "Отправить письмо подтверждения"
+msgstr "Send a confirmation email"
+
+#: .\templates\_account_backup\email.html:24
+msgid "Удалить"
+msgstr "Delete"
+
+#: .\templates\_account_backup\email.html:27
+msgid "Пока нет ни одного email-адреса."
+msgstr "There are no email addresses yet."
+
+#: .\templates\_account_backup\email.html:30
+msgid "Добавить новый email"
+msgstr "Add a new email"
+
+#: .\templates\_account_backup\email.html:34
+msgid "Добавить"
+msgstr "Add"
+
+#: .\templates\_account_backup\login.html:5
+msgid "Вход"
+msgstr "Input"
+
+#: .\templates\_account_backup\login.html:9
+#: .\templates\_account_backup\signup.html:11 .\templates\includes\_nav.html:19
+msgid "Войти"
+msgstr "Log in"
+
+#: .\templates\_account_backup\login.html:11
+msgid "Нет аккаунта?"
+msgstr "No account?"
+
+#: .\templates\_account_backup\login.html:11
+msgid "Зарегистрируйтесь"
+msgstr "No account?"
+
+#: .\templates\_account_backup\login.html:11 .\templates\includes\_nav.html:21
+msgid "Забыли пароль?"
+msgstr "Forgot password?"
+
+#: .\templates\_account_backup\login.html:11
+msgid "Восстановить"
+msgstr "Recover"
+
+#: .\templates\_account_backup\logout.html:5
+msgid "Выход"
+msgstr "Exit"
+
+#: .\templates\_account_backup\logout.html:6
+msgid "Вы действительно хотите выйти?"
+msgstr "Do you really want to get out?"
+
+#: .\templates\_account_backup\logout.html:9 .\templates\includes\_nav.html:17
+msgid "Выйти"
+msgstr "Log out"
+
+#: .\templates\_account_backup\password_change.html:5
+msgid "Смена пароля"
+msgstr "Password change"
+
+#: .\templates\_account_backup\password_change.html:6
+msgid "Текущий аккаунт:"
+msgstr "Current account:"
+
+#: .\templates\_account_backup\password_change.html:10
+msgid "Изменить пароль"
+msgstr "Change the password"
+
+#: .\templates\_account_backup\password_reset.html:5
+msgid "Восстановление пароля"
+msgstr "Password Recovery"
+
+#: .\templates\_account_backup\password_reset.html:7
+#: .\templates\includes\_nav.html:27 .\templates\includes\_nav.html:32
+msgid "Вы вошли как"
+msgstr "You are logged in as"
+
+#: .\templates\_account_backup\password_reset.html:8
+msgid "Можете отправить ссылку на сброс пароля."
+msgstr "You can send a link to reset your password."
+
+#: .\templates\_account_backup\password_reset.html:10
+msgid "Укажите адрес электронной почты для отправки ссылки на сброс."
+msgstr "Specify the email address to send the reset link."
+
+#: .\templates\_account_backup\password_reset.html:15
+msgid "Отправить ссылку"
+msgstr "Send a link"
+
+#: .\templates\_account_backup\password_reset_done.html:5
+#: .\templates\_account_backup\verification_sent.html:5
+msgid "Письмо отправлено"
+msgstr "The email has been sent"
+
+#: .\templates\_account_backup\password_reset_done.html:6
+msgid ""
+"Если указанный email зарегистрирован, мы отправили на него письмо со ссылкой "
+"для сброса пароля."
+msgstr ""
+"If the specified email address is registered, we have sent an email to it "
+"with a link to reset the password."
+
+#: .\templates\_account_backup\password_reset_from_key.html:5
+msgid "Установка нового пароля"
+msgstr "Setting a new password"
+
+#: .\templates\_account_backup\password_reset_from_key.html:7
+msgid "Ссылка недействительна или уже использована."
+msgstr "The link is invalid or has already been used."
+
+#: .\templates\_account_backup\password_reset_from_key.html:8
+msgid "Запросить новую ссылку"
+msgstr "Request a new link"
+
+#: .\templates\_account_backup\password_reset_from_key.html:13
+msgid "Сохранить новый пароль"
+msgstr "Save a new password"
+
+#: .\templates\_account_backup\password_reset_from_key_done.html:5
+msgid "Пароль изменён"
+msgstr "The password has been changed"
+
+#: .\templates\_account_backup\password_reset_from_key_done.html:6
+msgid "Ваш пароль успешно обновлён. Теперь вы можете"
+msgstr "Your password has been successfully updated. Now you can"
+
+#: .\templates\_account_backup\password_reset_from_key_done.html:6
+msgid "войти"
+msgstr "enter"
+
+#: .\templates\_account_backup\password_set.html:5
+msgid "Установить пароль"
+msgstr "Set a password"
+
+#: .\templates\_account_backup\password_set.html:9
+msgid "Сохранить пароль"
+msgstr "Save the password"
+
+#: .\templates\_account_backup\signup.html:5 .\templates\includes\_nav.html:20
+msgid "Регистрация"
+msgstr "Sign up"
+
+#: .\templates\_account_backup\signup.html:9
+msgid "Создать аккаунт"
+msgstr "Create an account"
+
+#: .\templates\_account_backup\signup.html:11
+msgid "Уже есть аккаунт?"
+msgstr "Do you already have an account?"
+
+#: .\templates\_account_backup\verification_sent.html:6
+msgid "Мы отправили письмо для подтверждения вашего email. Проверьте почту."
+msgstr "We have sent an email to confirm your email. Check your email."
+
+#: .\templates\account_settings.html:5
+msgid "Настройки аккаунта"
+msgstr "Account Settings"
+
+#: .\templates\account_settings.html:10
+msgid "Сохранить"
+msgstr "Save"
+
+#: .\templates\dashboard.html:5 .\templates\includes\_nav.html:9
+msgid "Личный кабинет"
+msgstr "Personal account"
+
+#: .\templates\dashboard.html:7
+msgid "Аккаунт"
+msgstr "Account"
+
+#: .\templates\dashboard.html:21
+msgid "Партнёрская программа"
+msgstr "Partner Program"
+
+#: .\templates\dashboard.html:28
+msgid "код ещё не сгенерирован"
+msgstr "the code has not been generated yet"
+
+#: .\templates\dashboard.html:31
+msgid "Привлечено партнёров:"
+msgstr "Attracted partners:"
+
+#: .\templates\dashboard.html:32
+msgid "Партнёрский баланс:"
+msgstr "Partner balance:"
+
+#: .\templates\home.html:5 .\templates\includes\_nav.html:7
+msgid "Главная"
+msgstr "Home"
+
+#: .\templates\home.html:6
+msgid "Минимальная стартовая страница."
+msgstr "Minimal starter page"
+
+#: .\templates\includes\_footer.html:6
+#, python-format
+msgid "© %(year)s Обменник для умных"
+msgstr "© %(year)s Smart Money Exchanger"
+
+#: .\templates\includes\_nav.html:10
+msgid "Настройки"
+msgstr "Settings"
+
+#: .\templates\includes\_nav.html:11
+msgid "Сменить пароль"
+msgstr "Change password"
+
+#: .\templates\includes\_nav.html:14
+msgid "Безопасность (2FA)"
+msgstr "Security (2FA)"
+
+#: .\templates\includes\_nav.html:16
+msgid "Удалить аккаунт"
+msgstr "Delete account"
+
+#: .\templates\includes\_nav.html:29
+msgid "Админка"
+msgstr "Admin"
+
+#: .\templates\includes\_nav.html:32
+msgid "Анонимный пользователь"
+msgstr "Guest"
+
+#: .\templates\security\2fa_setup.html:5
+msgid "Двухфакторная аутентификация (TOTP)"
+msgstr "Two-factor Authentication (TOTP)"
+
+#: .\templates\security\2fa_setup.html:8
+msgid "2FA уже включена. Можете перейти в"
+msgstr "2FA is already enabled. You can go to"
+
+#: .\templates\security\2fa_setup.html:8
+msgid "админку"
+msgstr "the admin panel"
+
+#: .\templates\security\2fa_setup.html:11
+msgid ""
+"Откройте приложение-аутентификатор (Google Authenticator / Authy / "
+"1Password) и отсканируйте QR:"
+msgstr ""
+"Open the authenticator application (Google Authenticator / Authy / "
+"1Password) and scan the QR:"
+
+#: .\templates\security\2fa_setup.html:17
+msgid "Введите 6-значный код из приложения:"
+msgstr "Enter the 6-digit code from the application:"

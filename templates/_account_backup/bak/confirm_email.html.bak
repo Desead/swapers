@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Подтверждение email — NewUser{% endblock %}
+{% block content %}
+  <h1>Подтверждение email</h1>
+  {% if confirmation %}
+    <p>Подтвердить адрес <strong>{{ confirmation.email_address.email }}</strong>?</p>
+    <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+      {% csrf_token %}
+      <button type="submit" class="btn">Подтвердить</button>
+    </form>
+  {% else %}
+    <p>Ссылка на подтверждение недействительна или уже использована.</p>
+  {% endif %}
+{% endblock %}

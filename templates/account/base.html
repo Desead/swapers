@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{# Заголовок: allauth задаёт head_title в дочерних шаблонах — прокинем его в <title> #}
+{% block title %}{% block head_title %}{% endblock %}{% endblock %}
+<p>11111111111111111111</p>
+{# Контент: дочерние шаблоны allauth переопределяют блок content #}
+{% block content %}{% endblock %}
+
+{# Хвост страницы: некоторые шаблоны allauth используют extra_body — прокинем его в наш extra_js #}
+{% block extra_js %}
+  {% block extra_body %}{% endblock %}
+  {{ block.super }}
+{% endblock %}

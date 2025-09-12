@@ -9,6 +9,7 @@ from app_main.views_security import csp_report
 # берём префикс через сервис (с кэшем); если таблицы ещё нет — падаем в "admin"
 try:
     from app_main.services.site_setup import get_admin_prefix
+
     ADMIN_PREFIX = get_admin_prefix()
 except Exception:
     ADMIN_PREFIX = "admin"
@@ -55,6 +56,7 @@ urlpatterns = [
 
     # Корень сайта редиректит на актуальный язык
     path("", _root_redirect_to_language, name="root_redirect"),
+    path("rosetta/", include("rosetta.urls"))
 ]
 
 # Пользовательские маршруты — под префиксом языка

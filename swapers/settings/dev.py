@@ -8,6 +8,8 @@ DEFAULT_FROM_EMAIL = "dev@localhost"
 
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http"
 
+INSTALLED_APPS += ["rosetta"]
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
