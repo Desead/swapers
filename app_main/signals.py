@@ -8,8 +8,12 @@ from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.conf import settings
+from django.utils import translation
+from allauth.account.signals import user_logged_in, user_signed_up
 
 from app_main.models import SiteSetup
+
+
 
 # allauth: сигналы и модель EmailAddress
 try:
@@ -147,5 +151,38 @@ def invalidate_site_setup_cache(sender, instance, **kwargs):
     # На текущем процессе сразу обновим имя сервиса для TOTP
     try:
         settings.OTP_TOTP_ISSUER = instance.otp_issuer
+    except Exception:
+        pass
+
+
+# --- Синхронизация языка при логине/регистрации
+# Берем ключ языка из django.utils.translation, а если IDE/стабы не знают —fallback.
+LANGUAGE_SESSION_KEY = getattr(translation, "LANGUAGE_SESSION_KEY", "django_language")
+def _norm(code: str | None) -> str:
+    if not code:
+        base = getattr(settings, "LANGUAGE_CODE", "ru")
+        return base.split("-")[0]
+    return code.split("-")[0]
+
+@receiver(user_signed_up)
+def _on_signup(request, user, **kwargs):
+    try:
+        lang = _norm(getattr(request, "LANGUAGE_CODE", None))
+        if getattr(user, "language", None) != lang:
+            user.language = lang
+            user.save(update_fields=["language"])
+    except Exception:
+        pass
+
+@receiver(user_logged_in)
+def _on_login(request, user, **kwargs):
+    try:
+        lang = _norm(getattr(user, "language", None))
+        # Активируем язык прямо сейчас для текущего запроса
+        translation.activate(lang)
+        request.LANGUAGE_CODE = lang
+        # И запоминаем в сессии, чтобы LocaleMiddleware подхватил язык дальше
+        if hasattr(request, "session"):
+            request.session[LANGUAGE_SESSION_KEY] = lang
     except Exception:
         pass

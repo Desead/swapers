@@ -5,10 +5,10 @@ from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django import forms
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils.safestring import mark_safe
 
 from .models import SiteSetup
-from django.utils.translation import gettext_lazy as _
-
+from django.utils.translation import gettext_lazy as _  # ленивый перевод для атрибутов классов
 
 User = get_user_model()
 
@@ -25,7 +25,7 @@ class UserCreationForm(forms.ModelForm):
         p1 = self.cleaned_data.get("password1")
         p2 = self.cleaned_data.get("password2")
         if p1 and p2 and p1 != p2:
-            raise forms.ValidationError("Пароли не совпадают.")
+            raise forms.ValidationError(_("Пароли не совпадают."))
         return p2
 
     def save(self, commit=True):
@@ -70,10 +70,10 @@ class UserAdmin(BaseUserAdmin):
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Персональные данные", {"fields": ("first_name", "last_name", "phone", "company")}),
-        ("Партнёрская программа", {"fields": ("referred_by", "referral_code", "count", "balance")}),
-        ("Права", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        ("Даты", {"fields": ("last_login", "date_joined")}),
+        (_("Персональные данные"), {"fields": ("first_name", "last_name", "phone", "company",'language')}),
+        (_("Партнёрская программа"), {"fields": ("referred_by", "referral_code", "count", "balance")}),
+        (_("Права"), {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        (_("Даты"), {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
         (None, {
@@ -89,12 +89,9 @@ class SiteSetupAdmin(admin.ModelAdmin):
 
     # Блок с полями, изменения которых требуют рестарта
     fieldsets = (
-        ("Требует перезагрузки сервера", {
+        (_("Требует перезагрузки сервера"), {
             "fields": ("admin_path", "otp_issuer"),
-            "description": (
-                "Изменения этих полей вступят в силу для всех процессов только после "
-                "<strong>перезапуска приложения/процесса</strong>."
-            ),
+            "description": mark_safe(_("Изменения этих полей вступят в силу для всех процессов только после <strong>перезапуска приложения/процесса</strong>.")),
         }),
     )
 
@@ -111,11 +108,11 @@ class SiteSetupAdmin(admin.ModelAdmin):
         url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
         return redirect(url)
 
-    # баннер-подсказка на форме
-    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
-        messages.warning(
-            request,
-            _("Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
-            "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах."),
-        )
-        return super().changeform_view(request, object_id, form_url, extra_context)
+    # баннер-подсказка на форме (если понадобится)
+    # def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+    #     messages.warning(
+    #         request,
+    #         _("Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
+    #           "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах."),
+    #     )
+    #     return super().changeform_view(request, object_id, form_url, extra_context)

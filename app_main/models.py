@@ -6,8 +6,12 @@ from django.utils import timezone
 from django.core.validators import validate_email
 from django.core.validators import RegexValidator
 from django.core.exceptions import ValidationError
-from django.utils.translation import gettext_lazy as _
+from django.conf import settings
 
+# ленивые строки — для verbose_name, help_text, labels и т.п.
+from django.utils.translation import gettext_lazy as _
+# обычный gettext — чтобы вернуть уже готовую str в __str__
+from django.utils.translation import gettext as _gettext
 
 
 class UserManager(BaseUserManager):
@@ -61,6 +65,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     count = models.PositiveIntegerField(verbose_name=_("Партнёров привлечено"), default=0)
     balance = models.DecimalField(verbose_name=_("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
 
+    # НОВОЕ: предпочитаемый язык пользователя
+    language = models.CharField(
+        verbose_name=_("Язык общения"),
+        max_length=8,
+        choices=[(code, name) for code, name in settings.LANGUAGES],
+        default=(settings.LANGUAGE_CODE.split("-")[0] if hasattr(settings, "LANGUAGE_CODE") else "ru"),
+    )
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []
 
@@ -94,19 +105,38 @@ class SiteSetup(models.Model):
     # сторож для единственности
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
 
-    admin_path = models.CharField(verbose_name=_("Путь к админке"), max_length=50, default="admin",
-                                  validators=[RegexValidator(regex=r"^[a-z0-9-]+$", message=_("Разрешены только маленькие латинские буквы,цифры и дефис"), )],
-                                  help_text=_("Например: supera-dmin"), )
-    otp_issuer = models.CharField(verbose_name=_("Название сервиса для 2FA"), max_length=64, default="Swapers", validators=[
-        RegexValidator(regex=r"^[A-Za-z0-9 ._-]+$", message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."), )],
-                                  help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'), )
+    admin_path = models.CharField(
+        verbose_name=_("Путь к админке"),
+        max_length=50,
+        default="admin",
+        validators=[
+            RegexValidator(
+                regex=r"^[a-z0-9-]+$",
+                message=_("Разрешены только маленькие латинские буквы,цифры и дефис"),
+            )
+        ],
+        help_text=_("Например: supera-dmin"),
+    )
+    otp_issuer = models.CharField(
+        verbose_name=_("Название сервиса для 2FA"),
+        max_length=64,
+        default="Swapers",
+        validators=[
+            RegexValidator(
+                regex=r"^[A-Za-z0-9 ._-]+$",
+                message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
+            )
+        ],
+        help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
+    )
 
     class Meta:
         verbose_name = _("Настройки сайта")
         verbose_name_plural = _("Настройки сайта")
 
     def __str__(self) -> str:
-        return _("Настройки сайта")
+        # Возвращаем уже вычисленную строку, не lazy-объект
+        return _gettext("Настройки сайта")
 
     def clean(self):
         # Бизнес-валидация: запрет некоторых префиксов.

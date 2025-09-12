@@ -8,9 +8,9 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-12 14:53+0300\n"
-"PO-Revision-Date: 2025-09-11 23:30+0300\n"
-"Last-Translator: \n"
+"POT-Creation-Date: 2025-09-12 17:22+0300\n"
+"PO-Revision-Date: 2025-09-12 17:24+0000\n"
+"Last-Translator:   <news-piter@mail.ru>\n"
 "Language-Team: \n"
 "Language: en\n"
 "MIME-Version: 1.0\n"
@@ -18,6 +18,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Generator: Poedit 3.7\n"
+"X-Translated-Using: django-rosetta 0.10.2\n"
 
 #: .\app_main\admin.py:17
 msgid "Пароль"
@@ -27,106 +28,133 @@ msgstr "Password"
 msgid "Подтверждение пароля"
 msgstr "Password confirmation"
 
+#: .\app_main\admin.py:28
+msgid "Пароли не совпадают."
+msgstr ""
+
 #: .\app_main\admin.py:40
 msgid "Хэш пароля"
 msgstr "Password hash"
 
-#: .\app_main\admin.py:118
-msgid ""
-"Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
-"требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех "
-"воркерах."
+#: .\app_main\admin.py:73
+msgid "Персональные данные"
 msgstr ""
-"Attention: The changes to the \"Admin Panel path\" and \"Service name for "
-"2FA (issuer)\" require a reboot of the application/process to take effect in "
-"all workshops."
 
-#: .\app_main\models.py:18
+#: .\app_main\admin.py:74 .\templates\dashboard.html:21
+msgid "Партнёрская программа"
+msgstr "Partner Program"
+
+#: .\app_main\admin.py:75
+msgid "Права"
+msgstr ""
+
+#: .\app_main\admin.py:76
+msgid "Даты"
+msgstr ""
+
+#: .\app_main\admin.py:92
+msgid "Требует перезагрузки сервера"
+msgstr "Requires a reboot of the server"
+
+#: .\app_main\admin.py:94
+msgid ""
+"Изменения этих полей вступят в силу для всех процессов только после "
+"<strong>перезапуска приложения/процесса</strong>."
+msgstr ""
+"Changes to these fields will take effect for all processes only after "
+"restarting the application/process</strong>."
+
+#: .\app_main\models.py:22
 msgid "Email обязателен"
 msgstr "Email is required"
 
-#: .\app_main\models.py:37
+#: .\app_main\models.py:41
 msgid "Суперпользователь должен иметь is_staff=True."
 msgstr "The superuser must have is_staff=True."
 
-#: .\app_main\models.py:39
+#: .\app_main\models.py:43
 msgid "Суперпользователь должен иметь is_superuser=True."
 msgstr "The superuser must have is_superuser=True."
 
-#: .\app_main\models.py:45
+#: .\app_main\models.py:49
 msgid "Email"
 msgstr "Email"
 
-#: .\app_main\models.py:46
+#: .\app_main\models.py:50
 msgid "Имя"
 msgstr "Name"
 
-#: .\app_main\models.py:47
+#: .\app_main\models.py:51
 msgid "Фамилия"
 msgstr "Surname"
 
-#: .\app_main\models.py:48
+#: .\app_main\models.py:52
 msgid "Телефон"
 msgstr "Telephone"
 
-#: .\app_main\models.py:49
+#: .\app_main\models.py:53
 msgid "Компания"
 msgstr "Company"
 
-#: .\app_main\models.py:58
+#: .\app_main\models.py:62
 msgid "Кто привёл"
-msgstr "Referal"
+msgstr "Referral"
 
-#: .\app_main\models.py:60
+#: .\app_main\models.py:64
 msgid "Партнёрский код"
-msgstr "Referal code"
+msgstr "Referral code"
 
-#: .\app_main\models.py:61
+#: .\app_main\models.py:65
 msgid "Партнёров привлечено"
 msgstr "Total partners"
 
-#: .\app_main\models.py:62
+#: .\app_main\models.py:66
 msgid "Партнёрский баланс, $"
 msgstr "Partner balance, $"
 
 #: .\app_main\models.py:70
+msgid "Язык общения"
+msgstr "Communication language"
+
+#: .\app_main\models.py:81
 msgid "Пользователь"
 msgstr "User"
 
-#: .\app_main\models.py:71
+#: .\app_main\models.py:82
 msgid "Пользователи"
 msgstr "Users"
 
-#: .\app_main\models.py:97
+#: .\app_main\models.py:109
 msgid "Путь к админке"
 msgstr "The path to the admin area"
 
-#: .\app_main\models.py:98
+#: .\app_main\models.py:115
 msgid "Разрешены только маленькие латинские буквы,цифры и дефис"
 msgstr "Only small Latin letters, numbers and hyphens are allowed"
 
-#: .\app_main\models.py:99
+#: .\app_main\models.py:118
 msgid "Например: supera-dmin"
 msgstr "For example: supera-dmin"
 
-#: .\app_main\models.py:100
+#: .\app_main\models.py:121
 msgid "Название сервиса для 2FA"
 msgstr "Name of the service for 2FA"
 
-#: .\app_main\models.py:101
+#: .\app_main\models.py:127
 msgid "Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."
 msgstr ""
-"Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
+"Latin letters, numbers, spaces, periods, hyphens, underscores are "
+"acceptable."
 
-#: .\app_main\models.py:102
+#: .\app_main\models.py:130
 msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
 msgstr "Displayed in the authenticator application (for example: \"Swapers\")."
 
-#: .\app_main\models.py:105 .\app_main\models.py:106 .\app_main\models.py:109
+#: .\app_main\models.py:134 .\app_main\models.py:135
 msgid "Настройки сайта"
 msgstr "Site Settings"
 
-#: .\app_main\models.py:114
+#: .\app_main\models.py:144
 msgid "Этот путь зарезервирован системой."
 msgstr "This path is reserved by the system."
 
@@ -187,7 +215,8 @@ msgstr ""
 
 #: .\templates\_account_backup\account_delete.html:9
 msgid ""
-"Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin."
+"Удаление суперпользователя запрещено из интерфейса. Используйте Django "
+"Admin."
 msgstr ""
 "Deleting a superuser is prohibited from the interface. Use Django Admin."
 
@@ -264,7 +293,8 @@ msgid "Вход"
 msgstr "Input"
 
 #: .\templates\_account_backup\login.html:9
-#: .\templates\_account_backup\signup.html:11 .\templates\includes\_nav.html:19
+#: .\templates\_account_backup\signup.html:11
+#: .\templates\includes\_nav.html:19
 msgid "Войти"
 msgstr "Log in"
 
@@ -336,8 +366,8 @@ msgstr "The email has been sent"
 
 #: .\templates\_account_backup\password_reset_done.html:6
 msgid ""
-"Если указанный email зарегистрирован, мы отправили на него письмо со ссылкой "
-"для сброса пароля."
+"Если указанный email зарегистрирован, мы отправили на него письмо со ссылкой"
+" для сброса пароля."
 msgstr ""
 "If the specified email address is registered, we have sent an email to it "
 "with a link to reset the password."
@@ -402,13 +432,8 @@ msgstr "Account Settings"
 msgid "Сохранить"
 msgstr "Save"
 
-#: .\templates\allauth\elements\button.html:3
-#: .\templates\allauth\elements\button.html:5
-msgid "Continue"
-msgstr ""
-
-#: .\templates\allauth\elements\form.html:23
-msgid "Submit"
+#: .\templates\admin\base_site.html:5
+msgid "Admin"
 msgstr ""
 
 #: .\templates\dashboard.html:5 .\templates\includes\_nav.html:9
@@ -418,10 +443,6 @@ msgstr "Personal account"
 #: .\templates\dashboard.html:7
 msgid "Аккаунт"
 msgstr "Account"
-
-#: .\templates\dashboard.html:21
-msgid "Партнёрская программа"
-msgstr "Partner Program"
 
 #: .\templates\dashboard.html:28
 msgid "код ещё не сгенерирован"
@@ -501,3 +522,12 @@ msgstr ""
 #: .\templates\security\2fa_setup.html:17
 msgid "Введите 6-значный код из приложения:"
 msgstr "Enter the 6-digit code from the application:"
+
+#~ msgid ""
+#~ "Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
+#~ "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех "
+#~ "воркерах."
+#~ msgstr ""
+#~ "Attention: The changes to the \"Admin Panel path\" and \"Service name for "
+#~ "2FA (issuer)\" require a reboot of the application/process to take effect in"
+#~ " all workshops."

@@ -140,6 +140,8 @@ ACCOUNT_RATE_LIMITS = {
     "reset_password": "5/m/ip,3/m/key",
     "reset_password_from_key": "10/m/ip",
 }
+ACCOUNT_ADAPTER = "app_main.allauth_adapter.AccountAdapter"
+
 # Куда слать после успешного входа
 LOGIN_REDIRECT_URL = "/dashboard/"
 
