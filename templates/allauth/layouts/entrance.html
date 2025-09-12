@@ -1,0 +1,11 @@
+{% extends "allauth/layouts/base.html" %}
+{% load i18n %}
+
+{# некоторые страницы задают свой {% block head_title %} — оставляем как есть #}
+
+{% block body %}
+  <div class="container" style="max-width:520px">
+    {# сам контент страницы (login/signup и пр.) сюда «падает» #}
+    {% block content %}{% endblock %}
+  </div>
+{% endblock %}

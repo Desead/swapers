@@ -1,0 +1,17 @@
+{% load i18n %}
+<div style="margin:10px 0">
+  <label for="{{ field.id_for_label }}" style="display:block; margin-bottom:4px">
+    {{ field.label }}
+  </label>
+  {{ field }}
+  {% if field.help_text %}
+    <div class="muted" style="margin-top:4px">{{ field.help_text }}</div>
+  {% endif %}
+  {% if field.errors %}
+    <ul class="messages" style="margin-top:6px">
+      {% for e in field.errors %}
+        <li>{{ e }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>

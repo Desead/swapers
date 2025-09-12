@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{# <title> — allauth прокидывает сюда свой head_title #}
+{% block title %}{% block head_title %}{% endblock %}{% endblock %}
+
+{# если какие-то страницы добавят что-то в <head> — пропустим #}
+{% block extra_head %}{{ block.super }}{% endblock %}
+
+{# ключевой момент: тело allauth → в наш блок content #}
+{% block content %}
+  {% block body %}{% endblock %}
+{% endblock %}
+
+{# хвост страницы allauth (скрипты) — в наш extra_js #}
+{% block extra_js %}
+  {% block extra_body %}{% endblock %}
+  {{ block.super }}
+{% endblock %}

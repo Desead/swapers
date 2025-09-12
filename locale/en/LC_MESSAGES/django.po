@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-11 23:00+0300\n"
+"POT-Creation-Date: 2025-09-12 14:53+0300\n"
 "PO-Revision-Date: 2025-09-11 23:30+0300\n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -115,7 +115,8 @@ msgstr "Name of the service for 2FA"
 
 #: .\app_main\models.py:101
 msgid "Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."
-msgstr "Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
+msgstr ""
+"Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
 
 #: .\app_main\models.py:102
 msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
@@ -138,8 +139,10 @@ msgid "Проверьте форму — есть ошибки."
 msgstr "Check the form — there are errors."
 
 #: .\app_main\views.py:51
-msgid "Удаление суперпользователя запрещено из интерфейса. Используйте админку."
-msgstr "Deleting a superuser is not allowed from the interface. Use the admin area."
+msgid ""
+"Удаление суперпользователя запрещено из интерфейса. Используйте админку."
+msgstr ""
+"Deleting a superuser is not allowed from the interface. Use the admin area."
 
 #: .\app_main\views.py:59
 msgid "Подтверждение не совпало. Введите слово DELETE."
@@ -179,11 +182,14 @@ msgstr "Attention!"
 
 #: .\templates\_account_backup\account_delete.html:6
 msgid "Действие необратимо. Будут удалены ваш аккаунт и связанные данные."
-msgstr "The action is irreversible. Your account and related data will be deleted."
+msgstr ""
+"The action is irreversible. Your account and related data will be deleted."
 
 #: .\templates\_account_backup\account_delete.html:9
-msgid "Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin."
-msgstr "Deleting a superuser is prohibited from the interface. Use Django Admin."
+msgid ""
+"Удаление суперпользователя запрещено из интерфейса. Используйте Django Admin."
+msgstr ""
+"Deleting a superuser is prohibited from the interface. Use Django Admin."
 
 #: .\templates\_account_backup\account_delete.html:14
 msgid "Подтвердите пароль:"
@@ -202,8 +208,11 @@ msgid "Аккаунт не активен"
 msgstr "The account is inactive"
 
 #: .\templates\_account_backup\account_inactive.html:6
-msgid "Ваш аккаунт не активирован. Проверьте почту или обратитесь к администратору."
-msgstr "Your account has not been activated. Check your email or contact your administrator."
+msgid ""
+"Ваш аккаунт не активирован. Проверьте почту или обратитесь к администратору."
+msgstr ""
+"Your account has not been activated. Check your email or contact your "
+"administrator."
 
 #: .\templates\_account_backup\confirm_email.html:5
 msgid "Подтверждение email"
@@ -393,6 +402,15 @@ msgstr "Account Settings"
 msgid "Сохранить"
 msgstr "Save"
 
+#: .\templates\allauth\elements\button.html:3
+#: .\templates\allauth\elements\button.html:5
+msgid "Continue"
+msgstr ""
+
+#: .\templates\allauth\elements\form.html:23
+msgid "Submit"
+msgstr ""
+
 #: .\templates\dashboard.html:5 .\templates\includes\_nav.html:9
 msgid "Личный кабинет"
 msgstr "Personal account"
@@ -416,6 +434,12 @@ msgstr "Attracted partners:"
 #: .\templates\dashboard.html:32
 msgid "Партнёрский баланс:"
 msgstr "Partner balance:"
+
+#: .\templates\home.html:3
+#, fuzzy
+#| msgid "Главная"
+msgid "Главная — NewUser"
+msgstr "Home"
 
 #: .\templates\home.html:5 .\templates\includes\_nav.html:7
 msgid "Главная"
