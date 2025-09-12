@@ -143,6 +143,14 @@ class SiteSetup(models.Model):
         help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
     )
 
+    # --- поле для robots.txt ---
+    robots_txt = models.TextField(
+        verbose_name=_("Содержимое robots.txt"),
+        help_text=_("Текст, который будет отдан по /robots.txt. Данные обновляются раз в 1 час. Строка 'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."),
+        blank=True,
+        default="User-agent: *\nDisallow:\n",
+    )
+
     class Meta:
         verbose_name = _("Настройки сайта")
         verbose_name_plural = _("Настройки сайта")
@@ -197,6 +205,7 @@ class SiteSetup(models.Model):
                 "otp_issuer": "Swapers",
                 "domain": "swap.com",
                 "domain_view": "Swap",
+                "robots_txt": "User-agent: *\nDisallow:\n",
             },
         )
         return obj

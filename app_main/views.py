@@ -4,6 +4,13 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
+import re
+from django.http import HttpResponse
+from django.views.decorators.http import require_GET
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
+
+from .models import SiteSetup
 
 
 def home(request):
@@ -70,3 +77,27 @@ def account_delete(request):
         return redirect("home")
 
     return render(request, "account/account_delete.html")
+
+
+@require_GET
+@vary_on_headers("Host")
+@cache_page(60 * 60)  # 1 hour
+def robots_txt(request):
+    setup = SiteSetup.get_solo()
+    base = (getattr(setup, "robots_txt", "") or "")
+
+    # Нормализуем переносы строк
+    text = base.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Убираем уже вписанные (вручную) строки Sitemap:, чтобы не дублировать
+    lines = [ln for ln in text.split("\n") if not re.match(r"(?i)^\s*sitemap\s*:", ln)]
+
+    # Текущая схема/хост
+    scheme = "https" if request.is_secure() else "http"
+    host = request.get_host() or setup.domain
+    sitemap_url = f"{scheme}://{host}/sitemap.xml"
+
+    lines.append(f"Sitemap: {sitemap_url}")
+
+    body = "\n".join(ln for ln in lines if ln.strip()).strip() + "\n"
+    return HttpResponse(body, content_type="text/plain; charset=utf-8")

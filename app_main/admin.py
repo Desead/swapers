@@ -1,4 +1,4 @@
-from django.contrib import admin, messages
+from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
@@ -7,12 +7,15 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.contrib.sites.models import Site
+from django.utils.translation import gettext_lazy as _
+import django.contrib.sites.admin  # НЕ УДАЛЯТЬ — чтобы модель "Site" зарегистрировалась, затем мы её скрываем.
+
 from .models import SiteSetup
-from django.utils.translation import gettext_lazy as _  # ленивый перевод для атрибутов классов
-import django.contrib.sites.admin # НЕ УДАЛЯТЬ. СТРОКА НУЖНА ЧТОБЫ МОДЕЛЬ ЗАРЕГИСТРИРОВАЛАСЬ В АДМИНКЕ, И ПОСЛЕ МЫ МОЖЕМ ЕЁ СКРЫТЬ.
 
 User = get_user_model()
 
+
+# -------- Пользователи --------
 
 class UserCreationForm(forms.ModelForm):
     password1 = forms.CharField(label=_("Пароль"), widget=forms.PasswordInput)
@@ -26,7 +29,8 @@ class UserCreationForm(forms.ModelForm):
         p1 = self.cleaned_data.get("password1")
         p2 = self.cleaned_data.get("password2")
         if p1 and p2 and p1 != p2:
-            raise forms.ValidationError(_("Пароли не совпадают."))
+            from django.core.exceptions import ValidationError
+            raise ValidationError(_("Пароли не совпадают."))
         return p2
 
     def save(self, commit=True):
@@ -44,7 +48,7 @@ class UserChangeForm(forms.ModelForm):
         model = User
         fields = (
             "email", "password",
-            "first_name", "last_name", "phone", "company",
+            "first_name", "last_name", "phone", "company", "language",
             "is_active", "is_staff", "is_superuser", "groups", "user_permissions",
             "referred_by", "referral_code", "count", "balance",
         )
@@ -71,7 +75,7 @@ class UserAdmin(BaseUserAdmin):
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        (_("Персональные данные"), {"fields": ("first_name", "last_name", "phone", "company",'language')}),
+        (_("Персональные данные"), {"fields": ("first_name", "last_name", "phone", "company", "language")}),
         (_("Партнёрская программа"), {"fields": ("referred_by", "referral_code", "count", "balance")}),
         (_("Права"), {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         (_("Даты"), {"fields": ("last_login", "date_joined")}),
@@ -84,14 +88,31 @@ class UserAdmin(BaseUserAdmin):
     )
 
 
+# -------- Настройки сайта / robots.txt --------
+
+class SiteSetupAdminForm(forms.ModelForm):
+    class Meta:
+        model = SiteSetup
+        fields = "__all__"
+        widgets = {
+            "robots_txt": forms.Textarea(attrs={
+                "rows": 16,
+                "style": "font-family:monospace; white-space:pre; font-size:13px;",
+            }),
+        }
+
+
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
+    form = SiteSetupAdminForm
+    save_on_top = True
+
     list_display = ("domain", "domain_view", "admin_path", "otp_issuer")
+    readonly_fields = ("robots_txt_link",)
 
     fieldsets = (
         (_("Общие"), {
             "fields": ("domain", "domain_view"),
-            "description": None,
         }),
         (_("Требует перезагрузки сервера"), {
             "fields": ("admin_path", "otp_issuer"),
@@ -100,9 +121,21 @@ class SiteSetupAdmin(admin.ModelAdmin):
                   "<strong>перезапуска приложения/процесса</strong>.")
             ),
         }),
+        (_("SEO / robots.txt"), {
+            "fields": ("robots_txt_link", "robots_txt"),
+            "description": mark_safe(_(
+                "Задайте полный текст ответа <code>/robots.txt</code>. "
+                "Строка вида <code>Sitemap: https://&lt;host&gt;/sitemap.xml</code> "
+                "добавляется автоматически во view."
+            )),
+        }),
     )
 
-    # запрещаем добавление/удаление — это синглтон
+    def robots_txt_link(self, obj):
+        return mark_safe('<a href="/robots.txt" target="_blank" rel="noopener">/robots.txt ↗</a>')
+    robots_txt_link.short_description = _("Текущий robots.txt")
+
+    # это синглтон — добавлять/удалять нельзя
     def has_add_permission(self, request):
         return False
 
@@ -114,15 +147,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
         obj = SiteSetup.get_solo()
         url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
         return redirect(url)
-
-    # баннер-подсказка на форме (если понадобится)
-    # def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
-    #     messages.warning(
-    #         request,
-    #         _("Внимание: изменения «Путь к админке» и «Название сервиса для 2FA (issuer)» "
-    #           "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах."),
-    #     )
-    #     return super().changeform_view(request, object_id, form_url, extra_context)
 
 
 # Скрываем стандартную модель "Сайты" из админки

@@ -1,5 +1,6 @@
 from .base import *
 from pathlib import Path
+
 LOG_DIR = Path(BASE_DIR, "logs")
 LOG_DIR.mkdir(exist_ok=True)
 
@@ -45,6 +46,9 @@ CSRF_COOKIE_SECURE = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+'''
+Примечание: если у тебя проект за обратным прокси (HTTPS терминируется на фронте), убедись, что настроены SECURE_PROXY_SSL_HEADER и при необходимости USE_X_FORWARDED_HOST, чтобы request.is_secure() и request.get_host() отдавали корректные значения
+'''
 
 # Логи
 LOGGING = {
