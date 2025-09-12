@@ -6,9 +6,10 @@ from django import forms
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
-
+from django.contrib.sites.models import Site
 from .models import SiteSetup
 from django.utils.translation import gettext_lazy as _  # ленивый перевод для атрибутов классов
+import django.contrib.sites.admin # НЕ УДАЛЯТЬ. СТРОКА НУЖНА ЧТОБЫ МОДЕЛЬ ЗАРЕГИСТРИРОВАЛАСЬ В АДМИНКЕ, И ПОСЛЕ МЫ МОЖЕМ ЕЁ СКРЫТЬ.
 
 User = get_user_model()
 
@@ -85,13 +86,19 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
-    list_display = ("admin_path", "otp_issuer")
+    list_display = ("domain", "domain_view", "admin_path", "otp_issuer")
 
-    # Блок с полями, изменения которых требуют рестарта
     fieldsets = (
+        (_("Общие"), {
+            "fields": ("domain", "domain_view"),
+            "description": None,
+        }),
         (_("Требует перезагрузки сервера"), {
             "fields": ("admin_path", "otp_issuer"),
-            "description": mark_safe(_("Изменения этих полей вступят в силу для всех процессов только после <strong>перезапуска приложения/процесса</strong>.")),
+            "description": mark_safe(
+                _("Изменения этих полей вступят в силу для всех процессов только после "
+                  "<strong>перезапуска приложения/процесса</strong>.")
+            ),
         }),
     )
 
@@ -116,3 +123,10 @@ class SiteSetupAdmin(admin.ModelAdmin):
     #           "требуют перезагрузки приложения/процесса, чтобы вступить в силу во всех воркерах."),
     #     )
     #     return super().changeform_view(request, object_id, form_url, extra_context)
+
+
+# Скрываем стандартную модель "Сайты" из админки
+try:
+    admin.site.unregister(Site)
+except admin.sites.NotRegistered:
+    pass
