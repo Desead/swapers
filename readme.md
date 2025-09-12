@@ -19,7 +19,7 @@ python -m venv .venv
 . .venv/Scripts/activate  # Windows (PowerShell: .venv\Scripts\Activate.ps1)
 python.exe -m pip install --upgrade pip
 pip install -r .\requirements.txt
-python .\manage.py makemigrations       
+python .\manage.py makemigrations
 python .\manage.py migrate
 python .\manage.py createsuperuser
 python .\manage.py init_roles

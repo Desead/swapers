@@ -3,6 +3,9 @@ from pathlib import Path
 LOG_DIR = Path(BASE_DIR, "logs")
 LOG_DIR.mkdir(exist_ok=True)
 
+DEBUG = False
+LANGUAGE_COOKIE_SECURE = True
+
 # ВПИШИ СВОЙ ДОМЕН
 ALLOWED_HOSTS = ["swapers.example.com", "www.swapers.example.com"]
 CSRF_TRUSTED_ORIGINS = ["https://swapers.example.com", "https://www.swapers.example.com"]
