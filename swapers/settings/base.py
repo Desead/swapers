@@ -99,7 +99,7 @@ TEMPLATES = [{
             "django.template.context_processors.media",
             "django.template.context_processors.tz",
             "app_main.context_processors.site_settings",
-
+            "app_main.context_processors.seo_meta",
         ],
     },
 }]

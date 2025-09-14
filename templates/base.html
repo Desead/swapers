@@ -1,5 +1,4 @@
 {% load static i18n i18n_extras %}
-{% get_current_language as CUR_LANG %}
 <!doctype html>
 <html lang="{{ CUR_LANG }}">
 <head>
@@ -7,18 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}NewUser{% endblock %}</title>
 
-    {# hreflang: x-default на корень (пусть редиректит по предпочитаемому языку) #}
-    {% get_available_languages as LANGS %}
-    <link rel="alternate" hreflang="x-default" href="{{ request.scheme }}://{{ request.get_host }}/">
-    {% for code, name in LANGS %}
-        <link rel="alternate" hreflang="{{ code }}"
-              href="{{ request.scheme }}://{{ request.get_host }}{% switch_lang_url code %}">
+    <link rel="canonical" href="{{ CANONICAL_URL }}">
+    {% for code, href in HREFLANGS.items %}
+        <link rel="alternate" hreflang="{{ code }}" href="{{ href }}">
     {% endfor %}
+    <link rel="alternate" hreflang="x-default" href="{{ HREFLANGS.en|default:CANONICAL_URL }}">
 
-    {# базовые стили из static/ #}
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
-
-    {# сюда можно подключать страничные стили/скрипты #}
     {% block extra_head %}{% endblock %}
 </head>
 <body>

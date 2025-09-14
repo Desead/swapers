@@ -1,19 +1,22 @@
-import django.contrib.sites.admin  # НЕ УДАЛЯТЬ
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django import forms
-from django.conf import settings
-from django.urls import reverse
-from django.contrib.sites.models import Site
-from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _
 from django.shortcuts import redirect
+from django.urls import reverse
+from django.utils.safestring import mark_safe
+from django.contrib.sites.models import Site
+from django.conf import settings
+from django.utils.translation import gettext_lazy as _
+
 from .models import SiteSetup
+import django.contrib.sites.admin  # не удалять
 
 User = get_user_model()
 
+
+# ======= User admin (без изменений) =======
 
 class UserCreationForm(forms.ModelForm):
     password1 = forms.CharField(label=_("Пароль"), widget=forms.PasswordInput)
@@ -85,51 +88,127 @@ class UserAdmin(BaseUserAdmin):
     )
 
 
+# ======= SiteSetup admin =======
+
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
-    list_display = ("domain", "domain_view", "admin_path", "otp_issuer", "block_indexing")
+    save_on_top = True
 
+    readonly_fields = ("updated_at",)
+
+    # ПЕРВЫЙ блок раскрыт, остальные свёрнуты
     fieldsets = (
-        (_("Общие"), {
-            "fields": ("domain", "domain_view"),
-            "description": None,
+        (_("Главная страница"), {
+            "classes": ("wide",),
+            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode",),
+
         }),
+        (_("Брендинг"), {
+            "classes": ("wide", "collapse"),
+            "fields": (("logo", "favicon"),),
+        }),
+
+        (_("SEO / robots.txt"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                "block_indexing",
+                "robots_txt",
+
+                "seo_default_description",
+                "seo_default_keywords",
+                "seo_default_title",
+            ),
+            "description": "",  # дополним ссылками ниже
+        }),
+
+        (_("График работы (UTC)"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("open_time_mon", "close_time_mon"),
+                ("open_time_tue", "close_time_tue"),
+                ("open_time_wed", "close_time_wed"),
+                ("open_time_thu", "close_time_thu"),
+                ("open_time_fri", "close_time_fri"),
+                ("open_time_sat", "close_time_sat"),
+                ("open_time_sun", "close_time_sun"),
+
+            ),
+            "description": mark_safe(
+                _("Время хранится в формате UTC. Значения по умолчанию соответствуют графику по Москве <strong>(пн–пт 10:00–22:00, сб–вс 12:00–20:00)</strong>. При изменении учитывайте разницу с МСК (UTC+3).")
+            ),
+        }),
+
+        (_("Комиссии и списки"), {
+            "classes": ("wide", "collapse"),
+            "fields": (("stablecoins", "fee_percent",),),
+        }),
+
+        (_("Интеграции: XML и вставка в <head>"), {
+            "classes": ("wide", "collapse"),
+            "fields": (("head_inject_html", "xml_export_path",),),
+        }),
+
+        (_("Почтовые настройки"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("email_host", "email_port"),
+                ("email_host_user", "email_host_password"),
+                ("email_from"),
+                "email_use_tls", "email_use_ssl",
+            ),
+        }),
+
+        (_("Интеграции: Telegram"), {
+            "classes": ("wide", "collapse"),
+            "fields": (("telegram_bot_token", "telegram_chat_id"),),
+        }),
+
+        (_("Контакты и соцсети"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("social_tg", "contact_email_clients",),
+                ("social_vk", "contact_email_partners",),
+                ("social_youtube", "contact_email_general",),
+                ("social_instagram", "contact_telegram",),
+                ("social_dzen",),
+                ("social_rutube",),
+                ("social_twitter",),
+            ),
+        }),
+
         (_("Требует перезагрузки сервера"), {
-            "fields": ("admin_path", "otp_issuer"),
+            "classes": ("wide", "collapse"),
+            "fields": (("admin_path", "otp_issuer"),),
             "description": mark_safe(
                 _("Изменения этих полей вступят в силу для всех процессов только после "
                   "<strong>перезапуска приложения/процесса</strong>.")
             ),
         }),
-        (_("SEO / robots.txt"), {
-            "fields": ("block_indexing", "robots_txt"),
-            "description": "",  # наполним динамически в render_change_form
+        (_("Служебное"), {
+            "classes": ("wide",),
+            "fields": ("updated_at",),
         }),
     )
 
-    # запрещаем добавление/удаление — это синглтон
+    # singleton: запрет на добавление/удаление и редирект сразу к объекту
     def has_add_permission(self, request):
         return False
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    # вместо списка — сразу форма единственной записи
     def changelist_view(self, request, extra_context=None):
         obj = SiteSetup.get_solo()
         url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
         return redirect(url)
 
     def render_change_form(self, request, context, *args, **kwargs):
-        # Подготовим кликабельные ссылки на robots/sitemap под текущим доменом:
+        # Кликабельные ссылки на robots/sitemap под текущим хостом
         scheme = "https" if not settings.DEBUG else "http"
-
         domain = request.get_host()
-
         robots_url = f"{scheme}://{domain}{reverse('robots_txt')}"
         sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
 
-        # Также дополним help_text у поля robots_txt ссылками (удобно рядом с textarea)
         form = context.get("adminform").form
         if "robots_txt" in form.fields:
             base_help = form.fields["robots_txt"].help_text or ""
