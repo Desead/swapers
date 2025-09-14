@@ -46,7 +46,7 @@ def account_settings(request):
     else:
         form = AccountForm(instance=user)
 
-    return render(request, "account_settings.html", {"form": form})
+    return render(request, "account/account_settings.html", {"form": form})
 
 
 @login_required

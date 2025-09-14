@@ -22,6 +22,7 @@ sitemaps = {
 # берём префикс через сервис (с кэшем); если таблицы ещё нет — падаем в "admin"
 try:
     from app_main.services.site_setup import get_admin_prefix
+
     ADMIN_PREFIX = get_admin_prefix()
 except Exception:
     ADMIN_PREFIX = "admin"
