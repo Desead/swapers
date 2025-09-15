@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django import forms
+from django.db import models
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.safestring import mark_safe
@@ -11,7 +12,6 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from django.utils.html import format_html
 
-from .forms import SiteSetupAdminForm
 from .models import SiteSetup
 import django.contrib.sites.admin  # не удалять
 
@@ -94,8 +94,9 @@ class UserAdmin(BaseUserAdmin):
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
     save_on_top = True
-    form = SiteSetupAdminForm
-
+    formfield_overrides = {
+        models.URLField: {"assume_scheme": "https"},
+    }
     readonly_fields = (
         "updated_at",
         "og_image_width", "og_image_height",

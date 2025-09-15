@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _  # lazy — для verbose_name/help_text
 from django.utils.translation import gettext as _gettext  # runtime — для __str__ и сообщений
+from django.core.files.images import get_image_dimensions
 
 
 class UserManager(BaseUserManager):
@@ -499,6 +500,36 @@ class SiteSetup(models.Model):
     def clean(self):
         if self.admin_path in RESERVED_ADMIN_PREFIXES:
             raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
+
+        # --- Валидация изображений OG/Twitter (минимум и пропорции) ---
+        def check_card(file_field, label):
+            f = getattr(self, file_field, None)
+            if not f:
+                return
+            try:
+                w, h = get_image_dimensions(f)
+            except Exception:
+                return
+            # Минимальные размеры
+            min_w, min_h = 600, 315
+            if (w or 0) < min_w or (h or 0) < min_h:
+                raise ValidationError({
+                    file_field: _("%(label)s: минимальный размер — %(w)s×%(h)s пикселей.") % {
+                        "label": label, "w": min_w, "h": min_h
+                    }
+                })
+            # Пропорции ~1.91:1 (например, 1200×630) с допуском
+            ratio = (w or 1) / float(h or 1)
+            target, tol = 1.91, 0.15
+            if not (target - tol) <= ratio <= (target + tol):
+                raise ValidationError({
+                    file_field: _("%(label)s: пропорции должны быть близки к 1.91:1 (например, 1200×630).") % {
+                        "label": label
+                    }
+                })
+
+        check_card("og_image", _("OG изображение"))
+        check_card("twitter_image", _("Twitter изображение"))
 
     def save(self, *args, **kwargs):
         self.admin_path = (self.admin_path or "admin").strip().strip("/").lower() or "admin"
