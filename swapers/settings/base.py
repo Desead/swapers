@@ -78,6 +78,9 @@ MIDDLEWARE = [
 
     # наш редирект в мастер 2FA при заходе в админку
     "app_main.middleware.Admin2FARedirectMiddleware",
+
+    # Выход из админки через определённое время
+    "app_main.middleware.AdminSessionTimeoutMiddleware",
 ]
 
 ROOT_URLCONF = "swapers.urls"

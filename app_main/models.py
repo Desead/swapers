@@ -163,6 +163,13 @@ class SiteSetup(models.Model):
         help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
     )
 
+    admin_session_timeout_min = models.PositiveIntegerField(
+        verbose_name=_("Автовыход из админки, минут"),
+        default=10,
+        help_text=_("Через сколько минут бездействия разлогинивать из админки. "
+                    "0 — не разлогинивать по простою (сессия живёт до закрытия браузера)."),
+    )
+
     # --- robots.txt и индексация ---
     robots_txt = models.TextField(
         verbose_name=_("Содержимое robots.txt"),

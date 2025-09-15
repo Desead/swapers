@@ -215,6 +215,11 @@ class SiteSetupAdmin(admin.ModelAdmin):
             "fields": (("admin_path", "otp_issuer"),),
         }),
 
+        (_("Безопасность и сессии"), {
+            "classes": ("wide", "collapse"),
+            "fields": ("admin_session_timeout_min",),
+        }),
+
         (_("Служебное"), {
             "classes": ("wide",),
             "fields": ("updated_at",),
