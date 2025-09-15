@@ -1,120 +1,62 @@
 from __future__ import annotations
-import time
+
+import json
 from urllib.parse import quote
-from django.utils.deprecation import MiddlewareMixin
-from django.http import HttpResponseRedirect
+
 from django.conf import settings
-from django_otp import DEVICE_ID_SESSION_KEY
-from django_otp import devices_for_user
 from django.contrib import messages
 from django.contrib.auth import logout
+from django.http import HttpResponseRedirect
 from django.utils import timezone
+from django.utils.deprecation import MiddlewareMixin
 from django.utils.translation import gettext_lazy as _
+
+from django_otp import devices_for_user
 
 from .services.site_setup import get_site_setup
 
-
-class ReferralMiddleware:
-    """
-    Если пришли с ?ref=CODE — кладём код в сессию.
-    allauth заберёт его в сигнале user_signed_up.
-    """
-
-    def __init__(self, get_response):
-        self.get_response = get_response
-
-    def __call__(self, request):
-        code = request.GET.get("ref")
-        if code:
-            try:
-                request.session["ref_code"] = code
-            except Exception:
-                pass
-        return self.get_response(request)
-
-
-def _admin_prefix() -> str:
-    try:
-        from app_main.services.site_setup import get_admin_prefix
-        return f"/{get_admin_prefix().strip('/')}/"
-    except Exception:
-        return "/admin/"
+# --- Referral cookie constants ---
+REF_COOKIE_NAME = "ref_sig"
+REF_COOKIE_SALT = "partners.referral"
 
 
 class Admin2FARedirectMiddleware(MiddlewareMixin):
     """
-    Политика:
-    - Если staff идёт в админку и У НЕГО НЕТ подтверждённого OTP-устройства → уводим на мастер /security/2fa/setup/.
-    - Если устройство есть, но текущая сессия не верифицирована → НЕ редиректим, пускаем в админку,
-      и там OTPAdminSite сам покажет форму логина с запросом 2FA.
-    - Idle-таймаут: при превышении порога просто снимаем отметку verified и
-      ДЕЛАЕМ мягкий redirect на тот же URL, чтобы этот же запрос уже пошёл как «неверифицированный»
-      и админка показала ввод кода. На /security/2fa/... не вмешиваемся.
+    Требуем настроить 2FA для сотрудников, заходящих в админку.
+    Если у пользователя-стофа НЕТ ни одного подтверждённого OTP-устройства —
+    мягко уводим на мастер подключения 2FA.
     """
-    _TWOFA_PREFIX = "/security/2fa/"
-    _SESSION_LAST_SEEN_KEY = "admin_last_seen"
-    _SESSION_THROTTLE_SEC = 10  # чтобы не писать в сессию на каждый запрос
-
-    def _user_has_confirmed_device(self, user) -> bool:
-        try:
-            return any(devices_for_user(user, confirmed=True))
-        except Exception:
-            return False
+    TWOFA_PREFIX = "/security/2fa/"
 
     def process_request(self, request):
         path = request.path
+        setup = get_site_setup()
+        admin_prefix = f"/{setup.admin_path.strip('/')}/"
 
-        # Не трогаем путь мастера 2FA
-        if path.startswith(self._TWOFA_PREFIX):
-            return None
-
-        # Работаем только для путей админки
-        if not path.startswith(_admin_prefix()):
+        # игнорируем не-админку и сам мастер 2FA
+        if not path.startswith(admin_prefix) or path.startswith(self.TWOFA_PREFIX):
             return None
 
         user = getattr(request, "user", None)
-        if not (user and user.is_authenticated and user.is_staff):
+        if not user or not user.is_authenticated or not user.is_staff:
             return None
 
-        # --- Idle-таймаут: сначала проверяем и, если надо, снимаем верификацию и перезагружаем страницу ---
-        timeout = int(getattr(settings, "ADMIN_OTP_IDLE_TIMEOUT_SECONDS", 0) or 0)
-        if timeout > 0 and hasattr(request, "session"):
-            now = int(time.time())
-            sess = request.session
-            last_seen = int(sess.get(self._SESSION_LAST_SEEN_KEY, 0) or 0)
-
-            if last_seen and (now - last_seen > timeout):
-                # истёк простой — очищаем отметку verified и обновим last_seen после прохождения 2FA
-                try:
-                    sess.pop(DEVICE_ID_SESSION_KEY, None)
-                    sess.pop(self._SESSION_LAST_SEEN_KEY, None)
-                    sess.modified = True
-                except Exception:
-                    pass
-                # мягко перезагружаем ту же страницу, чтобы текущий запрос уже шёл как "неверифицированный"
-                return HttpResponseRedirect(request.get_full_path())
-
-            # обновим last_seen с троттлингом
-            if now - last_seen >= self._SESSION_THROTTLE_SEC:
-                sess[self._SESSION_LAST_SEEN_KEY] = now
-                sess.modified = True
-
-        # --- Требование подключить устройство ТОЛЬКО если его нет ---
-        is_verified = getattr(user, "is_verified", None)
-        if not callable(is_verified) or not is_verified():
-            # если устройства нет — уводим на мастер подключения
-            if not self._user_has_confirmed_device(user):
-                return HttpResponseRedirect(f"{self._TWOFA_PREFIX}setup/")
-            # если устройство есть — не мешаем: админка сама запросит OTP
+        # если есть хотя бы одно подтверждённое устройство — пускаем
+        try:
+            if any(devices_for_user(user, confirmed=True)):
+                return None
+        except Exception:
+            # в сомнительных случаях не блокируем
             return None
 
-        return None
+        return HttpResponseRedirect(f"{self.TWOFA_PREFIX}setup/")
 
 
 class AdminSessionTimeoutMiddleware:
     """
     Автовыход из админки по бездействию.
     Работает только под путём админки (динамически из SiteSetup.admin_path).
+
     - Если admin_session_timeout_min > 0: выходим при простое > N минут.
       Также обновляем срок жизни сессии на N минут при каждом запросе в админке.
     - Если admin_session_timeout_min == 0: не выходим по простою (ставим cookie-сессию до закрытия браузера).
@@ -129,16 +71,16 @@ class AdminSessionTimeoutMiddleware:
         admin_prefix = f"/{setup.admin_path.strip('/')}/"
 
         # Применяемся только в зоне админки и только для аутентифицированных.
-        if request.path.startswith(admin_prefix) and request.user.is_authenticated:
+        if request.path.startswith(admin_prefix) and getattr(request, "user", None) and request.user.is_authenticated:
             minutes = int(getattr(setup, "admin_session_timeout_min", 10) or 0)
 
             if minutes <= 0:
-                # Нет авто-логаута по простою — делаем cookie-сессию (до закрытия браузера)
+                # Нет авто-логаута по простою — cookie-сессия (до закрытия браузера)
                 request.session.set_expiry(0)
             else:
-                # Проверка простоя
                 now = timezone.now()
                 last_ts = request.session.get(self.SESSION_KEY_LAST)
+                last = None
                 if last_ts:
                     try:
                         last = timezone.datetime.fromisoformat(last_ts)
@@ -146,13 +88,10 @@ class AdminSessionTimeoutMiddleware:
                             last = timezone.make_aware(last, timezone.utc)
                     except Exception:
                         last = None
-                else:
-                    last = None
 
                 if last is not None:
                     delta = (now - last).total_seconds()
                     if delta > minutes * 60:
-                        # Разлогиниваем и уводим на логин админки
                         logout(request)
                         messages.warning(request, _("Сессия админки завершена из-за отсутствия активности."))
                         login_url = f"{admin_prefix}login/?next={quote(request.get_full_path())}"
@@ -164,3 +103,75 @@ class AdminSessionTimeoutMiddleware:
                 request.session.set_expiry(minutes * 60)
 
         return self.get_response(request)
+
+
+class ReferralAttributionMiddleware:
+    """
+    Ставит подписанную referral-cookie при наличии ?ref=XXXX в URL.
+
+    Политика: Last click wins (переписывает предыдущую метку до регистрации).
+    Срок: из SiteSetup.ref_attribution_window_days (0 => не ставим persistent cookie).
+    Всегда записывает данные и в сессию на текущий заход (на случай моментальной регистрации).
+
+    Удаление: после успешной привязки в сигнале ставим флаг session['ref_cookie_delete']=True,
+              и middleware удаляет ТОЛЬКО нашу ref-cookie.
+    """
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        setup = get_site_setup()
+        ref_code = request.GET.get("ref", "").strip()
+
+        to_set_cookie = None
+        now = timezone.now()
+
+        # если в URL есть реф-код — пишем в сессию и (опционально) в persistent cookie
+        if ref_code:
+            payload = {
+                "code": ref_code,
+                "first_seen": now.isoformat(),
+                "landing": request.build_absolute_uri()[:500],
+            }
+            request.session["referral_pending"] = payload
+            # Last click wins: просто перезапишем cookie
+            if int(getattr(setup, "ref_attribution_window_days", 90) or 0) > 0:
+                to_set_cookie = payload
+
+        response = self.get_response(request)
+
+        # установить подписанную cookie (после ответа), если нужно
+        if to_set_cookie is not None:
+            max_age = int(getattr(setup, "ref_attribution_window_days", 90) or 0) * 86400
+            # set_signed_cookie использует SECRET_KEY; добавляем свою соль
+            response.set_signed_cookie(
+                REF_COOKIE_NAME,
+                json.dumps(to_set_cookie, ensure_ascii=False),
+                salt=REF_COOKIE_SALT,
+                max_age=max_age if max_age > 0 else None,
+                samesite="Lax",
+                secure=bool(getattr(settings, "SESSION_COOKIE_SECURE", False)),
+                httponly=True,
+            )
+
+        # удалить ref-cookie по флагу из сессии (после успешной регистрации)
+        if request.session.pop("ref_cookie_delete", False):
+            response.delete_cookie(
+                REF_COOKIE_NAME,
+                samesite="Lax",
+                secure=bool(getattr(settings, "SESSION_COOKIE_SECURE", False)),
+            )
+            request.session.pop("referral_pending", None)
+
+        return response
+
+    # Вспомогательный метод: получить payload из подписанной cookie
+    @staticmethod
+    def read_cookie(request) -> dict | None:
+        try:
+            raw = request.get_signed_cookie(REF_COOKIE_NAME, default=None, salt=REF_COOKIE_SALT)
+            if not raw:
+                return None
+            return json.loads(raw)
+        except Exception:
+            return None

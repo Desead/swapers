@@ -36,7 +36,6 @@ MIDDLEWARE = [
     "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",  # ← страховка
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "app_main.middleware.ReferralMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",

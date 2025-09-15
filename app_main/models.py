@@ -60,6 +60,19 @@ class User(AbstractBaseUser, PermissionsMixin):
     count = models.PositiveIntegerField(verbose_name=_("Партнёров привлечено"), default=0)
     balance = models.DecimalField(verbose_name=_("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
 
+    # Когда впервые увидели реф-код (для атрибуции)
+    referral_first_seen_at = models.DateTimeField(
+        verbose_name=_("Первый визит по партнёрской ссылке"),
+        null=True, blank=True,
+        help_text=_("Дата и время первого визита с реферальным кодом."),
+    )
+    # Сколько времени прошло до регистрации
+    referral_signup_delay = models.DurationField(
+        verbose_name=_("Задержка до регистрации"),
+        null=True, blank=True,
+        help_text=_("Разница между первым визитом по реф-ссылке и моментом регистрации."),
+    )
+
     # предпочитаемый язык пользователя
     language = models.CharField(
         verbose_name=_("Язык общения"),
@@ -455,6 +468,17 @@ class SiteSetup(models.Model):
     social_dzen = models.URLField("Дзен", blank=True, default="")
     social_rutube = models.URLField("RuTube", blank=True, default="")
     social_instagram = models.URLField("Instagram", blank=True, default="")
+
+    # --- [14] Партнёрская атрибуция (cookies) ---
+    ref_attribution_window_days = models.PositiveIntegerField(
+        verbose_name=_("Окно атрибуции (дней)"),
+        default=90,
+        help_text=_(
+            "Срок жизни подписанной referral-cookie. "
+            "Last click wins: последний клик по реферальной ссылке действует до регистрации. "
+            "0 — не ставить долгоживущую cookie (только сессия до закрытия браузера)."
+        ),
+    )
 
     class Meta:
         verbose_name = _("Настройки сайта")

@@ -210,20 +210,25 @@ class SiteSetupAdmin(admin.ModelAdmin):
             ),
         }),
 
+        (_("Безопасность и сессии (cookies)"), {
+            "classes": ("wide", "collapse"),
+            "description": _(
+                "Last click wins — последний клик по реферальной ссылке действует до регистрации. "
+                "После успешной привязки временная cookie удаляется."
+            ),
+            "fields": ("admin_session_timeout_min", "ref_attribution_window_days",),
+        }),
+
         (_("Требует перезагрузки сервера"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_path", "otp_issuer"),),
-        }),
-
-        (_("Безопасность и сессии"), {
-            "classes": ("wide", "collapse"),
-            "fields": ("admin_session_timeout_min",),
         }),
 
         (_("Служебное"), {
             "classes": ("wide",),
             "fields": ("updated_at",),
         }),
+
     )
 
     # превью картинок в админке

@@ -50,36 +50,32 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "app_main.User"
 
 MIDDLEWARE = [
-    "csp.middleware.CSPMiddleware",  # 1. django-csp (первым)
-    "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",  # 2. страховка
+    # 0) Базовые системные
+    "django.middleware.security.SecurityMiddleware",  # лучше самым первым
+    "csp.middleware.CSPMiddleware",  # очень рано, чтобы nonce попал в request
+    "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",
 
-    "django.middleware.security.SecurityMiddleware",
+    # 1) Сессии → рефералка → локализация
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "app_main.middleware.ReferralAttributionMiddleware",  # ВАЖНО: до LocaleMiddleware!
+    "django.middleware.locale.LocaleMiddleware",  # как и раньше: сразу после Session
 
-    # ВАЖНО: LocaleMiddleware ДОЛЖЕН идти сразу после SessionMiddleware и до CommonMiddleware
-    "django.middleware.locale.LocaleMiddleware",
-
-    # ловим ?ref=... как можно раньше, когда сессия уже есть
-    "app_main.middleware.ReferralMiddleware",
-
+    # 2) Общие штуки/редиректы/заголовки
     "django.middleware.common.CommonMiddleware",
-    "app_main.middleware_noindex.GlobalNoIndexMiddleware",  # <-- добавить
+    "app_main.middleware_noindex.GlobalNoIndexMiddleware",
+
+    # 3) Безопасность форм → аутентификация → OTP → allauth
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django_otp.middleware.OTPMiddleware",  # после Auth — ок
+    "allauth.account.middleware.AccountMiddleware",  # после Auth/OTP — ок
 
-    # 2FA: должно идти сразу после аутентификации
-    "django_otp.middleware.OTPMiddleware",
-
-    # <<< ОБЯЗАТЕЛЬНО для allauth >>>
-    "allauth.account.middleware.AccountMiddleware",
-
+    # 4) Сообщения/кликабельные фреймы и т.п.
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 
-    # наш редирект в мастер 2FA при заходе в админку
+    # 5) Админ-специфика (после Auth/Messages, чтобы работать с request.user и messages)
     "app_main.middleware.Admin2FARedirectMiddleware",
-
-    # Выход из админки через определённое время
     "app_main.middleware.AdminSessionTimeoutMiddleware",
 ]
 
