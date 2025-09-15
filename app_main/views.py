@@ -1,3 +1,4 @@
+from __future__ import annotations
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
 from django.contrib import messages
@@ -13,7 +14,11 @@ from django.contrib.sites.models import Site
 from django.core.cache import cache
 import re
 
+
 from .models import SiteSetup
+
+_OUTLINK_SALT = "outlinks.v1"
+_ALLOWED_SCHEMES = {"http", "https", "mailto", "tg", "tel"}
 
 
 @require_GET

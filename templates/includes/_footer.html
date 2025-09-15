@@ -1,5 +1,6 @@
 {% load i18n %}
 {% now "Y" as current_year %}
+
 <footer>
     <div class="container">
         <p class="muted">
@@ -16,23 +17,78 @@
                                 <strong>{% trans "Контакты" %}:</strong>
                                 <ul>
                                     {% if s.contact_email_clients %}
-                                        <li>{% trans "Почта для клиентов" %}: <a
-                                                href="mailto:{{ s.contact_email_clients }}">{{ s.contact_email_clients }}</a>
-                                        </li>
+                                        {% with label=s.contact_label_clients %}
+                                            {% if not label %}{% trans "Почта для клиентов" as label %}{% endif %}
+                                            <li>
+                                                {{ label }}:
+                                                <button type="button"
+                                                        class="deeplink"
+                                                        role="link"
+                                                        data-href="mailto:{{ s.contact_email_clients }}"
+                                                        aria-label="{% trans 'Написать на почту для клиентов' %}">
+                                                    {% trans "написать" %}
+                                                </button>
+                                                <noscript>
+                                                    <a href="mailto:{{ s.contact_email_clients }}">mailto</a>
+                                                </noscript>
+                                            </li>
+                                        {% endwith %}
                                     {% endif %}
+
                                     {% if s.contact_email_partners %}
-                                        <li>{% trans "Почта для партнёров" %}: <a
-                                                href="mailto:{{ s.contact_email_partners }}">{{ s.contact_email_partners }}</a>
-                                        </li>
+                                        {% with label=s.contact_label_partners %}
+                                            {% if not label %}{% trans "Почта для партнёров" as label %}{% endif %}
+                                            <li>
+                                                {{ label }}:
+                                                <button type="button"
+                                                        class="deeplink"
+                                                        role="link"
+                                                        data-href="mailto:{{ s.contact_email_partners }}"
+                                                        aria-label="{% trans 'Написать на почту для партнёров' %}">
+                                                    {% trans "написать" %}
+                                                </button>
+                                                <noscript>
+                                                    <a href="mailto:{{ s.contact_email_partners }}">mailto</a>
+                                                </noscript>
+                                            </li>
+                                        {% endwith %}
                                     {% endif %}
+
                                     {% if s.contact_email_general %}
-                                        <li>{% trans "Почта для общих вопросов" %}: <a
-                                                href="mailto:{{ s.contact_email_general }}">{{ s.contact_email_general }}</a>
-                                        </li>
+                                        {% with label=s.contact_label_general %}
+                                            {% if not label %}{% trans "Почта для общих вопросов" as label %}{% endif %}
+                                            <li>
+                                                {{ label }}:
+                                                <button type="button"
+                                                        class="deeplink"
+                                                        role="link"
+                                                        data-href="mailto:{{ s.contact_email_general }}"
+                                                        aria-label="{% trans 'Написать на общую почту' %}">
+                                                    {% trans "написать" %}
+                                                </button>
+                                                <noscript>
+                                                    <a href="mailto:{{ s.contact_email_general }}">mailto</a>
+                                                </noscript>
+                                            </li>
+                                        {% endwith %}
                                     {% endif %}
+
                                     {% if s.contact_telegram %}
-                                        <li>Telegram: <a href="{{ s.contact_telegram }}" target="_blank"
-                                                         rel="noopener nofollow">{{ s.contact_telegram }}</a></li>
+                                        <li>
+                                            Telegram:
+                                            <button type="button"
+                                                    class="deeplink"
+                                                    role="link"
+                                                    data-href="{{ s.contact_telegram }}"
+                                                    data-target="_blank"
+                                                    aria-label="{% trans 'Написать в Telegram' %}">
+                                                {% trans "написать" %}
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.contact_telegram }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">link</a>
+                                            </noscript>
+                                        </li>
                                     {% endif %}
                                 </ul>
                             </section>
@@ -46,27 +102,81 @@
                                 <strong>{% trans "Мы в соцсетях" %}:</strong>
                                 <ul>
                                     {% if s.social_tg %}
-                                        <li><a href="{{ s.social_tg }}" target="_blank"
-                                               rel="noopener nofollow">{% trans "Telegram-канал" %}</a></li>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_tg }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть Telegram-канал' %}">
+                                                {% trans "Telegram-канал" %}
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_tg }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">{% trans "Telegram-канал" %}</a>
+                                            </noscript>
+                                        </li>
                                     {% endif %}
                                     {% if s.social_vk %}
-                                        <li><a href="{{ s.social_vk }}" target="_blank" rel="noopener nofollow">VK</a>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_vk }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть VK' %}">
+                                                VK
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_vk }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">VK</a>
+                                            </noscript>
                                         </li>
                                     {% endif %}
                                     {% if s.social_youtube %}
-                                        <li><a href="{{ s.social_youtube }}" target="_blank" rel="noopener nofollow">YouTube</a>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_youtube }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть YouTube' %}">
+                                                YouTube
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_youtube }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">YouTube</a>
+                                            </noscript>
                                         </li>
                                     {% endif %}
                                     {% if s.social_dzen %}
-                                        <li><a href="{{ s.social_dzen }}" target="_blank"
-                                               rel="noopener nofollow">{% trans "Дзен" %}</a></li>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_dzen }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть Дзен' %}">
+                                                {% trans "Дзен" %}
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_dzen }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">{% trans "Дзен" %}</a>
+                                            </noscript>
+                                        </li>
                                     {% endif %}
                                     {% if s.social_rutube %}
-                                        <li><a href="{{ s.social_rutube }}" target="_blank" rel="noopener nofollow">RuTube</a>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_rutube }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть RuTube' %}">
+                                                RuTube
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_rutube }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">RuTube</a>
+                                            </noscript>
                                         </li>
                                     {% endif %}
                                     {% if s.social_instagram %}
-                                        <li><a href="{{ s.social_instagram }}" target="_blank" rel="noopener nofollow">Instagram</a>
+                                        <li>
+                                            <button type="button" class="deeplink" role="link"
+                                                    data-href="{{ s.social_instagram }}" data-target="_blank"
+                                                    aria-label="{% trans 'Открыть Instagram' %}">
+                                                Instagram
+                                            </button>
+                                            <noscript>
+                                                <a href="{{ s.social_instagram }}" target="_blank"
+                                                   rel="noopener noreferrer nofollow">Instagram</a>
+                                            </noscript>
                                         </li>
                                     {% endif %}
                                 </ul>

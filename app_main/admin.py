@@ -135,15 +135,25 @@ class SiteSetupAdmin(admin.ModelAdmin):
                 ("open_time_sun", "close_time_sun"),
             ),
         }),
-        (_("Контакты и соцсети"), {
+        (_("Соцсети"), {
             "classes": ("wide", "collapse"),
             "fields": (
-                ("social_tg", "contact_email_clients",),
-                ("social_vk", "contact_email_partners",),
-                ("social_youtube", "contact_email_general",),
-                ("social_instagram", "contact_telegram",),
+                ("social_tg",),
+                ("social_vk",),
+                ("social_youtube",),
+                ("social_instagram",),
                 ("social_dzen",),
                 ("social_rutube",),
+            ),
+        }),
+
+        (_("Контакты"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("contact_label_clients", "contact_email_clients"),
+                ("contact_label_partners", "contact_email_partners"),
+                ("contact_label_general", "contact_email_general"),
+                ("contact_telegram"),
             ),
         }),
 
@@ -231,6 +241,20 @@ class SiteSetupAdmin(admin.ModelAdmin):
         }),
 
     )
+
+    # плейсхолдеры для названий почтовых блоков
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if formfield and db_field.name in {
+            "contact_label_clients", "contact_label_partners", "contact_label_general"
+        }:
+            placeholders = {
+                "contact_label_clients": _("Почта для клиентов"),
+                "contact_label_partners": _("Почта для партнёров"),
+                "contact_label_general": _("Почта для общих вопросов"),
+            }
+            formfield.widget.attrs.setdefault("placeholder", placeholders[db_field.name])
+        return formfield
 
     # превью картинок в админке
     def og_image_preview(self, obj):

@@ -316,7 +316,7 @@ class SiteSetup(models.Model):
     use_https_in_meta = models.BooleanField(
         verbose_name=_("https в canonical/OG URL"),
         default=False,
-        help_text=_("Если выключено — будет использоваться http <strong>Объязательно включить на проде!</strong>"),
+        help_text=_("Если выключено — будет использоваться http Объязательно включить на проде!"),
     )
 
     hreflang_enabled = models.BooleanField(
@@ -458,6 +458,23 @@ class SiteSetup(models.Model):
     )
 
     # --- [13] Контакты и соцсети ---
+    # названия (редактируемые) для трёх почтовых блоков
+    contact_label_clients = models.CharField(
+        verbose_name=_("Заголовок: почта для клиентов"),
+        max_length=120, blank=True, default="",
+        help_text=_("Если пусто — используется «Почта для клиентов»."),
+    )
+    contact_label_partners = models.CharField(
+        verbose_name=_("Заголовок: почта для партнёров"),
+        max_length=120, blank=True, default="",
+        help_text=_("Если пусто — используется «Почта для партнёров»."),
+    )
+    contact_label_general = models.CharField(
+        verbose_name=_("Заголовок: почта для общих вопросов"),
+        max_length=120, blank=True, default="",
+        help_text=_("Если пусто — используется «Почта для общих вопросов»."),
+    )
+
     contact_email_clients = models.EmailField(_("Почта для клиентов"), blank=True, default="")
     contact_email_partners = models.EmailField(_("Почта для партнёров"), blank=True, default="")
     contact_email_general = models.EmailField(_("Почта для общих вопросов"), blank=True, default="")

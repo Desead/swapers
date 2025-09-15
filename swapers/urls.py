@@ -8,8 +8,7 @@ from django.conf.urls.static import static
 
 from app_main.sitemaps import StaticViewSitemap
 from app_main.views_security import csp_report
-from app_main.views import robots_txt  # используем вьюху из app_main.views
-from app_main.views import dashboard, account_settings, account_delete
+from app_main.views import dashboard, account_settings, account_delete, robots_txt
 
 # --- i18n ---
 from django.conf.urls.i18n import i18n_patterns
