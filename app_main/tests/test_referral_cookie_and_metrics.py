@@ -7,6 +7,9 @@ from app_main.middleware import REF_COOKIE_NAME
 from app_main.models import SiteSetup
 from allauth.account.signals import user_signed_up
 
+# NEW: для инвалидации кэша настроек
+from app_main.services.site_setup import get_site_setup
+
 User = get_user_model()
 
 
@@ -17,6 +20,12 @@ class ReferralCookieAndMetricsTests(FastTestCase):
         self.setup = SiteSetup.get_solo()
         self.setup.ref_attribution_window_days = 90
         self.setup.save()
+
+        # очистим кэш на старте каждого теста (если есть lru_cache)
+        try:
+            get_site_setup.cache_clear()  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         self.ref1 = User.objects.create_user(email="r1@ex.com", password="x")
         self.ref1.referral_code = "CODE1"
@@ -60,6 +69,11 @@ class ReferralCookieAndMetricsTests(FastTestCase):
         # Отключаем persistent cookie
         self.setup.ref_attribution_window_days = 0
         self.setup.save()
+        # NEW: сброс кэша — иначе мидлвара увидит старое значение (90)
+        try:
+            get_site_setup.cache_clear()  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
         resp = self.browser.get(f"/?ref={self.ref1.referral_code}")
         # persistent-cookie не ставится

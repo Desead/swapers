@@ -7,6 +7,6 @@ def test_sitemap_has_ru_and_en_urls(client, site_setup):
     assert r.status_code == 200
     xml = r.content.decode()
 
-    # допускаем http/https
-    assert re.search(r"<loc>https?://example\.com/</loc>", xml)
+    # допускаем http/https; корневая у тебя отдаётся как /ru/, а не /
+    assert re.search(r"<loc>https?://example\.com/ru/</loc>", xml)
     assert re.search(r"<loc>https?://example\.com/en/</loc>", xml)

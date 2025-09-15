@@ -123,6 +123,14 @@ class ReferralAttributionMiddleware:
         setup = get_site_setup()
         ref_code = request.GET.get("ref", "").strip()
 
+        # читаем окно атрибуции гарантированно «свежее», обходя кэш настроек
+        try:
+            window_days = int(
+                type(setup).objects.only("ref_attribution_window_days").get(pk=setup.pk).ref_attribution_window_days or 0
+            )
+        except Exception:
+            window_days = int(getattr(setup, "ref_attribution_window_days", 90) or 0)
+
         to_set_cookie = None
         now = timezone.now()
 
@@ -134,21 +142,20 @@ class ReferralAttributionMiddleware:
                 "landing": request.build_absolute_uri()[:500],
             }
             request.session["referral_pending"] = payload
-            # Last click wins: просто перезапишем cookie
-            if int(getattr(setup, "ref_attribution_window_days", 90) or 0) > 0:
+            # Last click wins: просто перезапишем cookie, если окно > 0
+            if window_days > 0:
                 to_set_cookie = payload
 
         response = self.get_response(request)
 
         # установить подписанную cookie (после ответа), если нужно
         if to_set_cookie is not None:
-            max_age = int(getattr(setup, "ref_attribution_window_days", 90) or 0) * 86400
-            # set_signed_cookie использует SECRET_KEY; добавляем свою соль
+            max_age = window_days * 86400
             response.set_signed_cookie(
                 REF_COOKIE_NAME,
                 json.dumps(to_set_cookie, ensure_ascii=False),
                 salt=REF_COOKIE_SALT,
-                max_age=max_age if max_age > 0 else None,
+                max_age=max_age,
                 samesite="Lax",
                 secure=bool(getattr(settings, "SESSION_COOKIE_SECURE", False)),
                 httponly=True,
@@ -156,16 +163,15 @@ class ReferralAttributionMiddleware:
 
         # удалить ref-cookie по флагу из сессии (после успешной регистрации)
         if request.session.pop("ref_cookie_delete", False):
+            # Django 5.x: delete_cookie не принимает secure=
             response.delete_cookie(
                 REF_COOKIE_NAME,
                 samesite="Lax",
-                secure=bool(getattr(settings, "SESSION_COOKIE_SECURE", False)),
             )
             request.session.pop("referral_pending", None)
 
         return response
 
-    # Вспомогательный метод: получить payload из подписанной cookie
     @staticmethod
     def read_cookie(request) -> dict | None:
         try:

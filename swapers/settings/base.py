@@ -194,3 +194,5 @@ CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
 # Сначала отчётный режим
 CSP_REPORT_ONLY = True
 CSP_REPORT_URI = "/csp-report/"
+
+FORMS_URLFIELD_ASSUME_HTTPS = True
