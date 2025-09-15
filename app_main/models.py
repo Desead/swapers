@@ -92,7 +92,34 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 RESERVED_ADMIN_PREFIXES = {"static", "media", "api", "accounts", "rosetta"}
 
-'''
+
+# defaults for JSON-LD (module-level callables; держи их ВЫШЕ класса)
+def default_jsonld_org():
+    return {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Swapers",
+        "url": "https://swap.com",
+        "logo": "https://swap.com/static/branding/logo.png",
+        "sameAs": [],
+        "contactPoint": [{
+            "@type": "ContactPoint",
+            "contactType": "customer support",
+            "email": "support@swap.com"
+        }],
+    }
+
+
+def default_jsonld_website():
+    return {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "Swapers",
+        "url": "https://swap.com",
+        "inLanguage": "ru",
+    }
+
+
 class SiteSetup(models.Model):
     """Singleton with site settings."""
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
@@ -111,135 +138,8 @@ class SiteSetup(models.Model):
     domain_view = models.CharField(
         verbose_name=_("Отображаемое имя сайта"),
         max_length=100,
-        default="Swap",
-        help_text=_('Название для заголовков/письма и т.п., например: "Swap".'),
-    )
-
-    admin_path = models.CharField(
-        verbose_name=_("Путь к админке"),
-        max_length=50,
-        default="admin",
-        validators=[RegexValidator(
-            regex=r"^[a-z0-9-]+$",
-            message=_("Разрешены только маленькие латинские буквы, цифры и дефис"),
-        )],
-        help_text=_("Например: supera-dmin"),
-    )
-    otp_issuer = models.CharField(
-        verbose_name=_("Название сервиса для 2FA"),
-        max_length=64,
         default="Swapers",
-        validators=[RegexValidator(
-            regex=r"^[A-Za-z0-9 ._-]+$",
-            message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
-        )],
-        help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
-    )
-
-    # содержимое robots.txt
-    robots_txt = models.TextField(
-        verbose_name=_("Содержимое robots.txt"),
-        help_text=_(
-            "Текст, который будет отдан по /robots.txt. Строка "
-            "'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."
-        ),
-        blank=True,
-        default="User-agent: *\nDisallow:\n",
-    )
-
-    block_indexing = models.BooleanField(
-        verbose_name=_("Запретить индексацию всего сайта"),
-        help_text=_(
-            "Если включено, robots.txt будет отдавать 'Disallow: /', а во всех ответах "
-            "будет заголовок 'X-Robots-Tag: noindex, nofollow'"
-        ),
-        default=False,
-    )
-
-    # для инвалидации кеша и заголовков Last-Modified
-    updated_at = models.DateTimeField(_("Обновлено"), auto_now=True)
-
-    class Meta:
-        verbose_name = _("Настройки сайта")
-        verbose_name_plural = _("Настройки сайта")
-
-    def __str__(self) -> str:
-        return _gettext("Настройки сайта")
-
-    @staticmethod
-    def _normalize_domain(value: str) -> str:
-        """Strip scheme/path and lowercase."""
-        v = (value or "").strip().strip("/")
-        if "://" in v:
-            v = v.split("://", 1)[1]
-        if "/" in v:
-            v = v.split("/", 1)[0]
-        return v.lower().rstrip(".")
-
-    def clean(self):
-        if self.admin_path in RESERVED_ADMIN_PREFIXES:
-            raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
-
-    def save(self, *args, **kwargs):
-        self.admin_path = (self.admin_path or "admin").strip().strip("/").lower() or "admin"
-        self.domain = self._normalize_domain(self.domain or "swap.com")
-        self.singleton = "main"
-
-        self.full_clean()
-        super().save(*args, **kwargs)
-
-        # синхронизация django.contrib.sites
-        site, _ = Site.objects.get_or_create(
-            id=getattr(settings, "SITE_ID", 1),
-            defaults={"domain": self.domain, "name": self.domain_view},
-        )
-        changed = False
-        if site.domain != self.domain:
-            site.domain = self.domain
-            changed = True
-        if site.name != self.domain_view:
-            site.name = self.domain_view
-            changed = True
-        if changed:
-            site.save(update_fields=["domain", "name"])
-
-    @classmethod
-    def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(
-            singleton="main",
-            defaults={
-                "admin_path": "admin",
-                "otp_issuer": "Swapers",
-                "domain": "swap.com",
-                "domain_view": "Swap",
-                "robots_txt": "User-agent: *\nDisallow:\n",
-                "block_indexing": False,  # <-- добавлено
-            },
-        )
-        return obj
-'''
-
-
-class SiteSetup(models.Model):
-    """Singleton with site settings."""
-    singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
-
-    # домен и отображаемое имя сайта
-    domain = models.CharField(
-        verbose_name=_("Домен (без http/https)"),
-        max_length=253,
-        default="swap.com",
-        help_text=_("Например: example.com или localhost (без http/https)."),
-        validators=[RegexValidator(
-            regex=r"^(localhost|(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63})$",
-            message=_("Введите корректное доменное имя, например: example.com"),
-        )],
-    )
-    domain_view = models.CharField(
-        verbose_name=_("Отображаемое имя сайта"),
-        max_length=100,
-        default="Swap",
-        help_text=_('Название для заголовков/письма и т.п., например: "Swap".'),
+        help_text=_('Название для заголовков/письма и т.п., например: "Swapers".'),
     )
 
     admin_path = models.CharField(
@@ -268,7 +168,7 @@ class SiteSetup(models.Model):
         verbose_name=_("Содержимое robots.txt"),
         help_text=_(
             "Текст, который будет отдан по /robots.txt. Строка "
-            "'Sitemap: https://<host>/sitemap.xml' будет добавлена автоматически."
+            "Sitemap: https://HOST/sitemap.xml будет добавлена автоматически."
         ),
         blank=True,
         default="User-agent: *\nDisallow:\n",
@@ -285,20 +185,20 @@ class SiteSetup(models.Model):
     # — для инвалидации кеша/Last-Modified —
     updated_at = models.DateTimeField(_("Обновлено"), auto_now=True)
 
-    # --- [1] SEO по умолчанию (мета для страниц) ---
+    # --- [1] SEO по умолчанию ---
     seo_default_title = models.CharField(
         verbose_name=_("SEO: заголовок по умолчанию (title)"),
         max_length=255,
         blank=True,
-        default="Swap — быстрый и безопасный обмен криптовалют и стейблкоинов онлайн",
+        default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
         help_text=_("Используется как базовый title, если страница не переопределяет его."),
     )
     seo_default_description = models.TextField(
         verbose_name=_("SEO: описание по умолчанию (meta description)"),
         blank=True,
         default=(
-            "Онлайн-обменник криптовалют. Мгновенные сделки, прозрачные курсы, низкая комиссия. "
-            "Поддержка Bitcoin, Ethereum и популярных стейблкоинов (USDT, USDC, DAI и др.)."
+            "Онлайн-обменник криптовалют. Мгновенные сделки, прозрачные курсы, фиксированная комиссия. "
+            "Поддержка Bitcoin, Ethereum и популярных стейблкоинов: USDT, USDC, DAI и другие."
         ),
         help_text=_("Используется как базовое описание, если страница не переопределяет его."),
     )
@@ -309,7 +209,123 @@ class SiteSetup(models.Model):
         help_text=_("Опционально. Может не использоваться поисковиками, но полезно для некоторых интеграций."),
     )
 
-    # Примечание: при необходимости позже можно добавить JSON-настройки для конкретных страниц.
+    # --- [2] Open Graph / Twitter / Canonical / hreflang / JSON-LD ---
+    og_enabled = models.BooleanField(
+        verbose_name=_("Включить Open Graph"),
+        default=True,
+        help_text=_("Если выключено, OG-теги выводиться не будут."),
+    )
+    og_type_default = models.CharField(
+        verbose_name=_("OG: тип по умолчанию"),
+        max_length=20,
+        choices=[("website", "website"), ("article", "article")],
+        default="website",
+    )
+    og_title = models.CharField(
+        verbose_name=_("OG: заголовок по умолчанию"),
+        max_length=255,
+        blank=True,
+        default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
+        help_text=_("Используется, если страница не задаёт свой OG-заголовок."),
+    )
+    og_description = models.TextField(
+        verbose_name=_("OG: описание по умолчанию"),
+        blank=True,
+        default="Мгновенный обмен BTC, ETH, USDT и других активов. Прозрачные курсы, фиксированная комиссия, 2FA защита.",
+    )
+    og_image = models.ImageField(
+        verbose_name=_("OG: изображение по умолчанию (1200×630)"),
+        upload_to="seo/",
+        blank=True, null=True,
+        help_text=_("Используется, если страница не задала картинку. Желательно ~1200×630, до 5 MB."),
+        width_field="og_image_width",
+        height_field="og_image_height",
+    )
+    og_image_width = models.PositiveIntegerField(editable=False, default=0)
+    og_image_height = models.PositiveIntegerField(editable=False, default=0)
+    og_image_alt = models.CharField(
+        verbose_name=_("OG: alt у изображения"),
+        max_length=255,
+        blank=True,
+        default="Логотип Swapers и обмен криптовалют онлайн",
+    )
+    og_locale_default = models.CharField(
+        verbose_name=_("OG: локаль по умолчанию"),
+        max_length=10,
+        default="ru_RU",
+        help_text=_("Например: ru_RU или en_US."),
+    )
+    og_locale_alternates = models.CharField(
+        verbose_name=_("OG: альтернативные локали (через запятую)"),
+        max_length=100,
+        blank=True,
+        default="en_US",
+        help_text=_("Например: en_US,uk_UA. Будут выведены с og:locale:alternate."),
+    )
+
+    twitter_cards_enabled = models.BooleanField(
+        verbose_name=_("Включить Twitter Cards"),
+        default=True,
+    )
+    twitter_card_type = models.CharField(
+        verbose_name=_("Twitter: тип карточки"),
+        max_length=32,
+        choices=[("summary_large_image", "summary_large_image"), ("summary", "summary")],
+        default="summary_large_image",
+    )
+    twitter_site = models.CharField(
+        verbose_name=_("Twitter: @site (без @)"),
+        max_length=50, blank=True,
+        default="",
+        help_text=_("Имя аккаунта проекта в X/Twitter, без @."),
+    )
+    twitter_creator = models.CharField(
+        verbose_name=_("Twitter: @creator (без @)"),
+        max_length=50, blank=True,
+        default="",
+        help_text=_("Личный аккаунт автора/редактора, без @ (опционально)."),
+    )
+    twitter_image = models.ImageField(
+        verbose_name=_("Twitter: изображение по умолчанию"),
+        upload_to="seo/",
+        blank=True, null=True,
+        help_text=_("Если не задано — будет использовано OG-изображение."),
+    )
+
+    use_https_in_meta = models.BooleanField(
+        verbose_name=_("Использовать https в canonical/OG URL"),
+        default=True,
+        help_text=_("Если выключено — будет использоваться http (актуально только для локалки)."),
+    )
+
+    hreflang_enabled = models.BooleanField(
+        verbose_name=_("Включить hreflang ссылки"),
+        default=True,
+        help_text=_("Включает генерацию ссылок alternates для RU/EN."),
+    )
+    hreflang_xdefault = models.CharField(
+        verbose_name=_("hreflang: x-default язык"),
+        max_length=8,
+        default="ru",
+        help_text=_("Например: ru или en — какая версия по умолчанию для поисковика."),
+    )
+
+    jsonld_enabled = models.BooleanField(
+        verbose_name=_("Включить JSON-LD (schema.org)"),
+        default=True,
+    )
+    jsonld_organization = models.JSONField(
+        verbose_name=_("JSON-LD: Organization (дефолт)"),
+        blank=True, null=True,
+        default=default_jsonld_org,
+        help_text=_("JSON объект schema.org/Organization для главной/всего сайта."),
+    )
+    jsonld_website = models.JSONField(
+        verbose_name=_("JSON-LD: WebSite (дефолт)"),
+        blank=True, null=True,
+        default=default_jsonld_website,
+        help_text=_("JSON объект schema.org/WebSite."),
+    )
 
     # --- [3] Техработы ---
     maintenance_mode = models.BooleanField(
@@ -318,10 +334,7 @@ class SiteSetup(models.Model):
         help_text=_("Если включено — пользователи увидят страницу техработ. По умолчанию выключено."),
     )
 
-    # --- [4] График работы (время хранится в UTC) ---
-    # По умолчанию расписание указано для МСК (UTC+3): пн–пт 10:00–22:00, сб–вс 12:00–20:00,
-    # здесь сохранены UTC-эквиваленты: пн–пт 07:00–19:00, сб–вс 09:00–17:00.
-
+    # --- [4] График работы (UTC) ---
     open_time_mon = models.TimeField(_("Понедельник: начало (UTC)"), default="07:00")
     close_time_mon = models.TimeField(_("Понедельник: конец (UTC)"), default="19:00")
     open_time_tue = models.TimeField(_("Вторник: начало (UTC)"), default="07:00")
@@ -377,14 +390,14 @@ class SiteSetup(models.Model):
         help_text=_("Процент с каждой сделки (0–100)."),
     )
 
-    # --- [9] Вставка в <head> ---
+    # --- [9] Вставка в head ---
     head_inject_html = models.TextField(
-        verbose_name=_("HTML-код для вставки в <head>"),
+        verbose_name=_("HTML-код для вставки в head"),
         blank=True,
         help_text=_("Счётчики/метрики и т.п. Вставляется как есть на всех страницах."),
     )
 
-    # --- [10] Почтовые настройки (форма отправки писем) ---
+    # --- [10] Почтовые настройки ---
     email_from = models.EmailField(
         verbose_name=_("E-mail отправителя (FROM)"),
         blank=True,
@@ -392,8 +405,8 @@ class SiteSetup(models.Model):
     )
     email_host = models.CharField(_("SMTP host"), max_length=255, blank=True, default="smtp.mail.ru")
     email_port = models.PositiveIntegerField(_("SMTP port"), default=587)
-    email_host_user = models.CharField(_("SMTP user"), max_length=255, blank=True)
-    email_host_password = models.CharField(_("SMTP password"), max_length=255, blank=True)
+    email_host_user = models.CharField(_("SMTP user"), max_length=255, blank=True, default="")
+    email_host_password = models.CharField(_("SMTP password"), max_length=255, blank=True, default="")
     email_use_tls = models.BooleanField(_("Использовать TLS"), default=True)
     email_use_ssl = models.BooleanField(_("Использовать SSL"), default=False)
 
@@ -401,11 +414,13 @@ class SiteSetup(models.Model):
     telegram_bot_token = models.CharField(
         verbose_name=_("Telegram Bot Token"),
         max_length=255, blank=True,
+        default="",
         help_text=_("Токен бота для уведомлений (хранится как есть)."),
     )
     telegram_chat_id = models.CharField(
         verbose_name=_("Telegram Chat/Channel ID"),
         max_length=64, blank=True,
+        default="",
         help_text=_("ID или @username канала/чата, куда слать служебные уведомления."),
     )
 
@@ -433,7 +448,6 @@ class SiteSetup(models.Model):
     social_dzen = models.URLField("Дзен", blank=True, default="")
     social_rutube = models.URLField("RuTube", blank=True, default="")
     social_instagram = models.URLField("Instagram", blank=True, default="")
-    social_twitter = models.URLField("Twitter/X", blank=True, default="")
 
     class Meta:
         verbose_name = _("Настройки сайта")
@@ -444,7 +458,6 @@ class SiteSetup(models.Model):
 
     @staticmethod
     def _normalize_domain(value: str) -> str:
-        """Strip scheme/path and lowercase."""
         v = (value or "").strip().strip("/")
         if "://" in v:
             v = v.split("://", 1)[1]
@@ -487,10 +500,9 @@ class SiteSetup(models.Model):
                 "admin_path": "admin",
                 "otp_issuer": "Swapers",
                 "domain": "swap.com",
-                "domain_view": "Swap",
+                "domain_view": "Swapers",
                 "robots_txt": "User-agent: *\nDisallow:\n",
                 "block_indexing": False,
-                # остальные поля имеют дефолты и могут быть опущены
             },
         )
         return obj

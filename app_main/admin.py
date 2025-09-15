@@ -9,7 +9,9 @@ from django.utils.safestring import mark_safe
 from django.contrib.sites.models import Site
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from django.utils.html import format_html
 
+from .forms import SiteSetupAdminForm
 from .models import SiteSetup
 import django.contrib.sites.admin  # не удалять
 
@@ -89,36 +91,35 @@ class UserAdmin(BaseUserAdmin):
 
 
 # ======= SiteSetup admin =======
-
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
     save_on_top = True
+    form = SiteSetupAdminForm
 
-    readonly_fields = ("updated_at",)
+    readonly_fields = (
+        "updated_at",
+        "og_image_width", "og_image_height",
+        "og_image_preview", "twitter_image_preview",
+    )
 
-    # ПЕРВЫЙ блок раскрыт, остальные свёрнуты
     fieldsets = (
         (_("Главная страница"), {
             "classes": ("wide",),
             "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode",),
-
         }),
+
         (_("Брендинг"), {
             "classes": ("wide", "collapse"),
             "fields": (("logo", "favicon"),),
         }),
-
-        (_("SEO / robots.txt"), {
+        (_("Комиссии и списки стейблкоинов"), {
             "classes": ("wide", "collapse"),
-            "fields": (
-                "block_indexing",
-                "robots_txt",
+            "fields": (("stablecoins", "fee_percent",),),
+        }),
 
-                "seo_default_description",
-                "seo_default_keywords",
-                "seo_default_title",
-            ),
-            "description": "",  # дополним ссылками ниже
+        (_("Интеграции: XML, head, Telegram"), {
+            "classes": ("wide", "collapse"),
+            "fields": ("head_inject_html", "xml_export_path", ("telegram_bot_token", "telegram_chat_id"),),
         }),
 
         (_("График работы (UTC)"), {
@@ -131,21 +132,72 @@ class SiteSetupAdmin(admin.ModelAdmin):
                 ("open_time_fri", "close_time_fri"),
                 ("open_time_sat", "close_time_sat"),
                 ("open_time_sun", "close_time_sun"),
-
             ),
-            "description": mark_safe(
-                _("Время хранится в формате UTC. Значения по умолчанию соответствуют графику по Москве <strong>(пн–пт 10:00–22:00, сб–вс 12:00–20:00)</strong>. При изменении учитывайте разницу с МСК (UTC+3).")
+        }),
+        (_("Контакты и соцсети"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("social_tg", "contact_email_clients",),
+                ("social_vk", "contact_email_partners",),
+                ("social_youtube", "contact_email_general",),
+                ("social_instagram", "contact_telegram",),
+                ("social_dzen",),
+                ("social_rutube",),
             ),
         }),
 
-        (_("Комиссии и списки"), {
+        (_("Twitter Cards"), {
             "classes": ("wide", "collapse"),
-            "fields": (("stablecoins", "fee_percent",),),
+            "fields": (
+                "twitter_cards_enabled",
+                "twitter_card_type",
+                ("twitter_site", "twitter_creator"),
+                ("twitter_image",),
+                "twitter_image_preview",
+            ),
         }),
 
-        (_("Интеграции: XML и вставка в <head>"), {
+        (_("SEO / robots.txt"), {
             "classes": ("wide", "collapse"),
-            "fields": (("head_inject_html", "xml_export_path",),),
+            "fields": (
+                "block_indexing",
+                "robots_txt",
+                "seo_default_title",
+                "seo_default_description",
+                "seo_default_keywords",
+            ),
+        }),
+
+        (_("Open Graph"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                "og_enabled",
+                ("og_type_default", "og_locale_default"),
+                ("og_title",),
+                ("og_description",),
+                ("og_image", "og_image_alt"),
+                ("og_image_width", "og_image_height"),
+                "og_image_preview",
+                ("og_locale_alternates",),
+            ),
+            "description": _("Рекомендуемый размер 1200×630 (соотношение ~1.91:1). Минимум — 600×315.")
+        }),
+
+        (_("Canonical и hreflang"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                "use_https_in_meta",
+                "hreflang_enabled",
+                "hreflang_xdefault",
+            ),
+        }),
+
+        (_("Структурированные данные (JSON-LD)"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                "jsonld_enabled",
+                ("jsonld_organization", "jsonld_website",),
+            ),
         }),
 
         (_("Почтовые настройки"), {
@@ -158,37 +210,39 @@ class SiteSetupAdmin(admin.ModelAdmin):
             ),
         }),
 
-        (_("Интеграции: Telegram"), {
-            "classes": ("wide", "collapse"),
-            "fields": (("telegram_bot_token", "telegram_chat_id"),),
-        }),
-
-        (_("Контакты и соцсети"), {
-            "classes": ("wide", "collapse"),
-            "fields": (
-                ("social_tg", "contact_email_clients",),
-                ("social_vk", "contact_email_partners",),
-                ("social_youtube", "contact_email_general",),
-                ("social_instagram", "contact_telegram",),
-                ("social_dzen",),
-                ("social_rutube",),
-                ("social_twitter",),
-            ),
-        }),
-
         (_("Требует перезагрузки сервера"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_path", "otp_issuer"),),
-            "description": mark_safe(
-                _("Изменения этих полей вступят в силу для всех процессов только после "
-                  "<strong>перезапуска приложения/процесса</strong>.")
-            ),
         }),
+
         (_("Служебное"), {
             "classes": ("wide",),
             "fields": ("updated_at",),
         }),
     )
+
+    # превью картинок в админке
+    def og_image_preview(self, obj):
+        if getattr(obj, "og_image", None):
+            return format_html(
+                '<img src="{}" style="max-width:480px;height:auto;border:1px solid #ddd;'
+                'border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.08);" alt="">',
+                obj.og_image.url
+            )
+        return format_html('<span style="opacity:.7;">{}</span>', _("Изображение не загружено"))
+
+    og_image_preview.short_description = _("OG: превью")
+
+    def twitter_image_preview(self, obj):
+        if getattr(obj, "twitter_image", None):
+            return format_html(
+                '<img src="{}" style="max-width:480px;height:auto;border:1px solid #ddd;'
+                'border-radius:6px;box-shadow:0 1px 2px rgba(0,0,0,.08);" alt="">',
+                obj.twitter_image.url
+            )
+        return format_html('<span style="opacity:.7;">{}</span>', _("Изображение не загружено"))
+
+    twitter_image_preview.short_description = _("Twitter: превью")
 
     # singleton: запрет на добавление/удаление и редирект сразу к объекту
     def has_add_permission(self, request):
@@ -221,7 +275,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
         return super().render_change_form(request, context, *args, **kwargs)
 
 
-# Скрываем стандартную модель "Сайты" из админки
 try:
     admin.site.unregister(Site)
 except admin.sites.NotRegistered:

@@ -1,10 +1,10 @@
-# swapers/urls.py
 from django.contrib import admin
 from django.urls import path, include
 from django.shortcuts import redirect
 from django.utils import translation
 from django.contrib.sitemaps.views import sitemap as sitemap_view
 from django.conf import settings
+from django.conf.urls.static import static
 
 from app_main.sitemaps import StaticViewSitemap
 from app_main.views_security import csp_report
@@ -66,6 +66,7 @@ urlpatterns = [
 # Rosetta — удобнее прятать за DEBUG
 if settings.DEBUG:
     urlpatterns += [path("rosetta/", include("rosetta.urls"))]
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 # Корень сайта — редирект на активный язык. Должен идти ПОСЛЕ всех сервисных путей.
 urlpatterns += [
