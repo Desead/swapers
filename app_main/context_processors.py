@@ -1,22 +1,27 @@
-from .services.site_setup import get_site_setup
+from __future__ import annotations
+
+import json
 from typing import Dict
+from urllib.parse import urlsplit, urlunsplit
+
 from django.conf import settings
 from django.utils import translation
+
+from .services.site_setup import get_site_setup
+
 
 def site_settings(request):
     """
     Возвращает объект SiteSetup (через кэш) в шаблоны.
-    Пример использования: {{ site_setup.admin_path }}
+    Пример: {{ site_setup.admin_path }}
     """
     return {"site_setup": get_site_setup()}
 
 
-
 def _split_lang_from_path(path: str) -> tuple[str | None, str]:
     """
-    Возвращает (lang, tail) где lang — префикс языка из settings.LANGUAGES
-    (например 'ru' или 'en'), а tail — оставшаяся часть пути С '/' в начале
-    или просто '/' если «хвоста» нет.
+    Возвращает (lang, tail) где lang — префикс языка из settings.LANGUAGES,
+    а tail — оставшаяся часть пути с ведущим '/' (или '/' если пусто).
     """
     codes = {code.split("-")[0] for code, _ in settings.LANGUAGES}
     s = path or "/"
@@ -29,34 +34,128 @@ def _split_lang_from_path(path: str) -> tuple[str | None, str]:
         return maybe_lang, tail
     return None, s
 
-def seo_meta(request) -> Dict[str, str | Dict[str, str]]:
+
+def _abs_url(request, raw: str | None, *, force_scheme: str | None = None) -> str | None:
     """
-    В шаблоны кладём:
-      - CANONICAL_URL — абсолютный URL текущей страницы с языковым префиксом
-      - HREFLANGS — { 'ru': url, 'en': url, ... } для всех языков
-      - CUR_LANG — текущий язык (двухбуквенный)
+    Делает абсолютный URL из относительного (MEDIA/STATIC) или возвращает исходный,
+    при необходимости подменяя схему (http/https).
     """
+    if not raw:
+        return None
+    parts = urlsplit(raw)
+    if parts.scheme and parts.netloc:
+        # уже абсолютный
+        if force_scheme and parts.scheme != force_scheme:
+            parts = parts._replace(scheme=force_scheme)
+            return urlunsplit(parts)
+        return raw
+    scheme = force_scheme or request.scheme
+    return f"{scheme}://{request.get_host()}{raw}"
+
+
+def _media_abs(request, filefield, *, force_scheme: str | None = None) -> str | None:
+    """
+    Безопасно получить абсолютный URL для Image/FileField:
+    - не трогаем .url, если файла нет (нет .name) → None
+    - при наличии .url переводим его в абсолютный с нужной схемой
+    """
+    if not filefield:
+        return None
+    name = getattr(filefield, "name", "")
+    if not name:
+        return None
+    try:
+        raw = filefield.url  # может бросить ValueError, если файла нет
+    except Exception:
+        return None
+    return _abs_url(request, raw, force_scheme=force_scheme)
+
+
+def seo_meta(request) -> Dict[str, object]:
+    """
+    Единый контекст: SEO/OG/Twitter/JSON-LD + favicon/logo + canonical/hreflang.
+    """
+    setup = get_site_setup()
+
+    # текущий язык и «хвост» пути
     cur_lang, tail = _split_lang_from_path(request.path_info)
-    # если префикса нет — возьмём активный язык (en, ru, …)
     if not cur_lang:
         cur_lang = (translation.get_language() or settings.LANGUAGE_CODE).split("-")[0]
 
-    # абсолютные URL для каждого языка
+    # схема для мета (уважаем настройку в SiteSetup)
+    scheme = "https" if getattr(setup, "use_https_in_meta", False) else request.scheme
+    host = request.get_host()
+
+    # hreflang: абсолютные URL для каждого языка
     hreflangs: Dict[str, str] = {}
     for code, _name in settings.LANGUAGES:
         short = code.split("-")[0]
         alt_path = f"/{short}{'' if tail == '/' else tail}/".replace("//", "/")
-        # если хвост уже заканчивается '/', не удваиваем:
         if tail.endswith("/"):
             alt_path = f"/{short}{tail}"
-        hreflangs[short] = request.build_absolute_uri(alt_path)
+        hreflangs[short] = f"{scheme}://{host}{alt_path}"
 
-    # каноникал — текущий язык + текущий «хвост»
+    # canonical — текущий язык + текущий «хвост» без query
     canonical_path = f"/{cur_lang}{tail}"
-    canonical_url = request.build_absolute_uri(canonical_path)
+    CANONICAL_URL = f"{scheme}://{host}{canonical_path}"
+
+    # Медиа (favicon/logo/OG/Twitter) -> абсолютные URL (БЕЗ ValueError)
+    OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
+    TW_IMAGE_URL = _media_abs(request, getattr(setup, "twitter_image", None), force_scheme=scheme) or OG_IMAGE_URL
+    LOGO_URL = _media_abs(request, getattr(setup, "logo", None), force_scheme=scheme)
+    FAVICON_URL = _media_abs(request, getattr(setup, "favicon", None), force_scheme=scheme)
+
+    # JSON-LD -> строки (для <script type="application/ld+json">)
+    JSONLD_ORG = json.dumps(getattr(setup, "jsonld_organization", {}) or {}, ensure_ascii=False)
+    JSONLD_WEBSITE = json.dumps(getattr(setup, "jsonld_website", {}) or {}, ensure_ascii=False)
+
+    # SEO базовые
+    SEO_TITLE = setup.seo_default_title or setup.domain_view
+    SEO_DESCRIPTION = setup.seo_default_description or ""
+    SEO_KEYWORDS = setup.seo_default_keywords or ""
+
+    # Open Graph
+    OG_LOCALE_ALTS = [x.strip() for x in (setup.og_locale_alternates or "").split(",") if x.strip()]
 
     return {
-        "CANONICAL_URL": canonical_url,
-        "HREFLANGS": hreflangs,
+        # Базовое
         "CUR_LANG": cur_lang,
+        "SITE_NAME": setup.domain_view,
+        "CANONICAL_URL": CANONICAL_URL,
+        "HREFLANGS": hreflangs,
+        "BLOCK_INDEXING": bool(getattr(setup, "block_indexing", False)),
+
+        # SEO
+        "SEO_TITLE": SEO_TITLE,
+        "SEO_DESCRIPTION": SEO_DESCRIPTION,
+        "SEO_KEYWORDS": SEO_KEYWORDS,
+
+        # Брендинг
+        "FAVICON_URL": FAVICON_URL,
+        "LOGO_URL": LOGO_URL,
+
+        # Open Graph
+        "OG_ENABLED": bool(getattr(setup, "og_enabled", True)),
+        "OG_TYPE": getattr(setup, "og_type_default", "website"),
+        "OG_TITLE": setup.og_title or SEO_TITLE,
+        "OG_DESCRIPTION": setup.og_description or SEO_DESCRIPTION,
+        "OG_IMAGE_URL": OG_IMAGE_URL,
+        "OG_IMAGE_ALT": setup.og_image_alt or setup.domain_view,
+        "OG_IMAGE_WIDTH": getattr(setup, "og_image_width", 0),
+        "OG_IMAGE_HEIGHT": getattr(setup, "og_image_height", 0),
+        "OG_SITE_NAME": setup.domain_view,
+        "OG_LOCALE": getattr(setup, "og_locale_default", "ru_RU"),
+        "OG_LOCALE_ALTS": OG_LOCALE_ALTS,
+
+        # Twitter
+        "TW_ENABLED": bool(getattr(setup, "twitter_cards_enabled", True)),
+        "TW_CARD": getattr(setup, "twitter_card_type", "summary_large_image"),
+        "TW_SITE": (getattr(setup, "twitter_site", "") or "").lstrip("@"),
+        "TW_CREATOR": (getattr(setup, "twitter_creator", "") or "").lstrip("@"),
+        "TW_IMAGE_URL": TW_IMAGE_URL,
+
+        # JSON-LD
+        "JSONLD_ENABLED": bool(getattr(setup, "jsonld_enabled", True)),
+        "JSONLD_ORG": JSONLD_ORG,
+        "JSONLD_WEBSITE": JSONLD_WEBSITE,
     }
