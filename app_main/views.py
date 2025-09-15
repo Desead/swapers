@@ -16,8 +16,22 @@ import re
 from .models import SiteSetup
 
 
+@require_GET
+@vary_on_headers("Accept-Language")
 def home(request):
-    return render(request, "home.html")
+    setup = SiteSetup.get_solo()
+
+    if setup.maintenance_mode:
+        # Отдаём 503, чтобы поисковики не считали сайт «упавшим» навсегда
+        resp = render(request, "maintenance.html", status=503)
+        resp["Retry-After"] = "3600"  # можно подстроить (в секундах)
+        return resp
+
+    ctx = {
+        "main_h1": setup.main_h1,
+        "main_subtitle": setup.main_subtitle,
+    }
+    return render(request, "home.html", ctx)
 
 
 @login_required

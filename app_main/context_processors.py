@@ -5,7 +5,7 @@ from typing import Dict
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
-from django.utils import translation
+from django.utils import translation, timezone
 
 from .services.site_setup import get_site_setup
 
@@ -65,7 +65,7 @@ def _media_abs(request, filefield, *, force_scheme: str | None = None) -> str | 
     if not name:
         return None
     try:
-        raw = filefield.url  # может бросить ValueError, если файла нет
+        raw = filefield.url  # может бросить исключение, если файла нет
     except Exception:
         return None
     return _abs_url(request, raw, force_scheme=force_scheme)
@@ -73,7 +73,7 @@ def _media_abs(request, filefield, *, force_scheme: str | None = None) -> str | 
 
 def seo_meta(request) -> Dict[str, object]:
     """
-    Единый контекст: SEO/OG/Twitter/JSON-LD + favicon/logo + canonical/hreflang.
+    Единый контекст: SEO/OG/Twitter/JSON-LD + favicon/logo + canonical/hreflang + статус работы.
     """
     setup = get_site_setup()
 
@@ -99,7 +99,7 @@ def seo_meta(request) -> Dict[str, object]:
     canonical_path = f"/{cur_lang}{tail}"
     CANONICAL_URL = f"{scheme}://{host}{canonical_path}"
 
-    # Медиа (favicon/logo/OG/Twitter) -> абсолютные URL (БЕЗ ValueError)
+    # Медиа (favicon/logo/OG/Twitter) -> абсолютные URL (без ValueError)
     OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
     TW_IMAGE_URL = _media_abs(request, getattr(setup, "twitter_image", None), force_scheme=scheme) or OG_IMAGE_URL
     LOGO_URL = _media_abs(request, getattr(setup, "logo", None), force_scheme=scheme)
@@ -116,6 +116,25 @@ def seo_meta(request) -> Dict[str, object]:
 
     # Open Graph
     OG_LOCALE_ALTS = [x.strip() for x in (setup.og_locale_alternates or "").split(",") if x.strip()]
+
+    # -------- статус работы (UTC) --------
+    def _is_open_now() -> bool:
+        if getattr(setup, "maintenance_mode", False):
+            return False
+        now_utc = timezone.now()
+        now_t = now_utc.time()
+        wd = now_utc.weekday()  # 0=Mon ... 6=Sun
+        suf = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][wd]
+        open_t = getattr(setup, f"open_time_{suf}", None)
+        close_t = getattr(setup, f"close_time_{suf}", None)
+        if not open_t or not close_t or open_t == close_t:
+            return False
+        if open_t < close_t:
+            return open_t <= now_t < close_t
+        # ночной интервал через полночь
+        return now_t >= open_t or now_t < close_t
+
+    IS_OPEN_NOW = _is_open_now()
 
     return {
         # Базовое
@@ -158,4 +177,8 @@ def seo_meta(request) -> Dict[str, object]:
         "JSONLD_ENABLED": bool(getattr(setup, "jsonld_enabled", True)),
         "JSONLD_ORG": JSONLD_ORG,
         "JSONLD_WEBSITE": JSONLD_WEBSITE,
+
+        # Статус работы
+        "MAINTENANCE_MODE": bool(getattr(setup, "maintenance_mode", False)),
+        "IS_OPEN_NOW": IS_OPEN_NOW,
     }

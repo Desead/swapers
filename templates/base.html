@@ -7,6 +7,10 @@
 
     <title>{% block title %}{{ SEO_TITLE }}{% endblock %}</title>
 
+    {% if FAVICON_URL %}
+        <link rel="icon" href="{{ FAVICON_URL }}">
+    {% endif %}
+
     {% if SEO_DESCRIPTION %}
         <meta name="description" content="{{ SEO_DESCRIPTION }}">{% endif %}
     {% if SEO_KEYWORDS %}

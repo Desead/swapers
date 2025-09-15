@@ -33,6 +33,20 @@
             {% endif %}
         </div>
 
+        <div class="muted" style="margin-top:4px">
+            {% trans "Статус сервиса" %}:
+            {% if MAINTENANCE_MODE %}
+                <strong>{% trans "технические работы" %}</strong>
+            {% else %}
+                {% if IS_OPEN_NOW %}
+                    <strong>{% trans "работает" %}</strong>
+                {% else %}
+                    <strong>{% trans "закрыто" %}</strong>
+                {% endif %}
+            {% endif %}
+        </div>
+
+
         <form action="{% url 'set_language' %}" method="post" style="display:inline">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">

@@ -1,9 +1,80 @@
 {% load i18n %}
 {% now "Y" as current_year %}
 <footer>
-  <div class="container">
-    <p class="muted">
-      {% blocktrans with year=current_year %}© {{ year }} Обменник для умных{% endblocktrans %}
-    </p>
-  </div>
+    <div class="container">
+        <p class="muted">
+            {% blocktrans with year=current_year %}© {{ year }} Обменник для умных{% endblocktrans %}
+        </p>
+
+        {% with s=site_setup %}
+            <table role="presentation">
+                <tr>
+                    {# Левый столбец — Контакты #}
+                    {% if s.contact_email_clients or s.contact_email_partners or s.contact_email_general or s.contact_telegram %}
+                        <td>
+                            <section aria-label="{% trans 'Контакты' %}">
+                                <strong>{% trans "Контакты" %}:</strong>
+                                <ul>
+                                    {% if s.contact_email_clients %}
+                                        <li>{% trans "Почта для клиентов" %}: <a
+                                                href="mailto:{{ s.contact_email_clients }}">{{ s.contact_email_clients }}</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.contact_email_partners %}
+                                        <li>{% trans "Почта для партнёров" %}: <a
+                                                href="mailto:{{ s.contact_email_partners }}">{{ s.contact_email_partners }}</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.contact_email_general %}
+                                        <li>{% trans "Почта для общих вопросов" %}: <a
+                                                href="mailto:{{ s.contact_email_general }}">{{ s.contact_email_general }}</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.contact_telegram %}
+                                        <li>Telegram: <a href="{{ s.contact_telegram }}" target="_blank"
+                                                         rel="noopener nofollow">{{ s.contact_telegram }}</a></li>
+                                    {% endif %}
+                                </ul>
+                            </section>
+                        </td>
+                    {% endif %}
+
+                    {# Правый столбец — Соцсети #}
+                    {% if s.social_tg or s.social_vk or s.social_youtube or s.social_dzen or s.social_rutube or s.social_instagram %}
+                        <td>
+                            <nav aria-label="{% trans 'Мы в соцсетях' %}">
+                                <strong>{% trans "Мы в соцсетях" %}:</strong>
+                                <ul>
+                                    {% if s.social_tg %}
+                                        <li><a href="{{ s.social_tg }}" target="_blank"
+                                               rel="noopener nofollow">{% trans "Telegram-канал" %}</a></li>
+                                    {% endif %}
+                                    {% if s.social_vk %}
+                                        <li><a href="{{ s.social_vk }}" target="_blank" rel="noopener nofollow">VK</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.social_youtube %}
+                                        <li><a href="{{ s.social_youtube }}" target="_blank" rel="noopener nofollow">YouTube</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.social_dzen %}
+                                        <li><a href="{{ s.social_dzen }}" target="_blank"
+                                               rel="noopener nofollow">{% trans "Дзен" %}</a></li>
+                                    {% endif %}
+                                    {% if s.social_rutube %}
+                                        <li><a href="{{ s.social_rutube }}" target="_blank" rel="noopener nofollow">RuTube</a>
+                                        </li>
+                                    {% endif %}
+                                    {% if s.social_instagram %}
+                                        <li><a href="{{ s.social_instagram }}" target="_blank" rel="noopener nofollow">Instagram</a>
+                                        </li>
+                                    {% endif %}
+                                </ul>
+                            </nav>
+                        </td>
+                    {% endif %}
+                </tr>
+            </table>
+        {% endwith %}
+    </div>
 </footer>

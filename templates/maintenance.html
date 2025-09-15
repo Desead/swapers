@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Технические работы" %} — {{ SITE_NAME }}{% endblock %}
+
+{% block content %}
+  <h1>{% trans "Технические работы" %}</h1>
+  <p>
+    {% blocktrans %}Мы проводим плановое обновление. Сервис будет доступен в ближайшее время.{% endblocktrans %}
+  </p>
+
+  {% if site_setup.contact_email_clients or site_setup.contact_telegram %}
+    <p>
+      {% trans "Если вопрос срочный, свяжитесь с нами:" %}<br>
+      {% if site_setup.contact_email_clients %}
+        {% trans "Почта" %}: <a href="mailto:{{ site_setup.contact_email_clients }}">{{ site_setup.contact_email_clients }}</a><br>
+      {% endif %}
+      {% if site_setup.contact_telegram %}
+        Telegram: <a href="{{ site_setup.contact_telegram }}" rel="nofollow noopener" target="_blank">{{ site_setup.contact_telegram }}</a>
+      {% endif %}
+    </p>
+  {% endif %}
+{% endblock %}

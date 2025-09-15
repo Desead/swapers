@@ -293,9 +293,9 @@ class SiteSetup(models.Model):
     )
 
     use_https_in_meta = models.BooleanField(
-        verbose_name=_("Использовать https в canonical/OG URL"),
-        default=True,
-        help_text=_("Если выключено — будет использоваться http (актуально только для локалки)."),
+        verbose_name=_("https в canonical/OG URL"),
+        default=False,
+        help_text=_("Если выключено — будет использоваться http <strong>Объязательно включить на проде!</strong>"),
     )
 
     hreflang_enabled = models.BooleanField(

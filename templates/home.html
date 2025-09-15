@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}{% trans "Главная — NewUser" %}{% endblock %}
+
 {% block content %}
-  <h1>{% trans "Главная" %}</h1>
-  <p>{% trans "Минимальная стартовая страница." %}</p>
+    <h1>{{ main_h1|default:_("Главная") }}</h1>
+    {% if main_subtitle %}
+        <p>{{ main_subtitle }}</p>
+    {% else %}
+        <p>{% trans "Минимальная стартовая страница." %}</p>
+    {% endif %}
 {% endblock %}
