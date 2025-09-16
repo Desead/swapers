@@ -39,7 +39,6 @@ INSTALLED_APPS = [
     'app_main.apps.AppMainConfig',  # <= так, чтобы сработал ready()
 
     "django.contrib.sites",
-    "django.contrib.sitemaps",
     "allauth",
     "allauth.account",
 

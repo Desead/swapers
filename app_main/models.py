@@ -189,7 +189,7 @@ class SiteSetup(models.Model):
         verbose_name=_("Содержимое robots.txt"),
         help_text=_(
             "Текст, который будет отдан по /robots.txt. Строка "
-            "Sitemap: https://HOST/sitemap.xml будет добавлена автоматически."
+            "Sitemap: https://HOST/sitemap.xml позже будет добавлена автоматически."
         ),
         blank=True,
         default="User-agent: *\nDisallow:\n",

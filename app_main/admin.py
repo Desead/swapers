@@ -289,15 +289,15 @@ class SiteSetupAdmin(admin.ModelAdmin):
         scheme = "https" if not settings.DEBUG else "http"
         domain = request.get_host()
         robots_url = f"{scheme}://{domain}{reverse('robots_txt')}"
-        sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
+        # sitemap_url = f"{scheme}://{domain}{reverse('sitemap')}"
 
         form = context.get("adminform").form
         if "robots_txt" in form.fields:
             base_help = form.fields["robots_txt"].help_text or ""
             form.fields["robots_txt"].help_text = mark_safe(
                 f'{base_help}<br>'
-                f'<a href="{robots_url}" target="_blank">↗ robots.txt</a> &nbsp;|&nbsp; '
-                f'<a href="{sitemap_url}" target="_blank">↗ sitemap.xml</a>'
+                f'<a href="{robots_url}" target="_blank">↗ robots.txt</a>'
+                # f'<a href="{sitemap_url}" target="_blank">↗ sitemap.xml</a>'
             )
 
         return super().render_change_form(request, context, *args, **kwargs)

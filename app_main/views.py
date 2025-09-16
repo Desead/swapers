@@ -5,16 +5,17 @@ from django.contrib import messages
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
-from django.conf import settings
 from django.views.decorators.http import require_GET
 from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
-from django.http import HttpResponse
-from django.contrib.sites.models import Site
 from django.core.cache import cache
 import re
-from django.contrib.sitemaps.views import sitemap as django_sitemap
-from app_main.sitemaps import I18nStaticSitemap
+from django.http import HttpResponse
+from django.urls import reverse
+from django.contrib.sites.models import Site
+from django.utils.translation import override
+from django.conf import settings
+import xml.etree.ElementTree as ET
 
 from .models import SiteSetup
 
@@ -143,21 +144,8 @@ def robots_txt(request):
             lines.append(canonical)
 
     # Ровно одна строка Sitemap (в конце)
-    lines.append(f"Sitemap: {scheme}://{host}/sitemap.xml")
+    # lines.append(f"Sitemap: {scheme}://{host}/sitemap.xml")
 
     body = "\n".join(lines) + "\n"
     cache.set(cache_key, body, 60 * 60)
     return HttpResponse(body, content_type="text/plain; charset=utf-8")
-
-
-def sitemap_xml(request):
-    """
-    Обёртка над стандартной вьюхой карт: форсируем протокол через атрибут Sitemap.
-    """
-    setup = SiteSetup.get_solo()
-    protocol = "https" if bool(getattr(setup, "use_https_in_meta", False)) else "http"
-
-    sm = I18nStaticSitemap()
-    sm.protocol = protocol  # <-- ВАЖНО: выставляем протокол здесь
-
-    return django_sitemap(request, sitemaps={"static": sm})
