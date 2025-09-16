@@ -178,6 +178,9 @@ def seo_meta(request) -> Dict[str, object]:
         "JSONLD_ORG": JSONLD_ORG,
         "JSONLD_WEBSITE": JSONLD_WEBSITE,
 
+        # Вставка в <head> с CSP-нонсом (фильтр добавит nonce в script/style)
+        "HEAD_INJECT_HTML": getattr(setup, "head_inject_html", "") or "",
+
         # Статус работы
         "MAINTENANCE_MODE": bool(getattr(setup, "maintenance_mode", False)),
         "IS_OPEN_NOW": IS_OPEN_NOW,

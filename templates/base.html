@@ -1,4 +1,4 @@
-{% load static i18n i18n_extras %}
+{% load static i18n i18n_extras seo_extras %}
 <!doctype html>
 <html lang="{{ CUR_LANG }}">
 <head>
@@ -77,7 +77,13 @@
 
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     {% block extra_head %}{% endblock %}
+
     <script src="{% static 'js/deeplink.js' %}" defer></script>
+
+    {# ВСТАВКА ИЗ SiteSetup.head_inject_html — ПОЧТИ ПЕРЕД </head> #}
+    {% if HEAD_INJECT_HTML %}
+        {{ HEAD_INJECT_HTML|csp_nonce:request.csp_nonce|safe }}
+    {% endif %}
 </head>
 <body>
 {% include "includes/_nav.html" %}
