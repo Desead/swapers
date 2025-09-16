@@ -193,3 +193,5 @@ CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
 # Сначала отчётный режим
 CSP_REPORT_ONLY = True
 CSP_REPORT_URI = "/csp-report/"
+
+TELEGRAM_ECHO_TO_CONSOLE = True

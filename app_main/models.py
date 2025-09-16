@@ -442,7 +442,7 @@ class SiteSetup(models.Model):
         verbose_name=_("Telegram Chat/Channel ID"),
         max_length=64, blank=True,
         default="",
-        help_text=_("ID или @username канала/чата, куда слать служебные уведомления."),
+        help_text=_("ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите бота: @username_to_id_bot"),
     )
 
     # --- [12] Тексты на главную ---
