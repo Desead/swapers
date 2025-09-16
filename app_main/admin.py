@@ -168,14 +168,16 @@ class SiteSetupAdmin(admin.ModelAdmin):
             ),
         }),
 
-        (_("SEO / robots.txt"), {
+        (_("SEO"), {
             "classes": ("wide", "collapse"),
             "fields": (
+                "use_https_in_meta",
+                "hreflang_enabled",
+                "hreflang_xdefault",
                 "block_indexing",
                 "robots_txt",
                 "seo_default_title",
-                "seo_default_description",
-                "seo_default_keywords",
+                ("seo_default_description", "seo_default_keywords"),
             ),
         }),
 
@@ -192,15 +194,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
                 ("og_locale_alternates",),
             ),
             "description": _("Рекомендуемый размер 1200×630 (соотношение ~1.91:1). Минимум — 600×315.")
-        }),
-
-        (_("Canonical и hreflang"), {
-            "classes": ("wide", "collapse"),
-            "fields": (
-                "use_https_in_meta",
-                "hreflang_enabled",
-                "hreflang_xdefault",
-            ),
         }),
 
         (_("Структурированные данные (JSON-LD)"), {

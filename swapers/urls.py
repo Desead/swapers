@@ -5,8 +5,8 @@ from django.utils import translation
 from django.contrib.sitemaps.views import sitemap as sitemap_view
 from django.conf import settings
 from django.conf.urls.static import static
-
-from app_main.sitemaps import StaticViewSitemap
+from app_main.views import sitemap_xml
+from app_main.sitemaps import I18nStaticSitemap
 from app_main.views_security import csp_report
 from app_main.views import dashboard, account_settings, account_delete, robots_txt
 
@@ -15,7 +15,7 @@ from django.conf.urls.i18n import i18n_patterns
 from django.views.i18n import set_language, JavaScriptCatalog
 
 sitemaps = {
-    "static": StaticViewSitemap(),
+    "static": I18nStaticSitemap(),
 }
 
 # берём префикс через сервис (с кэшем); если таблицы ещё нет — падаем в "admin"
@@ -58,7 +58,8 @@ urlpatterns = [
     path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 
     # SEO-файлы без i18n
-    path("sitemap.xml", sitemap_view, {"sitemaps": sitemaps}, name="sitemap"),
+    # path("sitemap.xml", sitemap_view, {"sitemaps": sitemaps}, name="sitemap"),
+path("sitemap.xml", sitemap_xml, name="sitemap"),
     path("robots.txt", robots_txt, name="robots_txt"),
 ]
 

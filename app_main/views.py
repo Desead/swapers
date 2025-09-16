@@ -13,7 +13,8 @@ from django.http import HttpResponse
 from django.contrib.sites.models import Site
 from django.core.cache import cache
 import re
-
+from django.contrib.sitemaps.views import sitemap as django_sitemap
+from app_main.sitemaps import I18nStaticSitemap
 
 from .models import SiteSetup
 
@@ -147,3 +148,16 @@ def robots_txt(request):
     body = "\n".join(lines) + "\n"
     cache.set(cache_key, body, 60 * 60)
     return HttpResponse(body, content_type="text/plain; charset=utf-8")
+
+
+def sitemap_xml(request):
+    """
+    Обёртка над стандартной вьюхой карт: форсируем протокол через атрибут Sitemap.
+    """
+    setup = SiteSetup.get_solo()
+    protocol = "https" if bool(getattr(setup, "use_https_in_meta", False)) else "http"
+
+    sm = I18nStaticSitemap()
+    sm.protocol = protocol  # <-- ВАЖНО: выставляем протокол здесь
+
+    return django_sitemap(request, sitemaps={"static": sm})
