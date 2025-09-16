@@ -498,6 +498,44 @@ class SiteSetup(models.Model):
         ),
     )
 
+    # === CSP (динамическая политика) ===
+    csp_report_only = models.BooleanField(
+        verbose_name=_("CSP: режим Report-Only"),
+        default=False,
+        help_text=_("Если включено — политика будет в режиме отчётов (не блокирует), заголовок 'Content-Security-Policy-Report-Only'."),
+    )
+    csp_extra_script_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники script-src"),
+        blank=True, default="",
+        help_text=_(
+            "Через запятую или пробел: например https://mc.yandex.ru https://code.jivo.ru https://www.googletagmanager.com 'unsafe-eval' (не рекомендуется)."),
+    )
+    csp_extra_style_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники style-src"),
+        blank=True, default="",
+        help_text=_("Например: https://fonts.googleapis.com."),
+    )
+    csp_extra_img_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники img-src"),
+        blank=True, default="",
+        help_text=_("Например: https://mc.yandex.ru data: blob:."),
+    )
+    csp_extra_connect_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники connect-src"),
+        blank=True, default="",
+        help_text=_("Например: https://mc.yandex.ru https://api.example.com."),
+    )
+    csp_extra_frame_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники frame-src"),
+        blank=True, default="",
+        help_text=_("Например: https://www.youtube.com https://player.vimeo.com."),
+    )
+    csp_extra_font_src = models.TextField(
+        verbose_name=_("CSP: дополнительные источники font-src"),
+        blank=True, default="",
+        help_text=_("Например: https://fonts.gstatic.com data:."),
+    )
+
     class Meta:
         verbose_name = _("Настройки сайта")
         verbose_name_plural = _("Настройки сайта")

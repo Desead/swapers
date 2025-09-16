@@ -78,8 +78,8 @@
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     {% block extra_head %}{% endblock %}
 
-    <script src="{% static 'js/deeplink.js' %}" defer></script>
-
+    <script src="{% static 'js/deeplink.js' %}" defer
+            {% if request.csp_nonce %}nonce="{{ request.csp_nonce }}"{% endif %}></script>
     {# ВСТАВКА ИЗ SiteSetup.head_inject_html — ПОЧТИ ПЕРЕД </head> #}
     {% if HEAD_INJECT_HTML %}
         {{ HEAD_INJECT_HTML|csp_nonce:request.csp_nonce|safe }}

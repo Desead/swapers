@@ -52,7 +52,6 @@ MIDDLEWARE = [
     # 0) Базовые системные
     "django.middleware.security.SecurityMiddleware",  # лучше самым первым
     "csp.middleware.CSPMiddleware",  # очень рано, чтобы nonce попал в request
-    "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",
 
     # 1) Сессии → рефералка → локализация
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -76,6 +75,8 @@ MIDDLEWARE = [
     # 5) Админ-специфика (после Auth/Messages, чтобы работать с request.user и messages)
     "app_main.middleware.Admin2FARedirectMiddleware",
     "app_main.middleware.AdminSessionTimeoutMiddleware",
+
+    "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",
 ]
 
 ROOT_URLCONF = "swapers.urls"
@@ -186,6 +187,14 @@ CSP_FRAME_ANCESTORS = ("'self'",)
 CSP_FORM_ACTION = ("'self'",)
 CSP_BASE_URI = ("'self'",)
 CSP_OBJECT_SRC = ("'none'",)
+# Не ставим CSP заголовки от django-csp на админку и аккаунты (с i18n-префиксами)
+CSP_EXCLUDE_URL_PREFIXES = (
+    "/admin/",          # на случай дефолтного пути
+    "/ru/admin/", "/en/admin/",
+
+    "/accounts/",       # без префикса (если i18n выключен где-то)
+    "/ru/accounts/", "/en/accounts/",
+)
 
 # nonce будет добавляться в заголовок, если вы использовали его в шаблоне
 CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")

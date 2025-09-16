@@ -41,6 +41,7 @@
     }
 
     document.addEventListener("DOMContentLoaded", function () {
+        // Делинк для скрытия реальных URL
         var nodes = document.querySelectorAll(".deeplink[data-href]");
         nodes.forEach(function (el) {
             el.addEventListener("click", onClick, false);
@@ -49,5 +50,13 @@
             // доступность
             if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "0");
         });
+
+        // Автосабмит переключателя языка (CSP-friendly — без inline JS)
+        var sel = document.querySelector('[data-lang-switch]');
+        if (sel && sel.form) {
+            sel.addEventListener('change', function () {
+                try { sel.form.submit(); } catch (e) { /* no-op */ }
+            });
+        }
     });
 })();
