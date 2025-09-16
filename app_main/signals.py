@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F
-from django.db.models.signals import pre_save
+from django.db.models.signals import pre_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone, translation
 
@@ -21,6 +21,7 @@ except Exception:
     EmailAddress = None  # type: ignore
 
 from .middleware import ReferralAttributionMiddleware
+from .models import SiteSetup  # для post_delete SiteSetup
 
 User = get_user_model()
 
@@ -150,3 +151,13 @@ if email_confirmed and EmailAddress:
             )
         except Exception:
             return
+
+
+# --- очистка кэша настроек при удалении SiteSetup ------------------------------
+@receiver(post_delete, sender=SiteSetup)
+def _clear_sitesetup_cache_on_delete(sender, instance, **kwargs):
+    try:
+        from app_main.services.site_setup import clear_site_setup_cache
+        clear_site_setup_cache()
+    except Exception:
+        pass

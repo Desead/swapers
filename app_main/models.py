@@ -571,6 +571,13 @@ class SiteSetup(models.Model):
         if changed:
             site.save(update_fields=["domain", "name"])
 
+        # --- Инвалидация кэша get_site_setup() после сохранения ---
+        try:
+            from .services.site_setup import clear_site_setup_cache
+            clear_site_setup_cache()
+        except Exception:
+            pass
+
     @classmethod
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(
