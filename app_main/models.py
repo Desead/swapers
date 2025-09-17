@@ -489,7 +489,7 @@ class SiteSetup(models.Model):
 
     # --- [14] Партнёрская атрибуция (cookies) ---
     ref_attribution_window_days = models.PositiveIntegerField(
-        verbose_name=_("Окно атрибуции (дней)"),
+        verbose_name=_("Срок хранения куки (дней)"),
         default=90,
         help_text=_(
             "Срок жизни подписанной referral-cookie. "

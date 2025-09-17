@@ -1,119 +1,165 @@
+import json
+import re
 import pytest
-from django.urls import reverse
-from django.contrib.auth import get_user_model
-from django.utils import translation
 from django.conf import settings
+from django.utils import translation
 from django.test import Client, RequestFactory
+from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
+from django.urls import reverse
 
+from app_main.models import SiteSetup
 
+# --- авто-создание singleton SiteSetup для всех тестов ---
+@pytest.fixture(autouse=True)
+def _ensure_singleton(db):
+    SiteSetup.get_solo()
+
+# --- удобный доступ к SiteSetup ---
 @pytest.fixture
 def site_setup(db):
-    # ВАЖНО: импортируем модель только здесь, когда Django уже сконфигурирован
-    from app_main.models import SiteSetup
-    s = SiteSetup.get_solo()
-    s.domain = "example.com"
-    s.domain_view = "Swap"
-    s.admin_path = "admin"
-    s.save()
-    return s
+    return SiteSetup.get_solo()
 
-
+# --- парсер JSON-LD из разметки ---
 @pytest.fixture
-def user(db):
-    User = get_user_model()
-    return User.objects.create_user(email="u@example.com", password="pass123")
-
-
-@pytest.fixture
-def staff_user(db):
-    User = get_user_model()
-    return User.objects.create_user(
-        email="staff@example.com", password="pass123", is_staff=True
+def extract_jsonld():
+    script_re = re.compile(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(?P<json>.*?)</script>',
+        re.IGNORECASE | re.DOTALL,
     )
+    def _extract(html: str):
+        m = script_re.search(html)
+        return json.loads(m.group("json")) if m else None
+    return _extract
 
-
+# --- переключение языка, совместимо с вызовами switch_lang('ru', next_url='/') ---
 @pytest.fixture
-def auth_client(client, user):
-    assert client.login(email=user.email, password="pass123")
+def switch_lang(client, settings):
+    def _set(lang_code="ru", next_url="/", **_ignore):
+        translation.activate(lang_code)
+        client.defaults["HTTP_ACCEPT_LANGUAGE"] = lang_code
+        s = client.session
+        s["_language"] = lang_code
+        s.save()
+        client.cookies["django_language"] = lang_code
+        return lang_code
+    return _set
+
+# --- staff-клиент без username (у нас email — логин) ---
+@pytest.fixture
+def staff_client(db, client, django_user_model):
+    user = django_user_model.objects.create_user(
+        email="staff@example.com",
+        password="pass1234",
+        is_staff=True,
+        is_superuser=False,
+    )
+    client.force_login(user)
     return client
 
+# --- вспомогалка: достаём «ru»-код, реально присутствующий в проекте ---
+def _preferred_ru_code():
+    langs = [code.lower() for code, _ in getattr(settings, "LANGUAGES", [])]
+    for cand in ("ru", "ru-ru"):
+        if cand in langs:
+            return cand
+    # если ни одного «ru*» нет — берём первый из LANGUAGES или 'ru'
+    return langs[0] if langs else "ru"
 
+# --- HTML главной: форсируем язык и пробуем кандидаты путей, чтобы исключить 404 ---
 @pytest.fixture
-def staff_client(client, staff_user):
-    assert client.login(email=staff_user.email, password="pass123")
-    return client
+def get_home_html(client):
+    def _get():
+        lang_code = _preferred_ru_code()
+        translation.activate(lang_code)
+        client.defaults["HTTP_ACCEPT_LANGUAGE"] = lang_code
+        client.cookies["django_language"] = lang_code
+        s = client.session
+        s["_language"] = lang_code
+        s.save()
 
+        # пробуем несколько вариантов (reverse + i18n-prefix’ы)
+        candidates = [reverse("home")]
+        if "/" not in candidates:
+            candidates.append("/")
+        for prefix in {lang_code, "ru", "ru-ru"}:
+            candidates.append(f"/{prefix.strip('/')}/")
 
-@pytest.fixture
-def switch_lang(client, db):
-    """Ставит язык в сессии + активирует его в текущем потоке (чтобы reverse() дал правильный префикс)."""
+        last_resp = None
+        for path in candidates:
+            resp = client.get(path, follow=True)
+            last_resp = resp
+            if resp.status_code == 200:
+                return resp.content.decode("utf-8")
 
-    def _switch(lang_code: str, next_url="/"):
-        client.post(
-            reverse("set_language"),
-            {"language": lang_code, "next": next_url},
-            follow=True,
+        # если вдруг ничего не сработало — явно падаем с информацией
+        raise AssertionError(
+            f"Home not reachable. Tried: {', '.join(candidates)}; "
+            f"last_status={getattr(last_resp, 'status_code', None)}"
         )
-        # Активируем язык для текущего потока — reverse() начнёт отдавать /en/, /ru/, ...
-        translation.activate(lang_code.split("-", 1)[0])
-        return client
+    return _get
 
-    return _switch
-
-
+# --- Back-compat helper для старых тестов (рефералы/метрики) ---
 class Browser:
     """
-    Упрощённый «браузер»:
-    - .get/.post — ходят через Django test client (все middleware выполняются, куки сохраняются).
-    - .make_request(path, method='get') — создаёт RequestFactory-запрос, НО с той же сессией/куками,
-      что и у клиента (удобно для вызова сигналов, где нужен request-объект).
+    Обёртка над django.test.Client с минимально нужной совместимостью
+    для старых тестов: перенос куки/сессии в "сырой" Request и обратно.
     """
-
     def __init__(self):
-        self.client = Client()
-        self.rf = RequestFactory()
+        self._client = Client()
+        self._extra = {}  # headers для ближайшего запроса
+        self._rf = RequestFactory()
 
-    def get(self, path, **kwargs):
-        return self.client.get(path, **kwargs)
+    @property
+    def client(self) -> Client:
+        return self._client
 
-    def post(self, path, data=None, **kwargs):
-        return self.client.post(path, data or {}, **kwargs)
+    def set_header(self, key: str, value: str):
+        if not key.upper().startswith("HTTP_") and key.lower() not in ("content_type", "content_length"):
+            key = f"HTTP_{key.replace('-', '_').upper()}"
+        self._extra[key] = value
+        return self
 
-    def make_request(self, path="/", method="get"):
-        method = method.lower()
-        req = getattr(self.rf, method)(path)
-        # перенесём все текущие куки клиента
-        for k, morsel in self.client.cookies.items():
-            req.COOKIES[k] = morsel.value
+    def get(self, path: str, data=None, **kwargs):
+        extra = {**self._extra}
+        self._extra.clear()
+        return self._client.get(path, data=data or {}, **extra, **kwargs)
 
-        # прокинем ту же сессию (как это делает SessionMiddleware)
-        smw = SessionMiddleware(lambda r: None)
-        smw.process_request(req)
-        # если у клиента уже есть sessionid — SessionMiddleware её подхватит сам
-        # если нет — создадим и вернём ключ обратно в клиент (чтобы последующие запросы имели ту же сессию)
-        cookie_name = settings.SESSION_COOKIE_NAME
-        if cookie_name not in req.COOKIES:
-            req.session.save()
-            self.client.cookies[cookie_name] = req.session.session_key
-        return req
+    def post(self, path: str, data=None, content_type=None, **kwargs):
+        extra = {**self._extra}
+        self._extra.clear()
+        return self._client.post(path, data=data or {}, content_type=content_type, **extra, **kwargs)
 
-    def save_session_from_request(self, request):
-        """Явно сохранить изменения сессии, сделанные на request (нужно, если не было ответа через SessionMiddleware)."""
-        request.session.save()
+    @property
+    def cookies(self):
+        return self._client.cookies
 
     @property
     def session(self):
-        return self.client.session
+        return self._client.session
 
-    def set_cookie(self, key, value):
-        self.client.cookies[key] = value
+    def make_request(self, path: str, method: str = "get", data=None):
+        """
+        Сырой Request с прикрученной СЕССИЕЙ текущего client + его КУКАМИ.
+        Нужен для сигналов allauth в реферальных тестах.
+        """
+        method = method.lower()
+        req = getattr(self._rf, method)(path, data=data or {})
+        SessionMiddleware(lambda r: None).process_request(req)
+        for k, v in self._client.session.items():
+            req.session[k] = v
+        req.COOKIES = {**{k: v.value for k, v in self._client.cookies.items()}, **req.COOKIES}
+        req.user = AnonymousUser()
+        return req
 
-    def get_cookie(self, key):
-        c = self.client.cookies.get(key)
-        return c.value if c else None
-
-
-@pytest.fixture
-def browser():
-    return Browser()
+    def save_session_from_request(self, request):
+        """
+        Переносим изменения request.session обратно в client.session.
+        """
+        cs = self._client.session
+        for k in list(cs.keys()):
+            if k not in request.session:
+                del cs[k]
+        for k, v in request.session.items():
+            cs[k] = v
+        cs.save()
