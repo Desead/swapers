@@ -176,13 +176,16 @@ class SiteSetupAdmin(admin.ModelAdmin):
         (_("Контакты и соцсети"), {
             "classes": ("wide", "collapse"),
             "fields": (
-                ("social_tg", "contact_email_clients",),
-                ("social_vk", "contact_email_partners",),
-                ("social_youtube", "contact_email_general",),
-                ("social_instagram", "contact_telegram",),
+                ("social_tg",),
                 ("social_dzen",),
                 ("social_rutube",),
-                ("contact_label_clients", "contact_label_partners", "contact_label_general"),
+                ("social_vk",),
+                ("social_youtube",),
+                ("social_instagram",),
+
+                ("contact_label_clients", "contact_email_clients",),
+                ("contact_label_partners", "contact_email_partners",),
+                ("contact_label_general", "contact_email_general",),
             ),
         }),
         (_("Twitter Cards"), {
@@ -195,9 +198,12 @@ class SiteSetupAdmin(admin.ModelAdmin):
             ),
         }),
 
-        (_("SEO / robots.txt"), {
+        (_("SEO"), {
             "classes": ("wide", "collapse"),
             "fields": (
+                "use_https_in_meta",
+                "hreflang_enabled",
+                "hreflang_xdefault",
                 "block_indexing",
                 "robots_txt",
                 "seo_default_title",
@@ -217,15 +223,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
                 ("og_image_width", "og_image_height"),
                 "og_image_preview",
                 ("og_locale_alternates",),
-            ),
-        }),
-
-        (_("Canonical и hreflang"), {
-            "classes": ("wide", "collapse"),
-            "fields": (
-                "use_https_in_meta",
-                "hreflang_enabled",
-                "hreflang_xdefault",
             ),
         }),
 

@@ -195,7 +195,7 @@ class SiteSetup(models.Model):
         default="User-agent: *\nDisallow:\n",
     )
     block_indexing = models.BooleanField(
-        verbose_name=_("Запретить индексацию всего сайта"),
+        verbose_name=_("Запретить индексацию сайта"),
         help_text=_(
             "Если включено, robots.txt будет отдавать 'Disallow: /', а во всех ответах "
             "будет заголовок 'X-Robots-Tag: noindex, nofollow'"
