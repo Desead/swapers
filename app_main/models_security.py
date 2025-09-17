@@ -1,5 +1,7 @@
 from django.db import models
 from django.conf import settings
+from django.utils.translation import gettext_lazy as _
+
 
 class BlocklistEntry(models.Model):
     user = models.ForeignKey(
@@ -13,8 +15,8 @@ class BlocklistEntry(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "Запись чёрного списка"
-        verbose_name_plural = "Чёрный список"
+        verbose_name = _("Запись чёрного списка")
+        verbose_name_plural = _("Чёрный список")
         indexes = [
             models.Index(fields=["email"]),
             models.Index(fields=["ip_address"]),
@@ -22,4 +24,6 @@ class BlocklistEntry(models.Model):
         ]
 
     def __str__(self):
-        return  f"name: {self.user.email}"
+        # Отображаем email пользователя, если есть.
+        # Строки __str__ обычно не обязательно переводить, оставил как есть.
+        return f"name: {getattr(self.user, 'email', '') or (self.email or self.ip_address or '—')}"

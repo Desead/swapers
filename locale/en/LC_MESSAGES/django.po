@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-17 11:10+0300\n"
+"POT-Creation-Date: 2025-09-18 02:33+0300\n"
 "PO-Revision-Date: 2025-09-17 11:14+0300\n"
 "Last-Translator: news-piter@mail.ru\n"
 "Language-Team: \n"
@@ -20,134 +20,199 @@ msgstr ""
 "X-Generator: Poedit 3.7\n"
 "X-Translated-Using: django-rosetta 0.10.2\n"
 
-#: .\app_main\admin.py:28
+#: .\app_main\admin.py:32
 msgid "Пароль"
 msgstr "Password"
 
-#: .\app_main\admin.py:29
+#: .\app_main\admin.py:33
 #, fuzzy
 #| msgid "Подтвердите пароль:"
 msgid "Повторите пароль"
 msgstr "Confirm the password:"
 
-#: .\app_main\admin.py:38 .\app_main\admin.py:81
+#: .\app_main\admin.py:42 .\app_main\admin.py:85
 msgid "Пользователь с таким email уже существует."
 msgstr ""
 
-#: .\app_main\admin.py:45
+#: .\app_main\admin.py:49
 msgid "Пароли не совпадают"
 msgstr ""
 
-#: .\app_main\admin.py:60
+#: .\app_main\admin.py:64
 #, fuzzy
 #| msgid "Хэш пароля"
 msgid "Хеш пароля"
 msgstr "Password hash"
 
-#: .\app_main\admin.py:61
+#: .\app_main\admin.py:65
 msgid ""
 "Пароль не хранится в явном виде. Вы можете сменить пароль по кнопке "
 "\"Изменить пароль\" на странице пользователя."
 msgstr ""
 
-#: .\app_main\admin.py:105
+#: .\app_main\admin.py:110
 #, fuzzy
 #| msgid "Двухфакторная аутентификация (TOTP)"
 msgid "Аутентификация"
 msgstr "Two-factor Authentication (TOTP)"
 
-#: .\app_main\admin.py:106
+#: .\app_main\admin.py:111
 msgid "Профиль"
 msgstr ""
 
-#: .\app_main\admin.py:107
+#: .\app_main\admin.py:112
 msgid "Права доступа"
 msgstr ""
 
-#: .\app_main\admin.py:108
+#: .\app_main\admin.py:113
 #, fuzzy
 #| msgid "Партнёрский код"
 msgid "Партнёрка"
 msgstr "Referral code"
 
-#: .\app_main\admin.py:110 .\app_main\admin.py:270
+#: .\app_main\admin.py:115 .\app_main\admin.py:268
 msgid "Служебное"
 msgstr ""
 
-#: .\app_main\admin.py:145
+#: .\app_main\admin.py:147
 #, fuzzy
 #| msgid "Минимальная стартовая страница."
 msgid "Главная страница"
 msgstr "Minimal starter page"
 
-#: .\app_main\admin.py:150
+#: .\app_main\admin.py:152
 msgid "Брендинг"
 msgstr ""
 
-#: .\app_main\admin.py:154
+#: .\app_main\admin.py:156
 msgid "Комиссии и списки стейблкоинов"
 msgstr ""
 
-#: .\app_main\admin.py:159
+#: .\app_main\admin.py:161
 msgid "Интеграции: XML, <head>, Telegram"
 msgstr ""
 
-#: .\app_main\admin.py:164
+#: .\app_main\admin.py:166
 msgid "График работы (UTC)"
 msgstr ""
 
-#: .\app_main\admin.py:176
+#: .\app_main\admin.py:178
 msgid "Контакты и соцсети"
 msgstr ""
 
-#: .\app_main\admin.py:188
+#: .\app_main\admin.py:192
 msgid "Twitter Cards"
 msgstr ""
 
-#: .\app_main\admin.py:198
-msgid "SEO / robots.txt"
+#: .\app_main\admin.py:202
+msgid "SEO"
 msgstr ""
 
-#: .\app_main\admin.py:209
+#: .\app_main\admin.py:216
 msgid "Open Graph"
 msgstr ""
 
-#: .\app_main\admin.py:223
-msgid "Canonical и hreflang"
-msgstr ""
-
-#: .\app_main\admin.py:232
+#: .\app_main\admin.py:230
 msgid "Структурированные данные (JSON-LD)"
 msgstr ""
 
-#: .\app_main\admin.py:240
+#: .\app_main\admin.py:238
 #, fuzzy
 #| msgid "Регистрация"
 msgid "CSP и интеграции"
 msgstr "Sign up"
 
-#: .\app_main\admin.py:250
+#: .\app_main\admin.py:248
 #, fuzzy
 #| msgid "Настройки"
 msgid "Почтовые настройки"
 msgstr "Settings"
 
-#: .\app_main\admin.py:260
+#: .\app_main\admin.py:258
 #, fuzzy
 #| msgid "Безопасность (2FA)"
 msgid "Безопасность и сессии"
 msgstr "Security (2FA)"
 
-#: .\app_main\admin.py:265
+#: .\app_main\admin.py:263
 msgid "Требует перезагрузки сервера"
 msgstr "Requires a reboot of the server"
 
-#: .\app_main\admin.py:305
+#: .\app_main\admin.py:299
 msgid "Превью OG"
 msgstr ""
 
-#: .\app_main\admin.py:316
+#: .\app_main\admin.py:310
 msgid "Превью Twitter"
+msgstr ""
+
+#: .\app_main\admin.py:361
+msgid "Активировать выбранные"
+msgstr ""
+
+#: .\app_main\admin.py:365
+msgid "Деактивировать выбранные"
+msgstr ""
+
+#: .\app_main\admin.py:369 .\app_main\models.py:91
+msgid "Пользователь"
+msgstr "User"
+
+#: .\app_main\admin.py:519
+msgid "Тип блокировки"
+msgstr ""
+
+#: .\app_main\admin.py:539 .\app_main\admin.py:587 .\app_main\admin.py:678
+msgid "Логин + IP"
+msgstr ""
+
+#: .\app_main\admin.py:549 .\app_main\admin.py:567 .\app_main\admin.py:598
+#: .\app_main\admin.py:664
+msgid "IP"
+msgstr ""
+
+#: .\app_main\admin.py:559 .\app_main\admin.py:565 .\app_main\admin.py:609
+#: .\app_main\admin.py:671
+msgid "Логин"
+msgstr ""
+
+#: .\app_main\admin.py:569 .\app_main\admin.py:626
+msgid "User-Agent"
+msgstr ""
+
+#: .\app_main\admin.py:574
+msgid "Заблокирован?"
+msgstr ""
+
+#: .\app_main\admin.py:622
+msgid "Путь"
+msgstr ""
+
+#: .\app_main\admin.py:656
+#, python-format
+msgid "Снято блокировок: %(done)s. Пропущено: %(skipped)s."
+msgstr ""
+
+#: .\app_main\admin.py:659
+msgid "Снять блокировку по IP"
+msgstr ""
+
+#: .\app_main\admin.py:666
+msgid "Снять блокировку по логину"
+msgstr ""
+
+#: .\app_main\admin.py:673
+msgid "Снять блокировку по логину+IP"
+msgstr ""
+
+#: .\app_main\apps.py:13
+#, fuzzy
+#| msgid "Удаление аккаунта"
+msgid "Управление сайтом"
+msgstr "Deleting an account"
+
+#: .\app_main\apps.py:62
+msgid "Блокировки входа"
 msgstr ""
 
 #: .\app_main\forms.py:13 .\app_main\forms.py:19 .\app_main\models.py:46
@@ -230,10 +295,6 @@ msgstr ""
 msgid "Язык общения"
 msgstr "Communication language"
 
-#: .\app_main\models.py:91
-msgid "Пользователь"
-msgstr "User"
-
 #: .\app_main\models.py:92
 msgid "Пользователи"
 msgstr "Users"
@@ -308,8 +369,10 @@ msgid ""
 msgstr ""
 
 #: .\app_main\models.py:198
-msgid "Запретить индексацию всего сайта"
-msgstr ""
+#, fuzzy
+#| msgid "Настройки сайта"
+msgid "Запретить индексацию сайта"
+msgstr "Site Settings"
 
 #: .\app_main\models.py:200
 msgid ""
@@ -718,7 +781,7 @@ msgid "Ссылка t.me/... или @username"
 msgstr ""
 
 #: .\app_main\models.py:492
-msgid "Окно атрибуции (дней)"
+msgid "Срок хранения куки (дней)"
 msgstr ""
 
 #: .\app_main\models.py:495
@@ -816,6 +879,16 @@ msgstr ""
 msgid "Twitter изображение"
 msgstr ""
 
+#: .\app_main\models_security.py:18
+msgid "Запись чёрного списка"
+msgstr ""
+
+#: .\app_main\models_security.py:19
+#, fuzzy
+#| msgid "Неверный пароль."
+msgid "Чёрный список"
+msgstr "Invalid password."
+
 #: .\app_main\views.py:64
 msgid "Настройки сохранены."
 msgstr "Save settings."
@@ -850,11 +923,11 @@ msgstr "Two-factor authentication is enabled."
 msgid "Неверный код. Попробуйте ещё раз."
 msgstr "Invalid code. Try again."
 
-#: .\swapers\settings\base.py:22
+#: .\swapers\settings\base.py:24
 msgid "Russian"
 msgstr "Русский"
 
-#: .\swapers\settings\base.py:23
+#: .\swapers\settings\base.py:25
 msgid "English"
 msgstr "Английский"
 
@@ -867,6 +940,7 @@ msgid "Похоже, вы перешли по неверной ссылке ил
 msgstr ""
 
 #: .\templates\404.html:13 .\templates\500.html:13
+#: .\templates\security\locked_out.html:29
 #, fuzzy
 #| msgid "Главная"
 msgid "На главную"
@@ -1139,6 +1213,46 @@ msgstr "Enter the 6-digit code from the application:"
 #: .\templates\security\2fa_setup.html:23
 msgid "Подтвердить"
 msgstr "Confirm"
+
+#: .\templates\security\locked_out.html:4
+msgid "Доступ временно заблокирован"
+msgstr ""
+
+#: .\templates\security\locked_out.html:8
+msgid "Слишком много неудачных попыток входа"
+msgstr ""
+
+#: .\templates\security\locked_out.html:9
+msgid "Мы временно заблокировали вход для защиты вашего аккаунта."
+msgstr ""
+
+#: .\templates\security\locked_out.html:13
+#, python-format
+msgid "Попробуйте снова после %(cooloff_until)s."
+msgstr ""
+
+#: .\templates\security\locked_out.html:15
+#, python-format
+msgid "Попробуйте снова через %(cooloff_time)s."
+msgstr ""
+
+#: .\templates\security\locked_out.html:17
+msgid "Попробуйте снова позже."
+msgstr ""
+
+#: .\templates\security\locked_out.html:21
+#, python-format
+msgid "Логин: %(username)s"
+msgstr ""
+
+#: .\templates\security\locked_out.html:24
+#, python-format
+msgid "IP: %(ip_address)s"
+msgstr ""
+
+#: .\templates\security\locked_out.html:28
+msgid "Вернуться к форме входа"
+msgstr ""
 
 #~ msgid "Подтверждение пароля"
 #~ msgstr "Password confirmation"
