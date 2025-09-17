@@ -41,3 +41,13 @@ def test_home_page_title_ru(client, switch_lang):
     r = client.get(reverse("home"))
     assert r.status_code == 200
     assert "Главная" in r.content.decode("utf-8")
+
+@pytest.mark.django_db
+def test_set_language_cookie_not_overridden_by_normalizer(client, settings):
+    # сначала ставим ru (нормализатор не должен вмешиваться)
+    resp1 = client.post(reverse("set_language"), {"language": "ru", "next": "/"}, follow=False)
+    assert resp1.status_code in (302, 303)
+    # потом ставим en и убеждаемся, что ответ содержит en (а не ru)
+    resp2 = client.post(reverse("set_language"), {"language": "en", "next": "/"}, follow=False)
+    assert resp2.status_code in (302, 303)
+    assert resp2.cookies.get(settings.LANGUAGE_COOKIE_NAME).value == "en"

@@ -4,35 +4,46 @@ from django.utils import translation
 class LanguageVariantNormalizeMiddleware:
     """
     Нормализует язык до поддерживаемого варианта (напр. ru-RU -> ru)
-    до работы LocaleMiddleware и фиксирует это в ответе (cookie).
+    до работы LocaleMiddleware и правит cookie ТОЛЬКО если было
+    реальное изменение (чтобы не перебивать set_language).
     """
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
-        # 1) нормализуем куку языка
-        raw = request.COOKIES.get(settings.LANGUAGE_COOKIE_NAME) or request.COOKIES.get("django_language")
+        lang_cookie_name = getattr(settings, "LANGUAGE_COOKIE_NAME", "django_language")
+        original_cookies = dict(request.COOKIES)
+
+        raw = original_cookies.get(lang_cookie_name) or original_cookies.get("django_language")
         canonical = None
+        should_write_cookie = False
+
         if raw:
             try:
                 canonical = translation.get_supported_language_variant(raw, strict=False)
             except LookupError:
                 canonical = "ru"
-            # подменяем значение в текущем запросе
-            request.COOKIES[settings.LANGUAGE_COOKIE_NAME] = canonical
-            request.COOKIES.pop("django_language", None)
+            # Нормализуем только если реально отличается (ru-RU -> ru)
+            if canonical != raw or (lang_cookie_name not in original_cookies and "django_language" in original_cookies):
+                request.COOKIES[lang_cookie_name] = canonical
+                request.COOKIES.pop("django_language", None)
+                should_write_cookie = True
 
-        # 2) подчистим заголовок Accept-Language для типичных кейсов
+        # Подчистим заголовок Accept-Language от ru-RU, но не навязываем ru
         al = request.META.get("HTTP_ACCEPT_LANGUAGE")
         if al:
             request.META["HTTP_ACCEPT_LANGUAGE"] = al.replace("ru-RU", "ru").replace("ru_RU", "ru")
 
         response = self.get_response(request)
 
-        # если кука была «не каноничная» — выставим правильную
-        if canonical:
+        # Если вьюха уже поставила куку языка — не трогаем (важно для set_language)
+        if lang_cookie_name in getattr(response, "cookies", {}):
+            return response
+
+        # Пишем куку только если действительно нормализовали/мигрировали
+        if should_write_cookie and canonical:
             response.set_cookie(
-                settings.LANGUAGE_COOKIE_NAME,
+                lang_cookie_name,
                 canonical,
                 max_age=getattr(settings, "LANGUAGE_COOKIE_AGE", None),
                 samesite=getattr(settings, "LANGUAGE_COOKIE_SAMESITE", "Lax"),
