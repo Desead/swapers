@@ -12,7 +12,7 @@ from django.utils.translation import gettext_lazy as _
 from django.contrib import admin
 from django.conf import settings
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Sum, Max
 
 from .models import SiteSetup
 from app_main.models_security import BlocklistEntry
@@ -394,20 +394,6 @@ def _get_cooloff():
     return cooloff
 
 
-def _last_failure_dt(obj: AccessAttempt):
-    """
-    Время последней неудачи по той же паре (ip, username) из AccessFailureLog.
-    Если лога нет — пробуем поля самой попытки.
-    """
-    qs = AccessFailureLog.objects.filter(
-        ip_address=obj.ip_address or "",
-        username=obj.username or "",
-    ).order_by("-attempt_time")
-
-    last = qs.values_list("attempt_time", flat=True).first()
-    return last or getattr(obj, "latest_attempt", None) or getattr(obj, "attempt_time", None)
-
-
 def _axes_param_sets():
     """
     Нормализуем AXES_LOCKOUT_PARAMETERS к списку множеств:
@@ -479,6 +465,40 @@ def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None
         raise
 
 
+def _last_failure_dt_for(obj: AccessAttempt, kind: str):
+    """
+    Возвращает datetime последней неудачной попытки для нужной «группы блокировки»:
+    kind ∈ {"Логин + IP", "IP", "Логин"}.
+    Смотрим AccessFailureLog; если пусто — падаем к AccessAttempt.
+    """
+    ip = (obj.ip_address or "").strip()
+    user = (obj.username or "").strip()
+
+    qs = AccessFailureLog.objects.all()
+    if kind == "Логин + IP":
+        if not ip or not user:
+            return None
+        qs = qs.filter(ip_address=ip, username=user)
+        fallback_qs = AccessAttempt.objects.filter(ip_address=ip, username=user)
+    elif kind == "IP":
+        if not ip:
+            return None
+        qs = qs.filter(ip_address=ip)
+        fallback_qs = AccessAttempt.objects.filter(ip_address=ip)
+    elif kind == "Логин":
+        if not user:
+            return None
+        qs = qs.filter(username=user)
+        fallback_qs = AccessAttempt.objects.filter(username=user)
+    else:
+        return None
+
+    last = qs.order_by("-attempt_time").values_list("attempt_time", flat=True).first()
+    if last:
+        return last
+    return fallback_qs.order_by("-attempt_time").values_list("attempt_time", flat=True).first()
+
+
 @admin.register(AccessAttempt)
 class AccessAttemptAdmin(admin.ModelAdmin):
     list_display = (
@@ -500,7 +520,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
     def lock_key_type(self, obj: AccessAttempt):
         """
         Пытаемся угадать, что именно заблокировало:
-        1) если сама запись превысила лимит и в конфиге есть ["username","ip_address"] → «Логин + IP»;
+        1) если сама пара (логин+IP) превысила лимит и в конфиге есть ["username","ip_address"] → «Логин + IP»;
         2) иначе если суммарно по IP набрали лимит и в конфиге есть ["ip_address"] → «IP»;
         3) иначе если по логину набрали лимит и в конфиге есть ["username"] → «Логин»;
         4) иначе — подсказка по первой комбинации из конфига.
@@ -508,10 +528,17 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         param_sets = _axes_param_sets()
 
+        # Логин + IP
         if {"username", "ip_address"} in param_sets and obj.username and obj.ip_address:
-            if (obj.failures_since_start or 0) >= limit:
+            pair_total = (
+                AccessAttempt.objects
+                .filter(username=obj.username, ip_address=obj.ip_address)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if pair_total >= limit:
                 return "Логин + IP"
 
+        # IP
         if {"ip_address"} in param_sets and obj.ip_address:
             ip_total = (
                 AccessAttempt.objects
@@ -521,6 +548,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
             if ip_total >= limit:
                 return "IP"
 
+        # Логин
         if {"username"} in param_sets and obj.username:
             user_total = (
                 AccessAttempt.objects
@@ -530,6 +558,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
             if user_total >= limit:
                 return "Логин"
 
+        # Иначе — подсказка по конфигу
         for s in param_sets:
             parts = []
             if "username" in s:
@@ -544,12 +573,51 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description="Заблокирован?")
     def is_blocked_now(self, obj):
+        """
+        Считаем блок **по типу ключа**, а не только по текущей строке.
+        """
         cooloff = _get_cooloff()
-        limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
-        last = _last_failure_dt(obj)
-        if not cooloff or not last or (obj.failures_since_start or 0) < limit:
+        if not cooloff:
             return False
-        return timezone.now() < (last + cooloff)
+
+        limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
+        now = timezone.now()
+        k = self.lock_key_type(obj)
+
+        if k == "Логин + IP":
+            pair_total = (
+                AccessAttempt.objects
+                .filter(username=obj.username, ip_address=obj.ip_address)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if pair_total >= limit:
+                last = _last_failure_dt_for(obj, "Логин + IP")
+                return bool(last and now < last + cooloff)
+            return False
+
+        if k == "IP":
+            ip_total = (
+                AccessAttempt.objects
+                .filter(ip_address=obj.ip_address)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if ip_total >= limit:
+                last = _last_failure_dt_for(obj, "IP")
+                return bool(last and now < last + cooloff)
+            return False
+
+        if k == "Логин":
+            user_total = (
+                AccessAttempt.objects
+                .filter(username=obj.username)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if user_total >= limit:
+                last = _last_failure_dt_for(obj, "Логин")
+                return bool(last and now < last + cooloff)
+            return False
+
+        return False
 
     @admin.display(description="Путь")
     def path_info_short(self, obj):
@@ -560,25 +628,51 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         ua = obj.user_agent or ""
         return (ua[:80] + "…") if len(ua) > 80 else ua
 
-    # ----- экшены -----
+    # ----- экшены (строже соответствуют типу блокировки) -----
+
+    def _action_guard_and_reset(self, request, queryset, expected_type: str, do_reset):
+        """
+        Общий помощник:
+        - expected_type ∈ {"IP", "Логин", "Логин + IP"}
+        - do_reset(o) вызывает нужный _axes_reset_safe(...)
+        Сбрасываем только если запись сейчас действительно заблокирована И тип совпадает.
+        """
+        done = 0
+        skipped = 0
+        for o in queryset:
+            is_blocked = self.is_blocked_now(o)
+            lock_type = self.lock_key_type(o)
+
+            if not is_blocked or lock_type != expected_type:
+                skipped += 1
+                continue
+
+            try:
+                do_reset(o)
+                done += 1
+            except Exception:
+                skipped += 1
+
+        msg = f"Снято блокировок: {done}. Пропущено: {skipped}."
+        self.message_user(request, msg)
 
     def reset_lock_ip(self, request, queryset):
-        for o in queryset:
+        def _do(o):
             if o.ip_address:
                 _axes_reset_safe(ip=o.ip_address)
-        self.message_user(request, "Снята блокировка по IP для выбранных записей.")
+        self._action_guard_and_reset(request, queryset, expected_type="IP", do_reset=_do)
     reset_lock_ip.short_description = "Снять блокировку по IP"
 
     def reset_lock_username(self, request, queryset):
-        for o in queryset:
+        def _do(o):
             if o.username:
                 _axes_reset_safe(username=o.username)
-        self.message_user(request, "Снята блокировка по логину для выбранных записей.")
+        self._action_guard_and_reset(request, queryset, expected_type="Логин", do_reset=_do)
     reset_lock_username.short_description = "Снять блокировку по логину"
 
     def reset_lock_both(self, request, queryset):
-        for o in queryset:
+        def _do(o):
             if o.ip_address or o.username:
                 _axes_reset_safe(ip=o.ip_address, username=o.username)
-        self.message_user(request, "Снята блокировка по логину и IP для выбранных записей.")
+        self._action_guard_and_reset(request, queryset, expected_type="Логин + IP", do_reset=_do)
     reset_lock_both.short_description = "Снять блокировку по логину+IP"
