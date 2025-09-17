@@ -105,14 +105,23 @@ def account_delete(request):
 
 @require_GET
 @vary_on_headers("Host")
-@cache_page(60 * 60)  # 1 hour
 def robots_txt(request):
     setup = SiteSetup.get_solo()
 
-    # Схема зафиксирована как прод: всегда HTTPS
-    scheme = "https" if not settings.DEBUG else "http"
+    # Если включён глобальный запрет – отдаём жесткий Disallow: /
+    if setup.block_indexing:
+        ver = int(setup.updated_at.timestamp()) if setup.updated_at else 0
+        cache_key = f"robots:block:v1:{ver}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return HttpResponse(cached, content_type="text/plain; charset=utf-8")
+        body = "User-agent: *\nDisallow: /\n"
+        cache.set(cache_key, body, 60 * 60)  # 1 час
+        return HttpResponse(body, content_type="text/plain; charset=utf-8")
 
-    # Хост: сперва django.contrib.sites, потом SiteSetup.domain, потом Host, потом localhost
+    # --- дальше остаётся твоя текущая логика формирования robots ---
+    # (ниже только правим ключ кэша, чтобы он менялся при изменении настроек)
+    scheme = "https" if not settings.DEBUG else "http"
     try:
         site_domain = (Site.objects.get_current(request).domain or "").strip().strip("/")
     except Exception:
@@ -120,19 +129,18 @@ def robots_txt(request):
     raw_host = (request.get_host() or "").strip().strip("/").split(":", 1)[0]
     host = site_domain or (setup.domain or "").strip().strip("/") or raw_host or "localhost"
 
-    # Кэш-ключ (версионированный)
-    cache_key = f"robots:prod:v1:{host}"
+    # В ключ добавим updated_at, чтобы кэш точно сбрасывался после сохранения настроек
+    ver = int(setup.updated_at.timestamp()) if setup.updated_at else 0
+    cache_key = f"robots:prod:v2:{host}:{ver}"
+
     cached = cache.get(cache_key)
     if cached is not None:
         return HttpResponse(cached, content_type="text/plain; charset=utf-8")
 
-    # База из админки, но без любых строк 'Sitemap:'
-    base = (setup.robots_txt or "")
-    base = base.replace("\r\n", "\n").replace("\r", "\n")
+    base = (setup.robots_txt or "").replace("\r\n", "\n").replace("\r", "\n")
     lines = [ln for ln in base.split("\n") if ln.strip()]
     lines = [ln for ln in lines if not re.match(r"(?i)^\s*sitemap\s*:", ln)]
 
-    # Гарантированные запреты служебных путей
     admin_path = (setup.admin_path or "admin").strip("/")
     must_have = {
         f"disallow: /{admin_path}/": f"Disallow: /{admin_path}/",
@@ -142,9 +150,6 @@ def robots_txt(request):
     for key_lower, canonical in must_have.items():
         if key_lower not in existing_lower:
             lines.append(canonical)
-
-    # Ровно одна строка Sitemap (в конце)
-    # lines.append(f"Sitemap: {scheme}://{host}/sitemap.xml")
 
     body = "\n".join(lines) + "\n"
     cache.set(cache_key, body, 60 * 60)
