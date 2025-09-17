@@ -22,9 +22,4 @@ class BlocklistEntry(models.Model):
         ]
 
     def __str__(self):
-        parts = []
-        if self.email:
-            parts.append(self.email)
-        if self.ip_address:
-            parts.append(self.ip_address)
-        return " / ".join(parts) if parts else f"#{self.email}"
+        return  f"name: {self.user.email}"

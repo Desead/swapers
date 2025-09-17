@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Доступ временно заблокирован" %}{% endblock %}
+
+{% block content %}
+    <main class="container py-5">
+        <h1 class="mb-3">{% trans "Слишком много неудачных попыток входа" %}</h1>
+        <p class="lead">{% trans "Мы временно заблокировали вход для защиты вашего аккаунта." %}</p>
+
+        {# Axes может передать разные подсказки — показываем что есть #}
+        {% if cooloff_until %}
+            <p>{% blocktrans %}Попробуйте снова после {{ cooloff_until }}.{% endblocktrans %}</p>
+        {% elif cooloff_time %}
+            <p>{% blocktrans %}Попробуйте снова через {{ cooloff_time }}.{% endblocktrans %}</p>
+        {% else %}
+            <p>{% trans "Попробуйте снова позже." %}</p>
+        {% endif %}
+
+        {% if username %}
+            <p class="text-muted mb-1">{% blocktrans %}Логин: {{ username }}{% endblocktrans %}</p>
+        {% endif %}
+        {% if ip_address %}
+            <p class="text-muted">{% blocktrans %}IP: {{ ip_address }}{% endblocktrans %}</p>
+        {% endif %}
+
+        <div class="mt-4 d-flex gap-3">
+            <a class="btn btn-primary" href="{% url 'account_login' %}">{% trans "Вернуться к форме входа" %}</a>
+            <a class="btn btn-outline-secondary" href="/">{% trans "На главную" %}</a>
+        </div>
+    </main>
+{% endblock %}

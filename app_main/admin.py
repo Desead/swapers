@@ -1,5 +1,5 @@
 from __future__ import annotations
-from django.db.models import Q
+
 from django import forms
 from django.db import models
 from django.contrib.auth import get_user_model
@@ -9,18 +9,23 @@ from django.urls import reverse
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
+from django.contrib import admin
+from django.conf import settings
+from django.utils import timezone
+from django.db.models import Sum
+
 from .models import SiteSetup
 from app_main.models_security import BlocklistEntry
+
 from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
-from django.conf import settings
-from django.contrib import admin, messages
-from django.utils import timezone
+
 from axes.models import AccessAttempt, AccessFailureLog
-from axes.utils import reset
 
 User = get_user_model()
 
+
+# ======================= Пользователи =======================
 
 class UserCreationForm(forms.ModelForm):
     """Форма создания пользователя в админке (логин по email)."""
@@ -87,11 +92,12 @@ class UserAdmin(BaseUserAdmin):
     add_form = UserCreationForm
     form = UserChangeForm
     model = User
+    save_on_top = True
 
     list_display = ("email", "first_name", "last_name", "is_staff", "is_active", "date_joined", "referred_by")
     list_filter = ("is_staff", "is_superuser", "is_active", "language")
     search_fields = ("email", "first_name", "last_name", "referral_code", "phone", "company")
-    ordering = ("-date_joined",)  # новые пользователи сверху
+    ordering = ("-date_joined",)
     filter_horizontal = ("groups", "user_permissions")
 
     readonly_fields = (
@@ -121,11 +127,12 @@ class UserAdmin(BaseUserAdmin):
     )
 
 
+# ======================= Настройки сайта (SiteSetup) =======================
+
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
     save_on_top = True
 
-    # По умолчанию URLField в админке будет считать https-схему
     formfield_overrides = {
         models.URLField: {"assume_scheme": "https"},
     }
@@ -139,7 +146,7 @@ class SiteSetupAdmin(admin.ModelAdmin):
     fieldsets = (
         (_("Главная страница"), {
             "classes": ("wide",),
-            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode",),
+            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode"),
         }),
 
         (_("Брендинг"), {
@@ -153,7 +160,7 @@ class SiteSetupAdmin(admin.ModelAdmin):
 
         (_("Интеграции: XML, <head>, Telegram"), {
             "classes": ("wide", "collapse"),
-            "fields": ("head_inject_html", "xml_export_path", ("telegram_bot_token", "telegram_chat_id"),),
+            "fields": ("head_inject_html", "xml_export_path", ("telegram_bot_token", "telegram_chat_id")),
         }),
 
         (_("График работы (UTC)"), {
@@ -177,10 +184,9 @@ class SiteSetupAdmin(admin.ModelAdmin):
                 ("social_vk",),
                 ("social_youtube",),
                 ("social_instagram",),
-
-                ("contact_label_clients", "contact_email_clients",),
-                ("contact_label_partners", "contact_email_partners",),
-                ("contact_label_general", "contact_email_general",),
+                ("contact_label_clients", "contact_email_clients"),
+                ("contact_label_partners", "contact_email_partners"),
+                ("contact_label_general", "contact_email_general"),
             ),
         }),
         (_("Twitter Cards"), {
@@ -225,7 +231,7 @@ class SiteSetupAdmin(admin.ModelAdmin):
             "classes": ("wide", "collapse"),
             "fields": (
                 "jsonld_enabled",
-                ("jsonld_organization", "jsonld_website",),
+                ("jsonld_organization", "jsonld_website"),
             ),
         }),
 
@@ -265,7 +271,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
         }),
     )
 
-    # singleton: запрет на добавление/удаление и редирект сразу к объекту
     def has_add_permission(self, request):
         return False
 
@@ -278,7 +283,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
         return redirect(url)
 
     def render_change_form(self, request, context, *args, **kwargs):
-        # Кликабельная ссылка на robots.txt под текущим хостом
         scheme = "https" if not settings.DEBUG else "http"
         domain = request.get_host()
         robots_url = f"{scheme}://{domain}{reverse('robots_txt')}"
@@ -287,13 +291,11 @@ class SiteSetupAdmin(admin.ModelAdmin):
         if "robots_txt" in form.fields:
             base_help = form.fields["robots_txt"].help_text or ""
             form.fields["robots_txt"].help_text = mark_safe(
-                f'{base_help}<br>'
-                f'<a href="{robots_url}" target="_blank">↗ robots.txt</a>'
+                f'{base_help}<br><a href="{robots_url}" target="_blank">↗ robots.txt</a>'
             )
 
         return super().render_change_form(request, context, *args, **kwargs)
 
-    # ---- превью изображений (read-only) ----
     @admin.display(description=_("Превью OG"))
     def og_image_preview(self, obj: SiteSetup):
         try:
@@ -316,7 +318,6 @@ class SiteSetupAdmin(admin.ModelAdmin):
             pass
         return "—"
 
-    # ---- Telegram-алерт при изменении ----
     def save_model(self, request, obj: SiteSetup, form, change):
         original = None
         if change and obj.pk:
@@ -330,13 +331,11 @@ class SiteSetupAdmin(admin.ModelAdmin):
         if not original:
             return
 
-        # дифф полей
         label_map = {f.name: (getattr(f, "verbose_name", f.name) or f.name) for f in obj._meta.fields}
         changes = diff_sitesetup(original, obj, label_map)
         if not changes:
             return
 
-        # если есть токен/чат — шлём алерт
         token = (obj.telegram_bot_token or "").strip()
         chat_id = (obj.telegram_chat_id or "").strip()
         if not token or not chat_id:
@@ -350,21 +349,29 @@ class SiteSetupAdmin(admin.ModelAdmin):
         send_telegram_message(token, chat_id, message)
 
 
+# ======================= Чёрный список =======================
+
 @admin.register(BlocklistEntry)
 class BlocklistEntryAdmin(admin.ModelAdmin):
-    list_display = ("user", "email", "ip_address", "is_active", "reason", "created_at")
+    list_display = ("user_name_view", "email", "ip_address", "is_active", "reason", "created_at")
     list_filter = ("is_active",)
     search_fields = ("email", "ip_address", "user__email", "reason")
     actions = ["activate_selected", "deactivate_selected"]
 
-    @admin.action(description="Activate selected")
+    @admin.action(description="Активировать выбранные")
     def activate_selected(self, request, queryset):
         queryset.update(is_active=True)
 
-    @admin.action(description="Deactivate selected")
+    @admin.action(description="Деактивировать выбранные")
     def deactivate_selected(self, request, queryset):
         queryset.update(is_active=False)
 
+    @admin.display(description="Пользователь")
+    def user_name_view(self, obj):
+        return getattr(getattr(obj, "user", None), "email", "—")
+
+
+# ======================= Axes: Попытки доступа =======================
 
 # Снимаем стандартную регистрацию, чтобы переопределить отображение
 try:
@@ -372,10 +379,15 @@ try:
 except admin.sites.NotRegistered:
     pass
 
+# Импорт reset из Axes (разные версии)
+try:
+    from axes.utils import reset as axes_reset  # новые версии
+except Exception:  # pragma: no cover
+    from axes.utils.reset import reset as axes_reset  # старые версии
+
 
 def _get_cooloff():
-    """Возвращает timedelta ‘окна охлаждения’ Axes, учитывая что оно
-    может быть значением или коллэйблом."""
+    """Возвращает timedelta «окна охлаждения» Axes (значение либо результат коллбэка)."""
     cooloff = getattr(settings, "AXES_COOLOFF_TIME", None)
     if callable(cooloff):
         cooloff = cooloff()
@@ -383,146 +395,190 @@ def _get_cooloff():
 
 
 def _last_failure_dt(obj: AccessAttempt):
-    """Берём время **последней** неудачи по той же паре (ip, username)
-    из AccessFailureLog. Если лога нет — пробуем поля попытки."""
+    """
+    Время последней неудачи по той же паре (ip, username) из AccessFailureLog.
+    Если лога нет — пробуем поля самой попытки.
+    """
     qs = AccessFailureLog.objects.filter(
         ip_address=obj.ip_address or "",
         username=obj.username or "",
     ).order_by("-attempt_time")
 
     last = qs.values_list("attempt_time", flat=True).first()
-    # запасной вариант для разных версий Axes
     return last or getattr(obj, "latest_attempt", None) or getattr(obj, "attempt_time", None)
 
 
-try:
-    # одни версии
-    from axes.utils import reset as axes_reset
-except Exception:
-    # другие версии
-    from axes.utils.reset import reset as axes_reset  # type: ignore
-
-from axes.models import AccessAttempt, AccessFailureLog
-
-
-def _axes_reset_compat(*, ip: str | None = None, username: str | None = None) -> None:
+def _axes_param_sets():
     """
-    Сбрасывает блокировки/счётчики для указанного ip и/или username.
-    Поддерживает разные сигнатуры django-axes и даёт безопасный fallback.
+    Нормализуем AXES_LOCKOUT_PARAMETERS к списку множеств:
+    [["username", "ip_address"], "ip_address"] -> [{"username","ip_address"}, {"ip_address"}]
     """
-    # 1) пробуем привычные имена аргументов
-    try:
-        kwargs = {}
-        if ip:
-            kwargs["ip_address"] = ip
-        if username:
-            kwargs["username"] = username
-        axes_reset(**kwargs)  # type: ignore[arg-type]
-        return
-    except TypeError:
-        pass
+    params = getattr(settings, "AXES_LOCKOUT_PARAMETERS", [["username", "ip_address"]])
+    seq = params if isinstance(params, (list, tuple, set)) else [params]
+    out = []
+    for p in seq:
+        if isinstance(p, str):
+            out.append({p})
+        else:
+            out.append(set(p))
+    return out
 
-    # 2) пробуем альтернативные имена
+
+def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None):
+    """
+    Совместимая обёртка над axes.reset:
+    - в одних версиях ожидается ip_address=..., в других ip=...
+    - часть параметров может отсутствовать в сигнатуре → отбрасываем лишнее
+    """
+    import inspect
+
+    ip_norm = ip if ip is not None else ip_address
     try:
-        kwargs = {}
-        if ip:
-            kwargs["ip"] = ip
-        if username:
-            kwargs["username"] = username
-        axes_reset(**kwargs)  # type: ignore[arg-type]
-        return
+        params = inspect.signature(axes_reset).parameters
+    except Exception:
+        params = {}
+
+    kwargs = {}
+    if "username" in params and username is not None:
+        kwargs["username"] = username
+
+    if ip_norm is not None:
+        if "ip" in params:
+            kwargs["ip"] = ip_norm
+        elif "ip_address" in params:
+            kwargs["ip_address"] = ip_norm
+
+    if "user_agent" in params and user_agent is not None:
+        kwargs["user_agent"] = user_agent
+
+    # первая попытка — по определённой сигнатуре
+    try:
+        return axes_reset(**kwargs)
     except TypeError:
-        pass
+        # fallback: попробуем противоположное имя аргумента IP
+        if ip_norm is not None:
+            alt = dict(kwargs)
+            if "ip" in alt:
+                val = alt.pop("ip")
+                if "ip_address" in params:
+                    alt["ip_address"] = val
+            elif "ip_address" in alt:
+                val = alt.pop("ip_address")
+                if "ip" in params:
+                    alt["ip"] = val
+            try:
+                return axes_reset(**alt)
+            except TypeError:
+                pass
+        # последний резерв — сброс только по username
+        if "username" in kwargs:
+            try:
+                return axes_reset(username=kwargs["username"])
+            except TypeError:
+                pass
+        raise
 
 
 @admin.register(AccessAttempt)
 class AccessAttemptAdmin(admin.ModelAdmin):
     list_display = (
-        "attempt_time",
-        "username",
         "ip_address",
+        "username",
         "failures_since_start",
-        "blocked_until",
         "lock_key_type",
+        "is_blocked_now",
+        "path_info_short",
+        "user_agent_short",
     )
     search_fields = ("ip_address", "username", "path_info", "user_agent")
     list_filter = ("ip_address",)
     actions = ("reset_lock_ip", "reset_lock_username", "reset_lock_both")
 
-    @admin.display(description="Ключ блокировки")
-    def lock_key_type(self, obj):
-        u = (obj.username or "").strip()
-        ip = (obj.ip_address or "").strip()
-        if u and ip:
-            return "Логин + IP"
-        if ip and not u:
-            return "IP"
-        if u and not ip:
-            return "Логин"
+    # ----- вычисляемые колонки -----
+
+    @admin.display(description="Тип блокировки")
+    def lock_key_type(self, obj: AccessAttempt):
+        """
+        Пытаемся угадать, что именно заблокировало:
+        1) если сама запись превысила лимит и в конфиге есть ["username","ip_address"] → «Логин + IP»;
+        2) иначе если суммарно по IP набрали лимит и в конфиге есть ["ip_address"] → «IP»;
+        3) иначе если по логину набрали лимит и в конфиге есть ["username"] → «Логин»;
+        4) иначе — подсказка по первой комбинации из конфига.
+        """
+        limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
+        param_sets = _axes_param_sets()
+
+        if {"username", "ip_address"} in param_sets and obj.username and obj.ip_address:
+            if (obj.failures_since_start or 0) >= limit:
+                return "Логин + IP"
+
+        if {"ip_address"} in param_sets and obj.ip_address:
+            ip_total = (
+                AccessAttempt.objects
+                .filter(ip_address=obj.ip_address)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if ip_total >= limit:
+                return "IP"
+
+        if {"username"} in param_sets and obj.username:
+            user_total = (
+                AccessAttempt.objects
+                .filter(username=obj.username)
+                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+            )
+            if user_total >= limit:
+                return "Логин"
+
+        for s in param_sets:
+            parts = []
+            if "username" in s:
+                parts.append("Логин")
+            if "ip_address" in s:
+                parts.append("IP")
+            if "user_agent" in s:
+                parts.append("User-Agent")
+            if parts:
+                return " + ".join(parts)
         return "—"
 
-    # ----- колонки -----
-    def blocked_until(self, obj):
-        cooloff = _get_cooloff()
-        limit = getattr(settings, "AXES_FAILURE_LIMIT", 5)
-        if not cooloff:
-            return "—"
-        last = _last_failure_dt(obj)
-        if not last or (obj.failures_since_start or 0) < limit:
-            return "—"
-        return timezone.localtime(last + cooloff)
-
-    blocked_until.short_description = "Заблокирован до"
-
+    @admin.display(boolean=True, description="Заблокирован?")
     def is_blocked_now(self, obj):
         cooloff = _get_cooloff()
-        limit = getattr(settings, "AXES_FAILURE_LIMIT", 5)
+        limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         last = _last_failure_dt(obj)
         if not cooloff or not last or (obj.failures_since_start or 0) < limit:
             return False
         return timezone.now() < (last + cooloff)
 
-    is_blocked_now.boolean = True
-    is_blocked_now.short_description = "Заблокирован?"
-
+    @admin.display(description="Путь")
     def path_info_short(self, obj):
         return (obj.path_info or "")[:80]
 
-    path_info_short.short_description = "Путь"
-
+    @admin.display(description="User-Agent")
     def user_agent_short(self, obj):
         ua = obj.user_agent or ""
         return (ua[:80] + "…") if len(ua) > 80 else ua
 
-    user_agent_short.short_description = "User-Agent"
-
     # ----- экшены -----
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        # Убираем дефолтный экшен Django
-        actions.pop("delete_selected", None)
-        return actions
 
-    @admin.action(description="Снять блокировку по логину")
-    def reset_lock_username(modeladmin, request, queryset):
-        usernames = {obj.username for obj in queryset if obj.username}
-        for u in usernames:
-            _axes_reset_compat(username=u)
-        modeladmin.message_user(request, f"Снята блокировка для {len(usernames)} логинов.")
+    def reset_lock_ip(self, request, queryset):
+        for o in queryset:
+            if o.ip_address:
+                _axes_reset_safe(ip=o.ip_address)
+        self.message_user(request, "Снята блокировка по IP для выбранных записей.")
+    reset_lock_ip.short_description = "Снять блокировку по IP"
 
-    @admin.action(description="Снять блокировку по IP")
-    def reset_lock_ip(modeladmin, request, queryset):
-        ips = {obj.ip_address for obj in queryset if obj.ip_address}
-        for ip in ips:
-            _axes_reset_compat(ip=ip)
-        modeladmin.message_user(request, f"Снята блокировка для {len(ips)} IP.")
+    def reset_lock_username(self, request, queryset):
+        for o in queryset:
+            if o.username:
+                _axes_reset_safe(username=o.username)
+        self.message_user(request, "Снята блокировка по логину для выбранных записей.")
+    reset_lock_username.short_description = "Снять блокировку по логину"
 
-    @admin.action(description="Снять блокировку (логин + IP)")
-    def reset_lock_both(modeladmin, request, queryset):
-        pairs = {(obj.username, obj.ip_address) for obj in queryset if obj.username or obj.ip_address}
-        for username, ip in pairs:
-            _axes_reset_compat(username=username or None, ip=ip or None)
-        modeladmin.message_user(request, f"Снята блокировка для {len(pairs)} сочетаний логин+IP.")
-
-    def has_delete_permission(self, request, obj=None):
-        return False
+    def reset_lock_both(self, request, queryset):
+        for o in queryset:
+            if o.ip_address or o.username:
+                _axes_reset_safe(ip=o.ip_address, username=o.username)
+        self.message_user(request, "Снята блокировка по логину и IP для выбранных записей.")
+    reset_lock_both.short_description = "Снять блокировку по логину+IP"

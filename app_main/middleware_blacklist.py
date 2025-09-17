@@ -1,8 +1,7 @@
-from django.http import HttpResponse
 from django.conf import settings
 from ipware import get_client_ip
 from axes.helpers import get_client_username
-
+from django.shortcuts import render
 from app_main.models_security import BlocklistEntry
 
 
@@ -16,10 +15,37 @@ class BlacklistBlockMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.method == "POST" and self._is_login_path(request.path):
-            if self._is_blocked(request):
-                status = getattr(settings, "AXES_HTTP_RESPONSE_CODE", 403) or 403
-                return HttpResponse("Forbidden", status=status)
+        # Текущий IP
+        ip = request.META.get("REMOTE_ADDR")
+
+        # Логин, который прислали в форму (allauth: "login")
+        login = request.POST.get("login") or request.POST.get("email")
+
+        # Найдём активные записи чёрного списка по e-mail / IP
+        qs = BlocklistEntry.objects.filter(is_active=True).filter(
+            # подставь свою логику фильтра здесь, как у тебя было
+        )
+        if login:
+            qs = qs.filter(email__iexact=login) | qs.filter(ip_address=ip)
+        else:
+            qs = qs.filter(ip_address=ip)
+
+        # Если есть совпадения — рисуем кастомный шаблон
+        if qs.exists():
+            # Выведем причину для текста
+            reason = "email" if login and qs.filter(email__iexact=login).exists() else "ip"
+            return render(
+                request,
+                "security/blacklist_forbidden.html",
+                {
+                    "reason": reason,
+                    "email": login,
+                    "ip": ip,
+                    "entries": qs,  # можно отдавать queryset — шаблон его отрендерит
+                },
+                status=403,
+            )
+
         return self.get_response(request)
 
     @staticmethod

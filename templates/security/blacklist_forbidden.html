@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Доступ заблокирован{% endblock %}
+
+{% block content %}
+  <div class="container py-5">
+    <h1 class="mb-3">Доступ заблокирован</h1>
+    <p class="lead">
+      Вход с этого
+      {% if reason == "email" %}адреса e-mail <strong>{{ email }}</strong>
+      {% elif reason == "ip" %}IP-адреса <strong>{{ ip }}</strong>
+      {% else %}аккаунта/устройства
+      {% endif %} запрещён администратором.
+    </p>
+
+    {% if entries %}
+      <hr>
+      <h5 class="mb-2">Подробности</h5>
+      <ul class="mb-3">
+        {% for e in entries %}
+          <li>
+            {% if e.email %}email: <code>{{ e.email }}</code>{% endif %}
+            {% if e.ip_address %}{% if e.email %}, {% endif %}ip: <code>{{ e.ip_address }}</code>{% endif %}
+            {% if e.note %} — {{ e.note }}{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <p class="text-muted mb-0">
+      Если вы считаете, что это ошибка, свяжитесь с поддержкой.
+    </p>
+  </div>
+{% endblock %}

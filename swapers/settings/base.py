@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from csp.constants import SELF  # опционально, если используешь константы
 from datetime import timedelta
 
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- режим ---
@@ -190,9 +191,11 @@ TELEGRAM_ECHO_TO_CONSOLE = True
 AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"], "ip_address"]
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_PERMANENT_LOCK_OUT = False
 AXES_RESET_ON_SUCCESS = True
 AXES_USERNAME_FORM_FIELD = "login"  # allauth логин-поле
 AXES_HTTP_RESPONSE_CODE = 403  # чтобы совпадало с нашими тестами/ожиданиями
+AXES_LOCKOUT_TEMPLATE = "security/locked_out.html"
 
 # наш handler с чёрным списком
 AXES_HANDLER = "app_main.security.axes_handler.BlacklistAwareAxesHandler"
