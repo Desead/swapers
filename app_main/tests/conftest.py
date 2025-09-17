@@ -7,6 +7,8 @@ from django.test import Client, RequestFactory
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.urls import reverse
+from django.test.utils import override_settings
+from django.contrib.auth.hashers import reset_hashers
 
 from app_main.models import SiteSetup
 
@@ -163,3 +165,20 @@ class Browser:
         for k, v in request.session.items():
             cs[k] = v
         cs.save()
+
+
+@pytest.fixture(autouse=True, scope="session")
+def fast_password_hashers_session():
+    # быстрый хешер на всю сессию тестов
+    with override_settings(PASSWORD_HASHERS=[
+        "django.contrib.auth.hashers.MD5PasswordHasher",
+    ]):
+        try:
+            reset_hashers(setting="PASSWORD_HASHERS")
+        except TypeError:
+            reset_hashers()
+        yield
+        try:
+            reset_hashers(setting="PASSWORD_HASHERS")
+        except TypeError:
+            reset_hashers()

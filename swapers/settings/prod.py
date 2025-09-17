@@ -38,7 +38,7 @@ SERVER_EMAIL = EMAIL_HOST_USER
 # SSL/безопасность
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = True
-SECURE_HSTS_SECONDS = 60  # увеличите до 31536000 после проверки
+SECURE_HSTS_SECONDS = 60  # увеличьте до 31536000 после проверки
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = False
 SESSION_COOKIE_SECURE = True
@@ -46,9 +46,8 @@ CSRF_COOKIE_SECURE = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
-'''
-Примечание: если у тебя проект за обратным прокси (HTTPS терминируется на фронте), убедись, что настроены SECURE_PROXY_SSL_HEADER и при необходимости USE_X_FORWARDED_HOST, чтобы request.is_secure() и request.get_host() отдавали корректные значения
-'''
+
+# индексация
 ALLOW_INDEXING = True  # на проде True, на стейдже/деве False
 
 # Логи
@@ -67,10 +66,6 @@ LOGGING = {
     },
     "loggers": {
         # отчёты CSP — и в файл, и в stdout (чтобы ловил supervisor/systemd)
-        "app_main.views_security": {
-            "handlers": ["csp_file", "console"],
-            "level": "INFO",
-            "propagate": False,
-        },
+        "app_main.views_security": {"handlers": ["csp_file", "console"], "level": "INFO", "propagate": False},
     },
 }

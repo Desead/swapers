@@ -2,10 +2,11 @@ import os
 from pathlib import Path
 from django.utils.translation import gettext_lazy as _
 from csp.constants import SELF  # опционально, если используешь константы
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-# --- Вы управляете режимом здесь ---
+# --- режим ---
 DEBUG = True  # <<< В проде поставите False
 
 SECRET_KEY = "CHANGE_ME_IN_PROD"
@@ -17,16 +18,13 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 
-# Языки интерфейса
+# Языки интерфейса (только 'ru' и 'en')
 LANGUAGES = [
     ("ru", _("Russian")),
     ("en", _("English")),
 ]
 
-# Где лежат файлы переводов (.po/.mo)
-LOCALE_PATHS = [
-    BASE_DIR / "locale",
-]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 INSTALLED_APPS = [
     "swapers.admin.OTPAdminConfig",  # админка под OTP
@@ -36,7 +34,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    'app_main.apps.AppMainConfig',  # <= так, чтобы сработал ready()
+    "app_main.apps.AxesRusConfig",  # rate-limit/lockout
+    "app_main.apps.AppMainConfig",  # <= чтобы сработал ready()
 
     "django.contrib.sites",
     "allauth",
@@ -49,31 +48,35 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "app_main.User"
 
 MIDDLEWARE = [
-    # 0) Базовые системные
-    "django.middleware.security.SecurityMiddleware",  # лучше самым первым
-    "csp.middleware.CSPMiddleware",  # очень рано, чтобы nonce попал в request
+    # 0) базовые
+    "django.middleware.security.SecurityMiddleware",
+    "csp.middleware.CSPMiddleware",
 
-    # 1) Сессии → рефералка → локализация
+    # 1) сессии → рефералка → нормализация языка → локализация
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "app_main.middleware.ReferralAttributionMiddleware",  # ВАЖНО: до LocaleMiddleware!
+    "app_main.middleware.ReferralAttributionMiddleware",
     "app_main.middleware_lang.LanguageVariantNormalizeMiddleware",
-    "django.middleware.locale.LocaleMiddleware",  # как и раньше: сразу после Session
+    "django.middleware.locale.LocaleMiddleware",
 
-    # 2) Общие штуки/редиректы/заголовки
+    # 1.5) Axes — после Session, до Auth
+    "app_main.middleware_blacklist.BlacklistBlockMiddleware",
+    "axes.middleware.AxesMiddleware",
+
+    # 2) общие
     "django.middleware.common.CommonMiddleware",
     "app_main.middleware_noindex.GlobalNoIndexMiddleware",
 
-    # 3) Безопасность форм → аутентификация → OTP → allauth
+    # 3) безопасность форм → аутентификация → OTP → allauth
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    "django_otp.middleware.OTPMiddleware",  # после Auth — ок
-    "allauth.account.middleware.AccountMiddleware",  # после Auth/OTP — ок
+    "django_otp.middleware.OTPMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 
-    # 4) Сообщения/кликабельные фреймы и т.п.
+    # 4) сообщения/кликджекинг
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 
-    # 5) Админ-специфика (после Auth/Messages, чтобы работать с request.user и messages)
+    # 5) админ-специфика
     "app_main.middleware.Admin2FARedirectMiddleware",
     "app_main.middleware.AdminSessionTimeoutMiddleware",
 
@@ -93,7 +96,7 @@ TEMPLATES = [{
             "django.template.context_processors.debug",
             "django.template.context_processors.request",
             "django.template.context_processors.i18n",
-            "django.contrib.auth.context_processors.auth",  # нужно для admin
+            "django.contrib.auth.context_processors.auth",
             "django.contrib.messages.context_processors.messages",
             "django.template.context_processors.static",
             "django.template.context_processors.media",
@@ -104,12 +107,9 @@ TEMPLATES = [{
     },
 }]
 
-# База «по умолчанию» (перекроется в prod при необходимости)
+# SQLite по умолчанию (prod перекроет)
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
-    }
+    "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}
 }
 
 STATIC_URL = "/static/"
@@ -118,50 +118,41 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-# Почта: дефолт на консоль (перекроется в prod)
+# backends — Axes ДО allauth
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# почта дефолтная (dev), prod перекроет
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = "no-reply@localhost"
 
-# Базовые cookie-флаги
+# cookies базово
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
-# allauth (новые ключи)
+# --- allauth (без rate limits) ---
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_USER_MODEL_EMAIL_FIELD = "email"
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"  # dev переопределит на http
-ACCOUNT_RATE_LIMITS = {
-    "login": "15/m/ip",
-    "login_failed": "5/10m/key,20/10m/ip",
-    "signup": "5/h/ip",
-    "confirm_email": "3/10m/key",
-    "reset_password": "5/m/ip,3/m/key",
-    "reset_password_from_key": "10/m/ip",
-}
-# ACCOUNT_ADAPTER = "app_main.allauth_adapter.AccountAdapter"
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"  # dev перекроет на http
 
-LANGUAGE_COOKIE_NAME = "sw_lang"
-LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
-LANGUAGE_COOKIE_SAMESITE = "Lax"
+# Полностью выключаем встроенный троттлинг allauth:
+ACCOUNT_RATE_LIMITS = {}  # пусто = нет лимитов; всё делаем через django-axes
 
-# Куда слать после успешного входа
+# редиректы
 LOGIN_REDIRECT_URL = "/dashboard/"
-
-# Куда слать после выхода
 LOGOUT_REDIRECT_URL = "/"
-
-# Allauth — явные редиректы
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
 ACCOUNT_SIGNUP_REDIRECT_URL = "/dashboard/"
 ACCOUNT_EMAIL_CONFIRMATION_AUTHENTICATED_REDIRECT_URL = "/dashboard/"
 ACCOUNT_EMAIL_CONFIRMATION_ANONYMOUS_REDIRECT_URL = "/accounts/login/"
-
-# (не обязательно, но удобно) — где лежит страница логина
 LOGIN_URL = "/accounts/login/"
+
 # 2FA
 OTP_TOTP_ISSUER = "Swapers"
 ADMIN_OTP_IDLE_TIMEOUT_SECONDS = 300
@@ -173,14 +164,10 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# --- CSP (django-csp) ---
-# Широкая, но безопасная база: сайт и админка работают без поломок,
-# QR (data:) показывается, внешние CDN НЕ разрешены (добавишь при необходимости).
+# --- CSP ---
 CSP_DEFAULT_SRC = ("'self'",)
-CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'",
-                  "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com")
-CSP_STYLE_SRC = ("'self'", "'unsafe-inline'",
-                 "https://cdn.jsdelivr.net", "https://fonts.googleapis.com")
+CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com")
+CSP_STYLE_SRC = ("'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com")
 CSP_IMG_SRC = ("'self'", "data:")
 CSP_FONT_SRC = ("'self'", "data:", "https://fonts.gstatic.com")
 CSP_CONNECT_SRC = ("'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com")
@@ -188,20 +175,29 @@ CSP_FRAME_ANCESTORS = ("'self'",)
 CSP_FORM_ACTION = ("'self'",)
 CSP_BASE_URI = ("'self'",)
 CSP_OBJECT_SRC = ("'none'",)
-# Не ставим CSP заголовки от django-csp на админку и аккаунты (с i18n-префиксами)
 CSP_EXCLUDE_URL_PREFIXES = (
-    "/admin/",  # на случай дефолтного пути
-    "/ru/admin/", "/en/admin/",
-
-    "/accounts/",  # без префикса (если i18n выключен где-то)
-    "/ru/accounts/", "/en/accounts/",
+    "/admin/", "/ru/admin/", "/en/admin/",
+    "/accounts/", "/ru/accounts/", "/en/accounts/",
 )
-
-# nonce будет добавляться в заголовок, если вы использовали его в шаблоне
 CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
-
-# Сначала отчётный режим
 CSP_REPORT_ONLY = True
 CSP_REPORT_URI = "/csp-report/"
 
 TELEGRAM_ECHO_TO_CONSOLE = True
+
+# --- Axes ---
+# вместо устаревших AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP / AXES_USE_USER_AGENT:
+AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"], "ip_address"]
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_RESET_ON_SUCCESS = True
+AXES_USERNAME_FORM_FIELD = "login"  # allauth логин-поле
+AXES_HTTP_RESPONSE_CODE = 403  # чтобы совпадало с нашими тестами/ожиданиями
+
+# наш handler с чёрным списком
+AXES_HANDLER = "app_main.security.axes_handler.BlacklistAwareAxesHandler"
+AXES_USERNAME_CALLABLE = "app_main.axes_handler.axes_get_username"
+# язык-кука
+LANGUAGE_COOKIE_NAME = "sw_lang"
+LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
+LANGUAGE_COOKIE_SAMESITE = "Lax"

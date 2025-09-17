@@ -3,11 +3,14 @@ from django.contrib import admin
 from django.apps import apps as django_apps
 from django.contrib.admin.sites import NotRegistered
 from django.db.models.signals import post_migrate
-# ВАЖНО: не импортируем модели и не лезем в БД на уровне модуля/ready()
+from importlib import import_module
+from django.utils.translation import gettext_lazy as _
+
 
 class AppMainConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "app_main"
+    verbose_name = _("Управление сайтом")
 
     def ready(self):
         # подключаем сигналы (внутри файла нет запросов при импорте)
@@ -43,3 +46,18 @@ class AppMainConfig(AppConfig):
         post_migrate.connect(_ensure_and_apply_setup, sender=self)
 
         # ВАЖНО: НЕ вызываем _ensure_and_apply_setup() здесь, чтобы не трогать БД во время импорта
+
+try:
+    AxesBaseConfig = getattr(import_module("axes.apps"), "AxesConfig")
+except Exception:  # на случай экзотичных версий
+    AxesBaseConfig = AppConfig
+
+class AxesRusConfig(AxesBaseConfig):
+    """
+    Кастомный конфиг для django-axes с русским названием,
+    но с name/label 'axes', чтобы это оставалось тем же приложением.
+    """
+    name = "axes"
+    label = "axes"
+    verbose_name = _("Блокировки входа")
+    default_auto_field = "django.db.models.AutoField"

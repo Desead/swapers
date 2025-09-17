@@ -1,8 +1,7 @@
 from __future__ import annotations
-
+from django.db.models import Q
 from django import forms
 from django.db import models
-from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
@@ -10,18 +9,18 @@ from django.urls import reverse
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
-from django.conf import settings
-
 from .models import SiteSetup
+from app_main.models_security import BlocklistEntry
 from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
+from django.conf import settings
+from django.contrib import admin, messages
+from django.utils import timezone
+from axes.models import AccessAttempt, AccessFailureLog
+from axes.utils import reset
 
 User = get_user_model()
 
-
-# =========================
-#  Пользователь (кастомный)
-# =========================
 
 class UserCreationForm(forms.ModelForm):
     """Форма создания пользователя в админке (логин по email)."""
@@ -121,10 +120,6 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
 
-
-# =========================
-#  SiteSetup
-# =========================
 
 @admin.register(SiteSetup)
 class SiteSetupAdmin(admin.ModelAdmin):
@@ -353,3 +348,181 @@ class SiteSetupAdmin(admin.ModelAdmin):
 
         _, message = format_telegram_message(user_email, ip, ua, changes, label_map)
         send_telegram_message(token, chat_id, message)
+
+
+@admin.register(BlocklistEntry)
+class BlocklistEntryAdmin(admin.ModelAdmin):
+    list_display = ("user", "email", "ip_address", "is_active", "reason", "created_at")
+    list_filter = ("is_active",)
+    search_fields = ("email", "ip_address", "user__email", "reason")
+    actions = ["activate_selected", "deactivate_selected"]
+
+    @admin.action(description="Activate selected")
+    def activate_selected(self, request, queryset):
+        queryset.update(is_active=True)
+
+    @admin.action(description="Deactivate selected")
+    def deactivate_selected(self, request, queryset):
+        queryset.update(is_active=False)
+
+
+# Снимаем стандартную регистрацию, чтобы переопределить отображение
+try:
+    admin.site.unregister(AccessAttempt)
+except admin.sites.NotRegistered:
+    pass
+
+
+def _get_cooloff():
+    """Возвращает timedelta ‘окна охлаждения’ Axes, учитывая что оно
+    может быть значением или коллэйблом."""
+    cooloff = getattr(settings, "AXES_COOLOFF_TIME", None)
+    if callable(cooloff):
+        cooloff = cooloff()
+    return cooloff
+
+
+def _last_failure_dt(obj: AccessAttempt):
+    """Берём время **последней** неудачи по той же паре (ip, username)
+    из AccessFailureLog. Если лога нет — пробуем поля попытки."""
+    qs = AccessFailureLog.objects.filter(
+        ip_address=obj.ip_address or "",
+        username=obj.username or "",
+    ).order_by("-attempt_time")
+
+    last = qs.values_list("attempt_time", flat=True).first()
+    # запасной вариант для разных версий Axes
+    return last or getattr(obj, "latest_attempt", None) or getattr(obj, "attempt_time", None)
+
+
+try:
+    # одни версии
+    from axes.utils import reset as axes_reset
+except Exception:
+    # другие версии
+    from axes.utils.reset import reset as axes_reset  # type: ignore
+
+from axes.models import AccessAttempt, AccessFailureLog
+
+
+def _axes_reset_compat(*, ip: str | None = None, username: str | None = None) -> None:
+    """
+    Сбрасывает блокировки/счётчики для указанного ip и/или username.
+    Поддерживает разные сигнатуры django-axes и даёт безопасный fallback.
+    """
+    # 1) пробуем привычные имена аргументов
+    try:
+        kwargs = {}
+        if ip:
+            kwargs["ip_address"] = ip
+        if username:
+            kwargs["username"] = username
+        axes_reset(**kwargs)  # type: ignore[arg-type]
+        return
+    except TypeError:
+        pass
+
+    # 2) пробуем альтернативные имена
+    try:
+        kwargs = {}
+        if ip:
+            kwargs["ip"] = ip
+        if username:
+            kwargs["username"] = username
+        axes_reset(**kwargs)  # type: ignore[arg-type]
+        return
+    except TypeError:
+        pass
+
+
+@admin.register(AccessAttempt)
+class AccessAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "attempt_time",
+        "username",
+        "ip_address",
+        "failures_since_start",
+        "blocked_until",
+        "lock_key_type",
+    )
+    search_fields = ("ip_address", "username", "path_info", "user_agent")
+    list_filter = ("ip_address",)
+    actions = ("reset_lock_ip", "reset_lock_username", "reset_lock_both")
+
+    @admin.display(description="Ключ блокировки")
+    def lock_key_type(self, obj):
+        u = (obj.username or "").strip()
+        ip = (obj.ip_address or "").strip()
+        if u and ip:
+            return "Логин + IP"
+        if ip and not u:
+            return "IP"
+        if u and not ip:
+            return "Логин"
+        return "—"
+
+    # ----- колонки -----
+    def blocked_until(self, obj):
+        cooloff = _get_cooloff()
+        limit = getattr(settings, "AXES_FAILURE_LIMIT", 5)
+        if not cooloff:
+            return "—"
+        last = _last_failure_dt(obj)
+        if not last or (obj.failures_since_start or 0) < limit:
+            return "—"
+        return timezone.localtime(last + cooloff)
+
+    blocked_until.short_description = "Заблокирован до"
+
+    def is_blocked_now(self, obj):
+        cooloff = _get_cooloff()
+        limit = getattr(settings, "AXES_FAILURE_LIMIT", 5)
+        last = _last_failure_dt(obj)
+        if not cooloff or not last or (obj.failures_since_start or 0) < limit:
+            return False
+        return timezone.now() < (last + cooloff)
+
+    is_blocked_now.boolean = True
+    is_blocked_now.short_description = "Заблокирован?"
+
+    def path_info_short(self, obj):
+        return (obj.path_info or "")[:80]
+
+    path_info_short.short_description = "Путь"
+
+    def user_agent_short(self, obj):
+        ua = obj.user_agent or ""
+        return (ua[:80] + "…") if len(ua) > 80 else ua
+
+    user_agent_short.short_description = "User-Agent"
+
+    # ----- экшены -----
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        # Убираем дефолтный экшен Django
+        actions.pop("delete_selected", None)
+        return actions
+
+    @admin.action(description="Снять блокировку по логину")
+    def reset_lock_username(modeladmin, request, queryset):
+        usernames = {obj.username for obj in queryset if obj.username}
+        for u in usernames:
+            _axes_reset_compat(username=u)
+        modeladmin.message_user(request, f"Снята блокировка для {len(usernames)} логинов.")
+
+    @admin.action(description="Снять блокировку по IP")
+    def reset_lock_ip(modeladmin, request, queryset):
+        ips = {obj.ip_address for obj in queryset if obj.ip_address}
+        for ip in ips:
+            _axes_reset_compat(ip=ip)
+        modeladmin.message_user(request, f"Снята блокировка для {len(ips)} IP.")
+
+    @admin.action(description="Снять блокировку (логин + IP)")
+    def reset_lock_both(modeladmin, request, queryset):
+        pairs = {(obj.username, obj.ip_address) for obj in queryset if obj.username or obj.ip_address}
+        for username, ip in pairs:
+            _axes_reset_compat(username=username or None, ip=ip or None)
+        modeladmin.message_user(request, f"Снята блокировка для {len(pairs)} сочетаний логин+IP.")
+
+    def has_delete_permission(self, request, obj=None):
+        return False

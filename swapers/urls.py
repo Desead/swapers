@@ -51,7 +51,7 @@ urlpatterns = [
     # Сервисные эндпоинты без i18n
     path("csp-report/", csp_report, name="csp_report"),
     path("i18n/setlang/", set_language, name="set_language"),
-    path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
+    # path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 
     path("robots.txt", robots_txt, name="robots_txt"),
 ]
