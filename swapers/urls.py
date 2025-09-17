@@ -6,6 +6,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from app_main.views_security import csp_report
 from app_main.views import dashboard, account_settings, account_delete, robots_txt
+from django.utils.translation import get_supported_language_variant
 
 # --- i18n ---
 from django.conf.urls.i18n import i18n_patterns
@@ -31,13 +32,14 @@ def _admin_redirect_view(request):
     return redirect(f"/{admin_prefix}/", permanent=False)  # 302
 
 
+
+
 def _root_redirect_to_language(request):
-    """
-    Редиректит с '/' на '/<lang>/' согласно приоритету:
-    cookie -> сессия -> заголовки браузера -> LANGUAGE_CODE.
-    """
-    lang = translation.get_language_from_request(request) or translation.get_language()
-    lang = (lang or "ru").split("-")[0]
+    lang = translation.get_language_from_request(request) or translation.get_language() or "ru"
+    try:
+        lang = get_supported_language_variant(lang, strict=False)  # 'ru-RU' -> 'ru'
+    except LookupError:
+        lang = "ru"
     return redirect(f"/{lang}/", permanent=False)
 
 

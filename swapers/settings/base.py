@@ -12,7 +12,7 @@ SECRET_KEY = "CHANGE_ME_IN_PROD"
 ALLOWED_HOSTS: list[str] = []
 
 SITE_ID = 1
-LANGUAGE_CODE = "ru-ru"
+LANGUAGE_CODE = "ru"
 TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
@@ -56,6 +56,7 @@ MIDDLEWARE = [
     # 1) Сессии → рефералка → локализация
     "django.contrib.sessions.middleware.SessionMiddleware",
     "app_main.middleware.ReferralAttributionMiddleware",  # ВАЖНО: до LocaleMiddleware!
+    "app_main.middleware_lang.LanguageVariantNormalizeMiddleware",
     "django.middleware.locale.LocaleMiddleware",  # как и раньше: сразу после Session
 
     # 2) Общие штуки/редиректы/заголовки
@@ -189,10 +190,10 @@ CSP_BASE_URI = ("'self'",)
 CSP_OBJECT_SRC = ("'none'",)
 # Не ставим CSP заголовки от django-csp на админку и аккаунты (с i18n-префиксами)
 CSP_EXCLUDE_URL_PREFIXES = (
-    "/admin/",          # на случай дефолтного пути
+    "/admin/",  # на случай дефолтного пути
     "/ru/admin/", "/en/admin/",
 
-    "/accounts/",       # без префикса (если i18n выключен где-то)
+    "/accounts/",  # без префикса (если i18n выключен где-то)
     "/ru/accounts/", "/en/accounts/",
 )
 
