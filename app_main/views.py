@@ -84,9 +84,10 @@ def account_delete(request):
 
     if request.method == "POST":
         password = request.POST.get("password", "")
-        confirm = request.POST.get("confirm_text", "").strip()
+        required_word = "DELETE"
+        confirm = (request.POST.get("confirm_text", "") or "").strip()
 
-        if confirm != "DELETE":
+        if confirm.upper() != required_word:
             messages.error(request, _("Подтверждение не совпало. Введите слово DELETE."))
             return redirect("account_delete")
 

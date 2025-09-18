@@ -1,11 +1,48 @@
 {% extends "base.html" %}
 {% load i18n %}
-{% block title %}Настройки аккаунта — NewUser{% endblock %}
-{% block content %}
-  <h1>{% trans "Удаление  аккаунта" %}</h1>
 
-  <form method="post">
+{% block content %}
+<div class="container py-4">
+  <h1 class="h3 mb-3">{% trans "Удаление аккаунта" %}</h1>
+
+  <div class="alert alert-warning">
+    {% trans "Действие необратимо. Ваш аккаунт и связанные данные будут удалены." %}
+  </div>
+
+  <form method="post" action="{% url 'account_delete' %}" class="mt-3">
     {% csrf_token %}
-    <button type="submit" class="btn">{% trans "Сохранить" %}</button>
+
+    <div class="mb-3">
+      <label for="confirm_text" class="form-label">
+        {% trans "Подтвердите удаление — введите слово" %} <strong>DELETE</strong>
+      </label>
+      <input type="text"
+             id="confirm_text"
+             name="confirm_text"
+             placeholder="DELETE"
+             class="form-control"
+             required>
+      <div class="form-text">
+        {% trans "Безопасная проверка: нужно явно набрать DELETE." %}
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label for="password" class="form-label">{% trans "Ваш пароль" %}</label>
+      <input type="password"
+             id="password"
+             name="password"
+             class="form-control"
+             autocomplete="current-password"
+             required>
+    </div>
+
+    <button type="submit" class="btn btn-danger">
+      {% trans "Удалить аккаунт" %}
+    </button>
+    <a class="btn btn-secondary ms-2" href="{% url 'account_settings' %}">
+      {% trans "Отмена" %}
+    </a>
   </form>
+</div>
 {% endblock %}

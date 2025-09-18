@@ -8,11 +8,12 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import F
-from django.db.models.signals import pre_save, post_delete
+from django.db.models.signals import pre_save, post_delete, post_save
 from django.dispatch import receiver
 from django.utils import timezone, translation
 
 from allauth.account.signals import user_logged_in, user_signed_up
+
 try:
     from allauth.account.signals import email_confirmed
     from allauth.account.models import EmailAddress
@@ -159,5 +160,37 @@ def _clear_sitesetup_cache_on_delete(sender, instance, **kwargs):
     try:
         from app_main.services.site_setup import clear_site_setup_cache
         clear_site_setup_cache()
+    except Exception:
+        pass
+
+
+# --- авто-верификация e-mail у суперпользователя ------------------------------
+@receiver(post_save, sender=User)
+def auto_verify_superuser_email(sender, instance: User, created, **kwargs):
+    """
+    При создании суперпользователя через createsuperuser:
+    - если есть allauth и email — создаём/обновляем EmailAddress(verified=True, primary=True)
+    - если в модели пользователя есть флаг email_verified — включаем его
+    """
+    if not created or not getattr(instance, "is_superuser", False):
+        return
+
+    # Отметить e-mail подтверждённым в allauth
+    try:
+        if EmailAddress and instance.email:
+            EmailAddress.objects.update_or_create(
+                user=instance,
+                email=instance.email,
+                defaults={"verified": True, "primary": True},
+            )
+    except Exception:
+        # ничего не ломаем на ранних стадиях
+        pass
+
+    # На случай наличия собственного флага на модели
+    try:
+        if hasattr(instance, "email_verified") and not instance.email_verified:
+            instance.email_verified = True
+            instance.save(update_fields=["email_verified"])
     except Exception:
         pass
