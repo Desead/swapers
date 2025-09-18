@@ -21,7 +21,13 @@ from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from django.urls import NoReverseMatch
 from allauth.account.models import EmailAddress
+from urllib.parse import urlencode
 
+from allauth.account.views import SignupView
+from django.contrib import messages
+from django.contrib.auth import get_user_model
+from django.urls import reverse
+from django.utils.translation import gettext as _
 from .models import SiteSetup
 
 _OUTLINK_SALT = "outlinks.v1"
@@ -220,3 +226,27 @@ def account_email_resend(request):
         messages.success(request, _("Ссылка для подтверждения отправлена."))
 
     return redirect("account_email_verification_sent")
+
+class SignupOrLoginRedirectView(SignupView):
+    """
+    Если при регистрации указан e-mail существующего пользователя,
+    перенаправляем на страницу логина и подставляем этот e-mail.
+    Во всех остальных случаях оставляем стандартное поведение allauth.
+    """
+    def post(self, request, *args, **kwargs):
+        email = (request.POST.get("email") or "").strip()
+
+        # Если поле email присутствует и такой пользователь уже есть — уводим на логин.
+        if email:
+            User = get_user_model()
+            if User._default_manager.filter(email__iexact=email).exists():
+                messages.info(
+                    request,
+                    _("Этот e-mail уже зарегистрирован. Войдите в аккаунт, используя его.")
+                )
+                login_url = reverse("account_login")
+                query = urlencode({"email": email})
+                return redirect(f"{login_url}?{query}")
+
+        # Иначе обычный флоу регистрации allauth
+        return super().post(request, *args, **kwargs)

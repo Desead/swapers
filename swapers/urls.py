@@ -7,6 +7,7 @@ from django.conf.urls.static import static
 from app_main.views_security import csp_report
 from app_main.views import dashboard, account_settings, account_delete, robots_txt, account_email_resend
 from django.utils.translation import get_supported_language_variant
+from app_main.views import SignupOrLoginRedirectView
 
 # --- i18n ---
 from django.conf.urls.i18n import i18n_patterns
@@ -66,6 +67,8 @@ urlpatterns += [
 # Пользовательские маршруты — под префиксом языка
 urlpatterns += i18n_patterns(
     # allauth (вход/регистрация/сброс)
+path("accounts/signup/", SignupOrLoginRedirectView.as_view(), name="account_signup"),
+
     path("accounts/", include("allauth.urls")),
 
     # ЛК
