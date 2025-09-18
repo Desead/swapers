@@ -17,6 +17,11 @@ from django.utils.translation import override
 from django.conf import settings
 import xml.etree.ElementTree as ET
 
+from django.views.decorators.http import require_POST
+from django.core.cache import cache
+from django.urls import NoReverseMatch
+from allauth.account.models import EmailAddress
+
 from .models import SiteSetup
 
 _OUTLINK_SALT = "outlinks.v1"
@@ -155,3 +160,63 @@ def robots_txt(request):
     body = "\n".join(lines) + "\n"
     cache.set(cache_key, body, 60 * 60)
     return HttpResponse(body, content_type="text/plain; charset=utf-8")
+
+
+# === ДОБАВИТЬ (рядом с вашими вьюхами, до использования)
+def _send_confirmation_email(request, user) -> bool:
+    """
+    Возвращает True, если попытались отправить письмо.
+    Email берём из user.email; письмо отправится только если адрес ещё не подтверждён.
+    """
+    email = (user.email or "").strip()
+    if not email:
+        return False
+    # add_email создаст/обновит EmailAddress и при confirm=True отправит письмо.
+    EmailAddress.objects.add_email(request, user, email, confirm=True)
+    return True
+
+
+@login_required
+@require_POST
+def account_email_resend(request):
+    """
+    Повторная отправка письма подтверждения для текущего пользователя.
+    Ограничение: не чаще 1 раза в минуту (серверный кэш).
+    """
+    user = request.user
+
+    # Если уже подтверждён — не отправляем
+    try:
+        if user.email:
+            try:
+                eaddr = EmailAddress.objects.get(user=user, email=user.email)
+            except EmailAddress.DoesNotExist:
+                eaddr = None
+            if eaddr and eaddr.verified:
+                messages.info(request, _("Ваш e-mail уже подтверждён."))
+                try:
+                    return redirect("account_settings")
+                except NoReverseMatch:
+                    return redirect("account_email_verification_sent")
+    except Exception:
+        pass  # не мешаем флоу из-за вспомогательных ошибок
+
+    # Троттлинг: 1 запрос в минуту
+    cache_key = f"email_confirm_resend:{user.pk}"
+    # cache.add вернёт False, если ключ уже есть (то есть недавно жали кнопку)
+    if not cache.add(cache_key, "1", timeout=60):
+        messages.warning(request, _("Слишком часто. Попробуйте ещё раз через минуту."))
+        return redirect("account_email_verification_sent")
+
+    # Отправляем письмо
+    _send_confirmation_email(request, request.user)
+
+    if getattr(user, "email", None):
+        messages.success(
+            request,
+            _("Ссылка для подтверждения отправлена на %(email)s.") % {"email": user.email},
+        )
+    else:
+        messages.success(request, _("Ссылка для подтверждения отправлена."))
+
+    return redirect("account_email_verification_sent")

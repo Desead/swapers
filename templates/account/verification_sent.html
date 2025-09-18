@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Подтвердите ваш адрес электронной почты" %}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <h1 class="h3 mb-3">{% trans "Подтвердите ваш адрес электронной почты" %}</h1>
+
+  {% if request.user.is_authenticated and request.user.email %}
+    <p class="mb-3">
+      {% blocktrans with email=request.user.email %}
+      Мы отправили письмо со ссылкой подтверждения на {{ email }}. Если письмо не пришло в течение нескольких минут, проверьте папку «Спам» или отправьте письмо повторно.
+      {% endblocktrans %}
+    </p>
+  {% else %}
+    <p class="mb-3">
+      {% trans "Мы отправили письмо со ссылкой подтверждения. Если письмо не пришло, проверьте папку «Спам» или отправьте письмо повторно." %}
+    </p>
+  {% endif %}
+
+  <form method="post" action="{% url 'account_email_resend' %}" class="mt-3">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-primary" id="resend-btn">
+      {% trans "Выслать письмо повторно" %}
+    </button>
+    <small class="text-muted d-block mt-2">
+      {% trans "Нажимать можно не чаще одного раза в минуту." %}
+    </small>
+  </form>
+
+  <hr class="my-4">
+
+  {% url 'account_email' as manage_email_url %}
+  {% if manage_email_url %}
+    <a class="btn btn-outline-secondary me-2" href="{{ manage_email_url }}">
+      {% trans "Изменить e-mail" %}
+    </a>
+  {% endif %}
+
+  {% url 'account_settings' as settings_url %}
+  {% if settings_url %}
+    <a class="btn btn-outline-secondary me-2" href="{{ settings_url }}">
+      {% trans "Настройки аккаунта" %}
+    </a>
+  {% endif %}
+
+  {% url 'account_logout' as logout_url %}
+  {% if logout_url %}
+    <a class="btn btn-link text-danger" href="{{ logout_url }}">
+      {% trans "Выйти" %}
+    </a>
+  {% endif %}
+</div>
+
+<script>
+(function() {
+  var btn = document.getElementById('resend-btn');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    setTimeout(function() {
+      btn.disabled = true;
+      var sec = 60;
+      var baseText = btn.textContent || btn.innerText;
+      var timer = setInterval(function() {
+        sec -= 1;
+        var t = baseText + ' (' + sec + 's)';
+        if ('textContent' in btn) btn.textContent = t; else btn.innerText = t;
+        if (sec <= 0) {
+          clearInterval(timer);
+          btn.disabled = false;
+          if ('textContent' in btn) btn.textContent = baseText; else btn.innerText = baseText;
+        }
+      }, 1000);
+    }, 0);
+  });
+})();
+</script>
+{% endblock %}

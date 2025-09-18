@@ -5,13 +5,12 @@ from django.utils import translation
 from django.conf import settings
 from django.conf.urls.static import static
 from app_main.views_security import csp_report
-from app_main.views import dashboard, account_settings, account_delete, robots_txt
+from app_main.views import dashboard, account_settings, account_delete, robots_txt, account_email_resend
 from django.utils.translation import get_supported_language_variant
 
 # --- i18n ---
 from django.conf.urls.i18n import i18n_patterns
-from django.views.i18n import set_language, JavaScriptCatalog
-
+from django.views.i18n import set_language
 
 # берём префикс через сервис (с кэшем); если таблицы ещё нет — падаем в "admin"
 try:
@@ -30,8 +29,6 @@ def _admin_redirect_view(request):
     except Exception:
         admin_prefix = "admin"
     return redirect(f"/{admin_prefix}/", permanent=False)  # 302
-
-
 
 
 def _root_redirect_to_language(request):
@@ -75,6 +72,7 @@ urlpatterns += i18n_patterns(
     path("dashboard/", dashboard, name="dashboard"),
     path("account/settings/", account_settings, name="account_settings"),
     path("account/delete/", account_delete, name="account_delete"),
+    path("account/email/resend/", account_email_resend, name="account_email_resend"),
 
     # Остальной сайт
     path("", include("app_main.urls")),

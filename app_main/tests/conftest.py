@@ -7,20 +7,21 @@ from django.test import Client, RequestFactory
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.urls import reverse
-from django.test.utils import override_settings
-from django.contrib.auth.hashers import reset_hashers
 
 from app_main.models import SiteSetup
+
 
 # --- авто-создание singleton SiteSetup для всех тестов ---
 @pytest.fixture(autouse=True)
 def _ensure_singleton(db):
     SiteSetup.get_solo()
 
+
 # --- удобный доступ к SiteSetup ---
 @pytest.fixture
 def site_setup(db):
     return SiteSetup.get_solo()
+
 
 # --- парсер JSON-LD из разметки ---
 @pytest.fixture
@@ -29,10 +30,13 @@ def extract_jsonld():
         r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(?P<json>.*?)</script>',
         re.IGNORECASE | re.DOTALL,
     )
+
     def _extract(html: str):
         m = script_re.search(html)
         return json.loads(m.group("json")) if m else None
+
     return _extract
+
 
 # --- переключение языка, совместимо с вызовами switch_lang('ru', next_url='/') ---
 @pytest.fixture
@@ -45,7 +49,9 @@ def switch_lang(client, settings):
         s.save()
         client.cookies["django_language"] = lang_code
         return lang_code
+
     return _set
+
 
 # --- staff-клиент без username (у нас email — логин) ---
 @pytest.fixture
@@ -59,6 +65,7 @@ def staff_client(db, client, django_user_model):
     client.force_login(user)
     return client
 
+
 # --- вспомогалка: достаём «ru»-код, реально присутствующий в проекте ---
 def _preferred_ru_code():
     langs = [code.lower() for code, _ in getattr(settings, "LANGUAGES", [])]
@@ -67,6 +74,7 @@ def _preferred_ru_code():
             return cand
     # если ни одного «ru*» нет — берём первый из LANGUAGES или 'ru'
     return langs[0] if langs else "ru"
+
 
 # --- HTML главной: форсируем язык и пробуем кандидаты путей, чтобы исключить 404 ---
 @pytest.fixture
@@ -99,7 +107,9 @@ def get_home_html(client):
             f"Home not reachable. Tried: {', '.join(candidates)}; "
             f"last_status={getattr(last_resp, 'status_code', None)}"
         )
+
     return _get
+
 
 # --- Back-compat helper для старых тестов (рефералы/метрики) ---
 class Browser:
@@ -107,6 +117,7 @@ class Browser:
     Обёртка над django.test.Client с минимально нужной совместимостью
     для старых тестов: перенос куки/сессии в "сырой" Request и обратно.
     """
+
     def __init__(self):
         self._client = Client()
         self._extra = {}  # headers для ближайшего запроса
@@ -167,18 +178,34 @@ class Browser:
         cs.save()
 
 
+# --- speed: fast email backend, in-memory cache, no validators -----------------
+@pytest.fixture(autouse=True)
+def fast_env_per_test(settings):
+    """
+    На каждый тест:
+      - почта: локальная память (mail.outbox),
+      - кэш: locmem,
+      - отключаем валидаторы пароля, чтобы фабрики юзеров не спотыкались.
+    """
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+    settings.CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "tests-locmem",
+        }
+    }
+    settings.AUTH_PASSWORD_VALIDATORS = []
+
+
+# --- speed: fast password hashing for the whole test session (Django 4/5 safe) ---
+# conftest.py
 @pytest.fixture(autouse=True, scope="session")
 def fast_password_hashers_session():
-    # быстрый хешер на всю сессию тестов
-    with override_settings(PASSWORD_HASHERS=[
-        "django.contrib.auth.hashers.MD5PasswordHasher",
-    ]):
-        try:
-            reset_hashers(setting="PASSWORD_HASHERS")
-        except TypeError:
-            reset_hashers()
+    from django.test.utils import override_settings
+    from django.contrib.auth.hashers import reset_hashers
+
+    with override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"]):
+        reset_hashers(setting="PASSWORD_HASHERS")
         yield
-        try:
-            reset_hashers(setting="PASSWORD_HASHERS")
-        except TypeError:
-            reset_hashers()
+        reset_hashers(setting="PASSWORD_HASHERS")
+
