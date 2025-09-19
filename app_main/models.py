@@ -538,6 +538,11 @@ class SiteSetup(TranslatableModel):
         blank=True, default="",
         help_text=_("Например: https://fonts.gstatic.com data:."),
     )
+    site_enabled_languages = models.JSONField(
+        default=list, blank=True,
+        help_text=_("Какие языки показывать на сайте (переключатель, hreflang). "
+                    "Если пусто — будет только основной язык.")
+    )
 
     class Meta:
         verbose_name = _("Настройки сайта")
@@ -633,3 +638,29 @@ class SiteSetup(TranslatableModel):
             },
         )
         return obj
+
+    # Удобный метод — нормализует список, гарантирует наличие языка по умолчанию
+    # models.py (в классе SiteSetup)
+    def get_enabled_languages(self):
+        # известные коды из настроек
+        known = [c.lower() for c, _ in getattr(settings, "LANGUAGES", ())]
+        default = (getattr(settings, "LANGUAGE_CODE", "ru") or "ru").split("-")[0].lower()
+
+        selected = [(c or "").lower() for c in (self.site_enabled_languages or [])]
+
+        # гарантируем дефолт
+        if default not in selected:
+            selected = [default] + selected
+
+        # фильтруем только известные и сохраняем порядок как в settings.LANGUAGES
+        if known:
+            order = {code: i for i, code in enumerate(known)}
+            selected = [c for c in known if c in set(selected)]
+
+        # убираем дубликаты, сохраняя порядок
+        out, seen = [], set()
+        for c in selected:
+            if c not in seen:
+                out.append(c)
+                seen.add(c)
+        return out

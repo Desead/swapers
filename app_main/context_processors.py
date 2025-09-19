@@ -85,51 +85,91 @@ def seo_meta(request) -> Dict[str, object]:
 
     # безопасный доступ к переводимым полям SiteSetup
     def _tr(field: str, default: str = "") -> str:
-        # Если у модели есть parler-метод — используем его,
-        # иначе обычный getattr с дефолтом.
         if hasattr(setup, "safe_translation_getter"):
             val = setup.safe_translation_getter(
-                field,
-                default=None,
-                language_code=cur_lang,
-                any_language=True,  # взять любой доступный перевод, если текущего нет
+                field, default=None, language_code=cur_lang, any_language=True
             )
             return val if val not in (None, "") else default
         return getattr(setup, field, default)
+
+    # --- включённые на сайте языки (выбор в админке) ---
+    def _enabled_lang_codes() -> list[str]:
+        """
+        Читаем один из возможных полей настроек (какое у тебя есть в модели),
+        допускаем форматы: list/tuple, JSON-строка, строка "ru,en,..." .
+        Если ничего нет — берём все из settings.LANGUAGES.
+        """
+        raw = (
+            getattr(setup, "site_enabled_languages", None)
+        )
+
+        def _norm_list(x) -> list[str]:
+            if x is None:
+                return []
+            if isinstance(x, (list, tuple)):
+                return [str(i).split("-")[0].lower() for i in x]
+            if isinstance(x, str):
+                s = x.strip()
+                # возможно, это JSON
+                if s and s[0] in "[{" and s[-1] in "]}":
+                    try:
+                        data = json.loads(s)
+                        if isinstance(data, (list, tuple)):
+                            return [str(i).split("-")[0].lower() for i in data]
+                    except Exception:
+                        pass
+                # обычная comma-separated
+                return [part.strip().split("-")[0].lower() for part in s.split(",") if part.strip()]
+            return []
+
+        enabled_raw = _norm_list(raw)
+        all_codes_in_settings = [code.split("-")[0].lower() for code, _ in settings.LANGUAGES]
+        # фильтруем и сохраняем порядок как в settings.LANGUAGES
+        if enabled_raw:
+            want = set(enabled_raw)
+            result = [c for c in all_codes_in_settings if c in want]
+            # если почему-то ничего не совпало — fallback на все
+            return result or all_codes_in_settings
+        return all_codes_in_settings
+
+    LANGS_ENABLED = _enabled_lang_codes()
 
     # схема для мета (уважаем настройку в SiteSetup)
     scheme = "https" if getattr(setup, "use_https_in_meta", False) else request.scheme
     host = request.get_host()
 
-    # hreflang: абсолютные URL для каждого языка
+    # hreflang: абсолютные URL только для включённых языков
     hreflangs: Dict[str, str] = {}
     for code, _name in settings.LANGUAGES:
-        short = code.split("-")[0]
+        short = code.split("-")[0].lower()
+        if short not in LANGS_ENABLED:
+            continue
         alt_path = f"/{short}{'' if tail == '/' else tail}/".replace("//", "/")
         if tail.endswith("/"):
-            alt_path = f"/{short}{tail}"
+            alt_path = alt_path[:-1]  # не удваиваем слэш в конце
         hreflangs[short] = f"{scheme}://{host}{alt_path}"
 
-    # canonical — текущий язык + текущий «хвост» без query
-    canonical_path = f"/{cur_lang}{tail}"
-    CANONICAL_URL = f"{scheme}://{host}{canonical_path}"
+    # canonical
+    CANONICAL_URL = f"{scheme}://{host}{request.path}"
 
-    # Медиа (favicon/logo/OG/Twitter)
-    OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
-    TW_IMAGE_URL = _media_abs(request, getattr(setup, "twitter_image", None), force_scheme=scheme) or OG_IMAGE_URL
-    LOGO_URL = _media_abs(request, getattr(setup, "logo", None), force_scheme=scheme)
+    # favicon/logo absolute
     FAVICON_URL = _media_abs(request, getattr(setup, "favicon", None), force_scheme=scheme)
+    LOGO_URL = _media_abs(request, getattr(setup, "logo", None), force_scheme=scheme)
 
-    # JSON-LD -> строки (для <script type="application/ld+json">)
-    JSONLD_ORG = json.dumps(getattr(setup, "jsonld_organization", {}) or {}, ensure_ascii=False)
-    JSONLD_WEBSITE = json.dumps(getattr(setup, "jsonld_website", {}) or {}, ensure_ascii=False)
+    # Twitter image absolute
+    TW_IMAGE_URL = _media_abs(request, getattr(setup, "twitter_image", None), force_scheme=scheme)
 
-    # SEO базовые (переводимые)
-    SEO_TITLE = _tr("seo_default_title", setup.domain_view)
+    # JSON-LD (берём как есть)
+    JSONLD_ORG = getattr(setup, "jsonld_organization", None)
+    JSONLD_WEBSITE = getattr(setup, "jsonld_website", None)
+
+    # SEO тайтлы/описания
+    SEO_TITLE = _tr("seo_default_title", getattr(setup, "domain_view", ""))
     SEO_DESCRIPTION = _tr("seo_default_description", "")
     SEO_KEYWORDS = _tr("seo_default_keywords", "")
 
     # Open Graph
+    OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
     OG_LOCALE_ALTS = [x.strip() for x in (getattr(setup, "og_locale_alternates", "") or "").split(",") if x.strip()]
 
     # -------- статус работы (UTC) --------
@@ -138,7 +178,7 @@ def seo_meta(request) -> Dict[str, object]:
             return False
         now_utc = timezone.now()
         now_t = now_utc.time()
-        wd = now_utc.weekday()  # 0=Mon ... 6=Sun
+        wd = now_utc.weekday()  # 0=Mon . 6=Sun
         suf = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][wd]
         open_t = getattr(setup, f"open_time_{suf}", None)
         close_t = getattr(setup, f"close_time_{suf}", None)
@@ -154,10 +194,14 @@ def seo_meta(request) -> Dict[str, object]:
     return {
         # Базовое
         "CUR_LANG": cur_lang,
-        "SITE_NAME": setup.domain_view,
+        "SITE_NAME": getattr(setup, "domain_view", ""),
         "CANONICAL_URL": CANONICAL_URL,
         "HREFLANGS": hreflangs,
         "BLOCK_INDEXING": bool(getattr(setup, "block_indexing", False)),
+
+        # Языки
+        "LANGS_ENABLED": LANGS_ENABLED,  # ← список кодов включённых языков
+        "LANGS_ALL": [code.split("-")[0].lower() for code, _ in settings.LANGUAGES],
 
         # SEO
         "SEO_TITLE": SEO_TITLE,
@@ -174,10 +218,10 @@ def seo_meta(request) -> Dict[str, object]:
         "OG_TITLE": _tr("og_title", SEO_TITLE),
         "OG_DESCRIPTION": _tr("og_description", SEO_DESCRIPTION),
         "OG_IMAGE_URL": OG_IMAGE_URL,
-        "OG_IMAGE_ALT": _tr("og_image_alt", setup.domain_view),
+        "OG_IMAGE_ALT": _tr("og_image_alt", getattr(setup, "domain_view", "")),
         "OG_IMAGE_WIDTH": getattr(setup, "og_image_width", 0),
         "OG_IMAGE_HEIGHT": getattr(setup, "og_image_height", 0),
-        "OG_SITE_NAME": setup.domain_view,
+        "OG_SITE_NAME": getattr(setup, "domain_view", ""),
         "OG_LOCALE": getattr(setup, "og_locale_default", "ru_RU"),
         "OG_LOCALE_ALTS": OG_LOCALE_ALTS,
 

@@ -1,36 +1,27 @@
 from __future__ import annotations
 
 from django import forms
-from django.db import models
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
-from django.urls import reverse
-from django.shortcuts import redirect
-from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _, get_language
-from django.contrib import admin
-from django.conf import settings
 from django.utils import timezone
-from django.db.models import Sum, Max
+from django.db.models import Sum
 from axes.utils import reset as axes_reset
 from .models import SiteSetup
 from app_main.models_security import BlocklistEntry
-
 from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
-
 from axes.models import AccessAttempt, AccessFailureLog
-from parler.admin import TranslatableAdmin
-from django.conf import settings
 from django.contrib import admin
-from django.db import models
-from django.shortcuts import redirect
-from django.urls import reverse
+from django.conf import settings
+from django.utils.translation import get_language, gettext_lazy as _
 from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _, get_language
-
+from django.urls import reverse
+from django.shortcuts import redirect
+from django.db import models
 from parler.admin import TranslatableAdmin
+from parler.forms import TranslatableModelForm
+from django.core.exceptions import FieldDoesNotExist
 
 # + твои импорты моделей/утилит:
 # from .models import SiteSetup
@@ -143,25 +134,79 @@ class UserAdmin(BaseUserAdmin):
 
 
 # ======================= Настройки сайта (SiteSetup) =======================
+class SiteSetupAdminForm(TranslatableModelForm):
+    # Рисуем чекбоксы вместо JSON-текста
+    site_enabled_languages = forms.MultipleChoiceField(
+        choices=(),  # выставим в __init__
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label=_("Языки, показываемые на сайте"),
+        help_text=_("Выберите языки, которые должны быть видимы на сайте (переключатель, hreflang)."),
+    )
+
+    class Meta:
+        model = SiteSetup
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # choices берем из настроек
+        self.fields["site_enabled_languages"].choices = list(
+            getattr(settings, "LANGUAGES", (("ru", "Russian"),))
+        )
+
+        inst = kwargs.get("instance")
+        if inst is not None:
+            initial = inst.site_enabled_languages or inst.get_enabled_languages()
+        else:
+            # форма "добавить" нам не нужна, но пусть работает
+            default = (getattr(settings, "LANGUAGE_CODE", "ru") or "ru").split("-")[0].lower()
+            initial = [default]
+        self.fields["site_enabled_languages"].initial = initial
+
+    def clean_site_enabled_languages(self):
+        langs = self.cleaned_data.get("site_enabled_languages") or []
+        # нормализуем: только известные языки, в нижнем регистре, без дублей
+        known = [code for code, _ in getattr(settings, "LANGUAGES", ())]
+        known_set = {c.lower() for c in known}
+        out, seen = [], set()
+        for c in langs:
+            cc = (c or "").lower()
+            if cc in known_set and cc not in seen:
+                out.append(cc)
+                seen.add(cc)
+        return out
+
 
 @admin.register(SiteSetup)
 class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
+    # Вкладки Parler
+    change_form_template = "admin/parler/change_form.html"
     save_on_top = True
+    form = SiteSetupAdminForm
 
     formfield_overrides = {
         models.URLField: {"assume_scheme": "https"},
     }
 
+    # из settings.LANGUAGES (какие вообще есть в проекте)
+    SITE_LANG_CHOICES = tuple(getattr(settings, "LANGUAGES", (("ru", "Russian"),)))
+
     readonly_fields = (
         "updated_at",
         "og_image_width", "og_image_height",
         "og_image_preview", "twitter_image_preview",
-        "language_quick_switch",
         "translation_status",
         "translation_matrix",
+        "language_toolbar",      # ← панель языков вверху формы
     )
 
     fieldsets = (
+        (_("Язык формы"), {
+            "classes": ("wide",),
+            "fields": ("language_toolbar",),   # просто readonly «чипы», меняют ?language=xx
+        }),
+
         (_("Главная страница"), {
             "classes": ("wide",),
             "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode"),
@@ -283,161 +328,141 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
             "fields": (("admin_path", "otp_issuer"),),
         }),
 
+        (_("Языки, показываемые на сайте"), {
+            "classes": ("wide",),
+            "fields": ( "site_enabled_languages", ),   # JSONField в модели
+        }),
+
         (_("Служебное"), {
             "classes": ("wide",),
-            "fields": (
-                "updated_at",
-                "language_quick_switch",
-                "translation_status",
-                "translation_matrix",
-            ),
+            "fields": ("updated_at", "translation_status", "translation_matrix"),
         }),
     )
 
-    # --- язык формы из ?language=xx ---
+    # ---------- Язык формы ----------
     def get_form_language(self, request, obj=None):
-        langs = dict(getattr(settings, "LANGUAGES", (("ru", "Russian"),)))
-        lang = (request.GET.get("language") or "").lower()
-        if lang in langs:
+        """
+        Текущий язык вкладки/формы (Parler ориентируется на это).
+        При клике на чип мы идём на ?language=xx, здесь это подхватываем.
+        """
+        lang = request.GET.get("language")
+        if lang:
+            request.session["PARLER_CURRENT_LANGUAGE"] = lang
             return lang
-        try:
-            return super().get_form_language(request, obj)
-        except Exception:
-            return (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+        return request.session.get("PARLER_CURRENT_LANGUAGE") or (get_language() or settings.LANGUAGE_CODE)
 
-    # подсветка «нет перевода» + фиксация языка объекта
     def get_form(self, request, obj=None, **kwargs):
-        lang = self.get_form_language(request, obj)
-        if obj is not None and lang:
-            try:
-                obj.set_current_language(lang)
-            except Exception:
-                pass
-
         form = super().get_form(request, obj, **kwargs)
-
+        # Активируем язык на объекте, чтобы .safe_translation_getter(...) и формы
+        # показывали нужную локаль без сюрпризов.
         try:
-            translated_fields = set(getattr(obj._parler_meta, "_fields_to_model", {}).keys()) if obj else set()
+            lang = self.get_form_language(request)
+            if obj is not None and hasattr(obj, "set_current_language"):
+                obj.set_current_language(lang)
         except Exception:
-            translated_fields = set()
-
-        for name in translated_fields:
-            if obj and name in form.base_fields:
-                val = obj.safe_translation_getter(name, default=None, any_language=False)
-                if not val:
-                    label = form.base_fields[name].label or name
-                    badge = (
-                        '<span style="display:inline-block;'
-                        'margin-left:6px;padding:2px 6px;border-radius:10px;'
-                        'background:#b71c1c;color:#fff;font-size:11px;'
-                        'vertical-align:middle;">'
-                        + _("нет перевода")
-                        + "</span>"
-                    )
-                    form.base_fields[name].label = mark_safe(f"{label}{badge}")
-
+            pass
         return form
 
-    # быстрый переключатель языка
-    @admin.display(description=_("Язык редактирования"))
-    def language_quick_switch(self, obj: SiteSetup):
-        if not obj:
-            return "—"
-        base_url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
-        langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
-
-        try:
-            cur = (obj.get_current_language() or "").lower()
-        except Exception:
-            cur = ""
-        if not cur:
-            cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+    @admin.display(description=_("Язык"))
+    def language_toolbar(self, obj):
+        langs = [code for code, _ in self.SITE_LANG_CHOICES]
+        # определяем текущий язык так же, как делает форма
+        if hasattr(self, "request") and self.request is not None:
+            cur = (self.get_form_language(self.request, obj) or settings.LANGUAGE_CODE).lower()
+        else:
+            cur = (get_language() or settings.LANGUAGE_CODE).lower()
 
         chips = []
+        base_style = (
+            "display:inline-block;margin:2px 6px 2px 0;padding:4px 10px;border-radius:999px;"
+            "font-size:12px;text-decoration:none;border:1px solid #ddd;"
+        )
         for code in langs:
-            is_active = (code.lower() == cur)
-            if is_active:
-                chips.append(
-                    '<span style="display:inline-block;margin-right:6px;margin-bottom:6px;'
-                    'padding:4px 10px;border-radius:999px;font-weight:600;'
-                    'background:#1976d2;color:#fff;font-size:12px;">'
-                    f'{code.upper()}</span>'
-                )
-            else:
-                chips.append(
-                    f'<a href="{base_url}?language={code}" '
-                    'style="display:inline-block;margin-right:6px;margin-bottom:6px;'
-                    'padding:4px 10px;border-radius:999px;text-decoration:none;'
-                    'background:#eee;color:#333;font-size:12px;">'
-                    f'{code.upper()}</a>'
-                )
+            is_cur = (code.lower() == cur)
+            style = base_style + (
+                "background:#2e7d32;color:#fff;border-color:#2e7d32;" if is_cur
+                else "background:#f5f5f5;color:#333;"
+            )
+            chips.append(f'<a href="?language={code}" style="{style}">{code.upper()}</a>')
         return mark_safe("".join(chips))
+
+    # ---------- Таблица/статус переводов (оставляем как было) ----------
+    def _translated_field_names(self, obj):
+        try:
+            return list(getattr(obj._parler_meta, "_fields_to_model", {}).keys())
+        except Exception:
+            return []
+
+    def _human_field_label(self, obj, fname: str) -> str:
+        """
+        Возвращает человекочитаемый ярлык поля:
+        - сначала пытаемся достать verbose_name с основного объекта;
+        - если поля там нет, берём verbose_name с translation-модели Parler;
+        - в крайнем случае — возвращаем имя поля.
+        """
+        try:
+            f = obj._meta.get_field(fname)
+            return getattr(f, "verbose_name", fname) or fname
+        except FieldDoesNotExist:
+            pass
+        except Exception:
+            # на случай неожиданных ситуаций не падаем
+            pass
+
+        # Поле не на основной модели -> пробуем на translation-модели Parler
+        try:
+            tr_model = obj._parler_meta.get_model_by_field(fname)
+            f = tr_model._meta.get_field(fname)
+            return getattr(f, "verbose_name", fname) or fname
+        except Exception:
+            return fname
 
     @admin.display(description=_("Статус переводов"))
     def translation_status(self, obj: SiteSetup):
         if not obj:
             return "—"
         langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
-        try:
-            cur = (obj.get_current_language() or "").lower()
-        except Exception:
-            cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
-
+        cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
         chips = []
         for code in langs:
             try:
                 has = obj.has_translation(code)
             except Exception:
                 has = False
-            base_style = "display:inline-block;margin-right:6px;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:11px;"
+            base = "display:inline-block;margin-right:6px;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:11px;"
             color = "background:#2e7d32;color:#fff;" if has else "background:#b71c1c;color:#fff;"
             highlight = "box-shadow:0 0 0 2px #00000022 inset;" if code.lower() == cur else ""
-            chips.append(
-                f'<span style="{base_style}{color}{highlight}">{code.upper()}</span>'
-            )
+            title = _("есть перевод") if has else _("нет перевода")
+            chips.append(f'<span title="{title}" style="{base}{color}{highlight}">{code.upper()}</span>')
         return mark_safe("".join(chips))
 
-    @admin.display(description=_("Матрица переводов (поле × язык)"))
-    def translation_matrix(self, obj: SiteSetup):
-        """Таблица: строки — переводимые поля, столбцы — языки; ✓ есть значение, • пусто.
-        В первом столбце показываем verbose_name (жирным) и код поля (мелким серым)."""
+    @admin.display(description=_("Матрица переводов"))
+    def translation_matrix(self, obj):
         if not obj:
             return "—"
-
         fields = self._translated_field_names(obj)
         if not fields:
             return _("Нет переводимых полей.")
-
         langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
-        ths = "".join(
-            f'<th style="padding:6px 10px;text-align:center;white-space:nowrap;">{code.upper()}</th>'
-            for code in langs
-        )
-
+        ths = "".join(f'<th style="padding:6px 10px;text-align:center;white-space:nowrap;">{code.upper()}</th>' for code in langs)
         rows = []
         for fname in fields:
             verbose = self._human_field_label(obj, fname)
-
             tds = []
             for code in langs:
-                val = obj.safe_translation_getter(
-                    fname, default=None, language_code=code, any_language=False
-                )
+                val = obj.safe_translation_getter(fname, default=None, language_code=code, any_language=False)
                 ok = bool(val)
                 sym = "✓" if ok else "•"
                 bg = "#e8f5e9" if ok else "#ffebee"
                 color = "#2e7d32" if ok else "#b71c1c"
-                tds.append(
-                    f'<td style="padding:6px 10px;text-align:center;background:{bg};color:{color};">{sym}</td>'
-                )
-
+                tds.append(f'<td style="padding:6px 10px;text-align:center;background:{bg};color:{color};">{sym}</td>')
             name_cell = (
                 f'<td style="padding:6px 10px;white-space:nowrap;">'
-                f'{verbose}<br>'
+                f'<strong>{verbose}</strong><br>'
+                f'<span style="opacity:.65;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">{fname}</span>'
                 f'</td>'
             )
             rows.append(f'<tr>{name_cell}{"".join(tds)}</tr>')
-
         table = (
             '<div style="overflow:auto;border:1px solid #eee;border-radius:8px;">'
             '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
@@ -451,39 +476,7 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         )
         return mark_safe(table)
 
-    # --- helpers -------------------------------------------------------
-
-    def _translated_field_names(self, obj: SiteSetup):
-        """Стабильный список переводимых полей Parler (как объявлены в модели)."""
-        try:
-            return list(getattr(obj._parler_meta, "_fields_to_model", {}).keys())
-        except Exception:
-            return []
-
-    def _human_field_label(self, obj: SiteSetup, field_name: str) -> str:
-        """
-        Возвращает verbose_name для поля.
-        1) Пытаемся в основной модели;
-        2) Если нет — в переводной модели Parler для этого поля.
-        """
-        # 1) Основная модель
-        try:
-            f = obj._meta.get_field(field_name)
-            vn = getattr(f, "verbose_name", field_name) or field_name
-            return str(vn)
-        except Exception:
-            pass
-        # 2) Переводная модель Parler
-        try:
-            tr_model = obj._parler_meta.get_model_by_field(field_name)
-            f = tr_model._meta.get_field(field_name)
-            vn = getattr(f, "verbose_name", field_name) or field_name
-            return str(vn)
-        except Exception:
-            return field_name
-
-    # --- прочее штатное ------------------------------------------------
-
+    # ---------- Прочее оставляем как было ----------
     def has_add_permission(self, request):
         return False
 
@@ -496,26 +489,22 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         return redirect(url)
 
     def render_change_form(self, request, context, *args, **kwargs):
+        # сохраним request, чтобы language_toolbar знал текущий язык
+        self.request = request
         scheme = "https" if not settings.DEBUG else "http"
         domain = request.get_host()
         robots_url = f"{scheme}://{domain}{reverse('robots_txt')}"
-
         form = context.get("adminform").form
         if "robots_txt" in form.fields:
             base_help = form.fields["robots_txt"].help_text or ""
-            form.fields["robots_txt"].help_text = mark_safe(
-                f'{base_help}<br><a href="{robots_url}" target="_blank">↗ robots.txt</a>'
-            )
-
+            form.fields["robots_txt"].help_text = mark_safe(f'{base_help}<br><a href="{robots_url}" target="_blank">↗ robots.txt</a>')
         return super().render_change_form(request, context, *args, **kwargs)
 
     @admin.display(description=_("Превью OG"))
     def og_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.og_image and obj.og_image.url:
-                return mark_safe(
-                    f'<img src="{obj.og_image.url}" style="max-width:360px;height:auto;border:1px solid #ddd;border-radius:4px;">'
-                )
+                return mark_safe(f'<img src="{obj.og_image.url}" style="max-width:360px;height:auto;border:1px solid #ddd;border-radius:4px;">')
         except Exception:
             pass
         return "—"
@@ -524,14 +513,23 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
     def twitter_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.twitter_image and obj.twitter_image.url:
-                return mark_safe(
-                    f'<img src="{obj.twitter_image.url}" style="max-width:360px;height:auto;border:1px solid #ddd;border-radius:4px;">'
-                )
+                return mark_safe(f'<img src="{obj.twitter_image.url}" style="max-width:360px;height:auto;border:1px solid #ddd;border-radius:4px;">')
         except Exception:
             pass
         return "—"
 
     def save_model(self, request, obj: SiteSetup, form, change):
+        # сохраняем «видимые языки на сайте»
+        sel = None
+        if form is not None and hasattr(form, "cleaned_data"):
+            sel = form.cleaned_data.get("site_enabled_languages")
+        if sel is None:
+            sel = request.POST.getlist("site_enabled_languages")
+        if sel is not None:
+            # JSONField: просто список кодов
+            obj.site_enabled_languages = list(sel)
+
+        # дальше — твой телеграм-дифф без изменений
         original = None
         if change and obj.pk:
             try:
@@ -560,6 +558,11 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
 
         _, message = format_telegram_message(user_email, ip, ua, changes, label_map)
         send_telegram_message(token, chat_id, message)
+
+    class Media:
+        # На всякий случай подгрузим ресурсы Parler (если шаблон уже их не подключил)
+        js = ("admin/js/jquery.init.js", "parler/js/admin/parler.js")
+        css = {"all": ("parler/css/admin/parler.css",)}
 
 
 # ======================= Чёрный список =======================
