@@ -374,7 +374,7 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
             pass
         return form
 
-    @admin.display(description=_("Языки на сайте"))
+    @admin.display(description=_("Редактировать перевод"))
     def language_toolbar(self, obj):
         langs = [code for code, _ in self.SITE_LANG_CHOICES]
         # определяем текущий язык так же, как делает форма
@@ -510,48 +510,53 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         return "—"
 
     def save_model(self, request, obj: SiteSetup, form, change):
-        # --- normalize enabled languages & fallback to default if empty ---
-        valid_codes = [code for code, _ in getattr(settings, "LANGUAGES", ())]
-        langs = getattr(obj, "site_enabled_languages", None)
+        # --- гарантируем, что всегда сохранится хотя бы один язык ---
+        allowed = [c.lower() for c, _ in getattr(settings, "LANGUAGES", ())]
+        def _normalize(code: str | None) -> str | None:
+            if not code:
+                return None
+            c = code.lower().replace("_", "-")
+            if c in allowed:
+                return c
+            base = c.split("-", 1)[0]
+            # ищем близкий вариант из allowed (ru ↔ ru-ru и т.п.)
+            for a in allowed:
+                if a == base or a.split("-", 1)[0] == base:
+                    return a
+            return None
 
-        # если пришла строка (теоретически из JSON-поля) — попробуем распарсить
-        if isinstance(langs, str):
-            try:
-                import json
-                parsed = json.loads(langs)
-                langs = parsed if isinstance(parsed, list) else []
-            except Exception:
-                langs = []
-
-        # гарантируем список
-        if not isinstance(langs, list):
-            langs = []
-
-        # отфильтровать по settings.LANGUAGES и убрать дубли с сохранением порядка
-        seen = set()
-        langs = [c for c in langs if isinstance(c, str) and c in valid_codes and not (c in seen or seen.add(c))]
-
-        # если пусто — подставить дефолтный язык
-        if not langs:
-            default_code = (getattr(settings, "LANGUAGE_CODE", "en") or "en").split("-")[0]
-            if default_code not in valid_codes and valid_codes:
-                default_code = valid_codes[0]
-            langs = [default_code]
-
-        obj.site_enabled_languages = langs
-
-
-        # сохраняем «видимые языки на сайте»
-        sel = None
+        # берём выбранные из формы (поддерживаем оба варианта поля),
+        # иначе — текущее значение на объекте
+        selected = None
         if form is not None and hasattr(form, "cleaned_data"):
-            sel = form.cleaned_data.get("site_enabled_languages")
-        if sel is None:
-            sel = request.POST.getlist("site_enabled_languages")
-        if sel is not None:
-            # JSONField: просто список кодов
-            obj.site_enabled_languages = list(sel)
+            selected = (
+                form.cleaned_data.get("site_enabled_languages")
+                or form.cleaned_data.get("site_enabled_languages_list")
+            )
+        if selected is None:
+            selected = obj.site_enabled_languages or []
 
-        # дальше — твой телеграм-дифф без изменений
+        # нормализуем, фильтруем и убираем дубли
+        norm = []
+        seen = set()
+        for code in selected:
+            n = _normalize(code)
+            if n and n not in seen:
+                norm.append(n)
+                seen.add(n)
+
+        # если пусто — подставляем дефолтный
+        if not norm:
+            default_norm = _normalize(getattr(settings, "LANGUAGE_CODE", ""))
+            if not default_norm and allowed:
+                default_norm = allowed[0]
+            if default_norm:
+                norm = [default_norm]
+
+        obj.site_enabled_languages = norm
+        # --- /гарантия одного языка ---
+
+        # дальше — твоя существующая логика (diff, телеграм и т.д.)
         original = None
         if change and obj.pk:
             try:

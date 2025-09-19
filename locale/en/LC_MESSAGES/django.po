@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-18 02:33+0300\n"
+"POT-Creation-Date: 2025-09-19 21:06+0300\n"
 "PO-Revision-Date: 2025-09-17 11:14+0300\n"
 "Last-Translator: news-piter@mail.ru\n"
 "Language-Team: \n"
@@ -20,188 +20,236 @@ msgstr ""
 "X-Generator: Poedit 3.7\n"
 "X-Translated-Using: django-rosetta 0.10.2\n"
 
-#: .\app_main\admin.py:32
+#: .\app_main\admin.py:38
 msgid "Пароль"
 msgstr "Password"
 
-#: .\app_main\admin.py:33
+#: .\app_main\admin.py:39
 #, fuzzy
 #| msgid "Подтвердите пароль:"
 msgid "Повторите пароль"
 msgstr "Confirm the password:"
 
-#: .\app_main\admin.py:42 .\app_main\admin.py:85
+#: .\app_main\admin.py:48 .\app_main\admin.py:91
 msgid "Пользователь с таким email уже существует."
 msgstr ""
 
-#: .\app_main\admin.py:49
+#: .\app_main\admin.py:55
 msgid "Пароли не совпадают"
 msgstr ""
 
-#: .\app_main\admin.py:64
+#: .\app_main\admin.py:70
 #, fuzzy
 #| msgid "Хэш пароля"
 msgid "Хеш пароля"
 msgstr "Password hash"
 
-#: .\app_main\admin.py:65
+#: .\app_main\admin.py:71
 msgid ""
 "Пароль не хранится в явном виде. Вы можете сменить пароль по кнопке "
 "\"Изменить пароль\" на странице пользователя."
 msgstr ""
 
-#: .\app_main\admin.py:110
+#: .\app_main\admin.py:116
 #, fuzzy
 #| msgid "Двухфакторная аутентификация (TOTP)"
 msgid "Аутентификация"
 msgstr "Two-factor Authentication (TOTP)"
 
-#: .\app_main\admin.py:111
+#: .\app_main\admin.py:117
 msgid "Профиль"
 msgstr ""
 
-#: .\app_main\admin.py:112
+#: .\app_main\admin.py:118
 msgid "Права доступа"
 msgstr ""
 
-#: .\app_main\admin.py:113
+#: .\app_main\admin.py:119
 #, fuzzy
 #| msgid "Партнёрский код"
 msgid "Партнёрка"
 msgstr "Referral code"
 
-#: .\app_main\admin.py:115 .\app_main\admin.py:268
+#: .\app_main\admin.py:121 .\app_main\admin.py:329
 msgid "Служебное"
 msgstr ""
 
-#: .\app_main\admin.py:147
+#: .\app_main\admin.py:143
+msgid "Языки, показываемые на сайте"
+msgstr ""
+
+#: .\app_main\admin.py:144
+msgid ""
+"Выберите языки, которые должны быть видимы на сайте (переключатель, "
+"hreflang)."
+msgstr ""
+
+#: .\app_main\admin.py:204
 #, fuzzy
 #| msgid "Минимальная стартовая страница."
 msgid "Главная страница"
 msgstr "Minimal starter page"
 
-#: .\app_main\admin.py:152
+#: .\app_main\admin.py:208
+msgid "Перевод на различные языки"
+msgstr ""
+
+#: .\app_main\admin.py:213
 msgid "Брендинг"
 msgstr ""
 
-#: .\app_main\admin.py:156
+#: .\app_main\admin.py:217
 msgid "Комиссии и списки стейблкоинов"
 msgstr ""
 
-#: .\app_main\admin.py:161
+#: .\app_main\admin.py:222
 msgid "Интеграции: XML, <head>, Telegram"
 msgstr ""
 
-#: .\app_main\admin.py:166
+#: .\app_main\admin.py:227
 msgid "График работы (UTC)"
 msgstr ""
 
-#: .\app_main\admin.py:178
+#: .\app_main\admin.py:239
 msgid "Контакты и соцсети"
 msgstr ""
 
-#: .\app_main\admin.py:192
+#: .\app_main\admin.py:253
 msgid "Twitter Cards"
 msgstr ""
 
-#: .\app_main\admin.py:202
+#: .\app_main\admin.py:263
 msgid "SEO"
 msgstr ""
 
-#: .\app_main\admin.py:216
+#: .\app_main\admin.py:277
 msgid "Open Graph"
 msgstr ""
 
-#: .\app_main\admin.py:230
+#: .\app_main\admin.py:291
 msgid "Структурированные данные (JSON-LD)"
 msgstr ""
 
-#: .\app_main\admin.py:238
+#: .\app_main\admin.py:299
 #, fuzzy
 #| msgid "Регистрация"
 msgid "CSP и интеграции"
 msgstr "Sign up"
 
-#: .\app_main\admin.py:248
+#: .\app_main\admin.py:309
 #, fuzzy
 #| msgid "Настройки"
 msgid "Почтовые настройки"
 msgstr "Settings"
 
-#: .\app_main\admin.py:258
+#: .\app_main\admin.py:319
 #, fuzzy
 #| msgid "Безопасность (2FA)"
 msgid "Безопасность и сессии"
 msgstr "Security (2FA)"
 
-#: .\app_main\admin.py:263
+#: .\app_main\admin.py:324
 msgid "Требует перезагрузки сервера"
 msgstr "Requires a reboot of the server"
 
-#: .\app_main\admin.py:299
+#: .\app_main\admin.py:363
+msgid "Языки, показывать на сайте"
+msgstr ""
+
+#: .\app_main\admin.py:364
+msgid "Отмеченные языки появятся в переключателе языков на сайте."
+msgstr ""
+
+#: .\app_main\admin.py:377
+#, fuzzy
+#| msgid "Настройки сайта"
+msgid "Языки на сайте"
+msgstr "Site Settings"
+
+#: .\app_main\admin.py:431
+msgid "Матрица переводов"
+msgstr ""
+
+#: .\app_main\admin.py:437
+msgid "Нет переводимых полей."
+msgstr ""
+
+#: .\app_main\admin.py:460
+msgid "Поле"
+msgstr ""
+
+#: .\app_main\admin.py:464
+msgid "есть значение"
+msgstr ""
+
+#: .\app_main\admin.py:464
+msgid "пусто/нет перевода"
+msgstr ""
+
+#: .\app_main\admin.py:494
 msgid "Превью OG"
 msgstr ""
 
-#: .\app_main\admin.py:310
+#: .\app_main\admin.py:503
 msgid "Превью Twitter"
 msgstr ""
 
-#: .\app_main\admin.py:361
+#: .\app_main\admin.py:604
 msgid "Активировать выбранные"
 msgstr ""
 
-#: .\app_main\admin.py:365
+#: .\app_main\admin.py:608
 msgid "Деактивировать выбранные"
 msgstr ""
 
-#: .\app_main\admin.py:369 .\app_main\models.py:91
+#: .\app_main\admin.py:612 .\app_main\models.py:92
 msgid "Пользователь"
 msgstr "User"
 
-#: .\app_main\admin.py:519
+#: .\app_main\admin.py:745
 msgid "Тип блокировки"
 msgstr ""
 
-#: .\app_main\admin.py:539 .\app_main\admin.py:587 .\app_main\admin.py:678
+#: .\app_main\admin.py:757 .\app_main\admin.py:799 .\app_main\admin.py:885
 msgid "Логин + IP"
 msgstr ""
 
-#: .\app_main\admin.py:549 .\app_main\admin.py:567 .\app_main\admin.py:598
-#: .\app_main\admin.py:664
+#: .\app_main\admin.py:766 .\app_main\admin.py:782 .\app_main\admin.py:810
+#: .\app_main\admin.py:869
 msgid "IP"
 msgstr ""
 
-#: .\app_main\admin.py:559 .\app_main\admin.py:565 .\app_main\admin.py:609
-#: .\app_main\admin.py:671
+#: .\app_main\admin.py:775 .\app_main\admin.py:780 .\app_main\admin.py:821
+#: .\app_main\admin.py:877
 msgid "Логин"
 msgstr ""
 
-#: .\app_main\admin.py:569 .\app_main\admin.py:626
+#: .\app_main\admin.py:784 .\app_main\admin.py:838
 msgid "User-Agent"
 msgstr ""
 
-#: .\app_main\admin.py:574
+#: .\app_main\admin.py:789
 msgid "Заблокирован?"
 msgstr ""
 
-#: .\app_main\admin.py:622
+#: .\app_main\admin.py:834
 msgid "Путь"
 msgstr ""
 
-#: .\app_main\admin.py:656
+#: .\app_main\admin.py:860
 #, python-format
 msgid "Снято блокировок: %(done)s. Пропущено: %(skipped)s."
 msgstr ""
 
-#: .\app_main\admin.py:659
+#: .\app_main\admin.py:863
 msgid "Снять блокировку по IP"
 msgstr ""
 
-#: .\app_main\admin.py:666
+#: .\app_main\admin.py:871
 msgid "Снять блокировку по логину"
 msgstr ""
 
-#: .\app_main\admin.py:673
+#: .\app_main\admin.py:879
 msgid "Снять блокировку по логину+IP"
 msgstr ""
 
@@ -211,26 +259,26 @@ msgstr ""
 msgid "Управление сайтом"
 msgstr "Deleting an account"
 
-#: .\app_main\apps.py:62
+#: .\app_main\apps.py:102
 msgid "Блокировки входа"
 msgstr ""
 
-#: .\app_main\forms.py:13 .\app_main\forms.py:19 .\app_main\models.py:46
+#: .\app_main\forms.py:13 .\app_main\forms.py:19 .\app_main\models.py:47
 #: .\templates\dashboard.html:12
 msgid "Имя"
 msgstr "Name"
 
-#: .\app_main\forms.py:14 .\app_main\forms.py:20 .\app_main\models.py:47
+#: .\app_main\forms.py:14 .\app_main\forms.py:20 .\app_main\models.py:48
 #: .\templates\dashboard.html:13
 msgid "Фамилия"
 msgstr "Surname"
 
-#: .\app_main\forms.py:15 .\app_main\forms.py:21 .\app_main\models.py:48
+#: .\app_main\forms.py:15 .\app_main\forms.py:21 .\app_main\models.py:49
 #: .\templates\dashboard.html:14
 msgid "Телефон"
 msgstr "Telephone"
 
-#: .\app_main\forms.py:16 .\app_main\forms.py:22 .\app_main\models.py:49
+#: .\app_main\forms.py:16 .\app_main\forms.py:22 .\app_main\models.py:50
 #: .\templates\dashboard.html:15
 msgid "Компания"
 msgstr "Company"
@@ -239,390 +287,426 @@ msgstr "Company"
 msgid "Сессия админки завершена из-за отсутствия активности."
 msgstr ""
 
-#: .\app_main\models.py:18
+#: .\app_main\models.py:19
 msgid "Email обязателен"
 msgstr "Email is required"
 
-#: .\app_main\models.py:37
+#: .\app_main\models.py:38
 msgid "Суперпользователь должен иметь is_staff=True."
 msgstr "The superuser must have is_staff=True."
 
-#: .\app_main\models.py:39
+#: .\app_main\models.py:40
 msgid "Суперпользователь должен иметь is_superuser=True."
 msgstr "The superuser must have is_superuser=True."
 
-#: .\app_main\models.py:45 .\templates\dashboard.html:11
+#: .\app_main\models.py:46 .\templates\dashboard.html:11
 msgid "Email"
 msgstr "Email"
 
-#: .\app_main\models.py:58
+#: .\app_main\models.py:59
 msgid "Кто привёл"
 msgstr "Referral"
 
-#: .\app_main\models.py:60
+#: .\app_main\models.py:61
 msgid "Партнёрский код"
 msgstr "Referral code"
 
-#: .\app_main\models.py:61
+#: .\app_main\models.py:62
 msgid "Партнёров привлечено"
 msgstr "Total partners"
 
-#: .\app_main\models.py:62
+#: .\app_main\models.py:63
 msgid "Партнёрский баланс, $"
 msgstr "Partner balance, $"
 
-#: .\app_main\models.py:66
+#: .\app_main\models.py:67
 #, fuzzy
 #| msgid "Партнёрская программа"
 msgid "Первый визит по партнёрской ссылке"
 msgstr "Partner Program"
 
-#: .\app_main\models.py:68
+#: .\app_main\models.py:69
 msgid "Дата и время первого визита с реферальным кодом."
 msgstr ""
 
-#: .\app_main\models.py:72
+#: .\app_main\models.py:73
 #, fuzzy
 #| msgid "Регистрация"
 msgid "Задержка до регистрации"
 msgstr "Sign up"
 
-#: .\app_main\models.py:74
+#: .\app_main\models.py:75
 msgid "Разница между первым визитом по реф-ссылке и моментом регистрации."
 msgstr ""
 
-#: .\app_main\models.py:79
+#: .\app_main\models.py:80
 msgid "Язык общения"
 msgstr "Communication language"
 
-#: .\app_main\models.py:92
+#: .\app_main\models.py:93
 msgid "Пользователи"
 msgstr "Users"
 
-#: .\app_main\models.py:143
+#: .\app_main\models.py:144
 msgid "Домен (без http/https)"
 msgstr ""
 
-#: .\app_main\models.py:146
+#: .\app_main\models.py:147
 msgid "Например: example.com или localhost (без http/https)."
 msgstr ""
 
-#: .\app_main\models.py:149
+#: .\app_main\models.py:150
 msgid "Введите корректное доменное имя, например: example.com"
 msgstr ""
 
-#: .\app_main\models.py:153
+#: .\app_main\models.py:154
 msgid "Отображаемое имя сайта"
 msgstr ""
 
-#: .\app_main\models.py:156
+#: .\app_main\models.py:157
 #, fuzzy
 #| msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
 msgid "Название для заголовков/письма и т.п., например: \"Swapers\"."
 msgstr "Displayed in the authenticator application (for example: \"Swapers\")."
 
-#: .\app_main\models.py:160
+#: .\app_main\models.py:161
 msgid "Путь к админке"
 msgstr "The path to the admin area"
 
-#: .\app_main\models.py:165
+#: .\app_main\models.py:166
 #, fuzzy
 #| msgid "Разрешены только маленькие латинские буквы,цифры и дефис"
 msgid "Разрешены только маленькие латинские буквы, цифры и дефис"
 msgstr "Only small Latin letters, numbers and hyphens are allowed"
 
-#: .\app_main\models.py:167
+#: .\app_main\models.py:168
 msgid "Например: supera-dmin"
 msgstr "For example: supera-dmin"
 
-#: .\app_main\models.py:170
+#: .\app_main\models.py:171
 msgid "Название сервиса для 2FA"
 msgstr "Name of the service for 2FA"
 
-#: .\app_main\models.py:175
+#: .\app_main\models.py:176
 msgid "Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."
 msgstr ""
 "Latin letters, numbers, spaces, periods, hyphens, underscores are acceptable."
 
-#: .\app_main\models.py:177
+#: .\app_main\models.py:178
 msgid "Отобразится в приложении-аутентификаторе (например: \"Swapers\")."
 msgstr "Displayed in the authenticator application (for example: \"Swapers\")."
 
-#: .\app_main\models.py:181
+#: .\app_main\models.py:182
 msgid "Автовыход из админки, минут"
 msgstr ""
 
-#: .\app_main\models.py:183
+#: .\app_main\models.py:184
 msgid ""
 "Через сколько минут бездействия разлогинивать из админки. 0 — не "
 "разлогинивать по простою (сессия живёт до закрытия браузера)."
 msgstr ""
 
-#: .\app_main\models.py:189
+#: .\app_main\models.py:190
 msgid "Содержимое robots.txt"
 msgstr ""
 
-#: .\app_main\models.py:191
+#: .\app_main\models.py:192
 msgid ""
 "Текст, который будет отдан по /robots.txt. Строка Sitemap: https://HOST/"
 "sitemap.xml позже будет добавлена автоматически."
 msgstr ""
 
-#: .\app_main\models.py:198
+#: .\app_main\models.py:199
 #, fuzzy
 #| msgid "Настройки сайта"
 msgid "Запретить индексацию сайта"
 msgstr "Site Settings"
 
-#: .\app_main\models.py:200
+#: .\app_main\models.py:201
 msgid ""
 "Если включено, robots.txt будет отдавать 'Disallow: /', а во всех ответах "
 "будет заголовок 'X-Robots-Tag: noindex, nofollow'"
 msgstr ""
 
-#: .\app_main\models.py:207
+#: .\app_main\models.py:208
 msgid "Обновлено"
 msgstr ""
 
-#: .\app_main\models.py:211
+#: .\app_main\models.py:213
 msgid "SEO: заголовок по умолчанию (title)"
 msgstr ""
 
-#: .\app_main\models.py:215
+#: .\app_main\models.py:217
 msgid "Используется как базовый title, если страница не переопределяет его."
 msgstr ""
 
-#: .\app_main\models.py:218
+#: .\app_main\models.py:220
 msgid "SEO: описание по умолчанию (meta description)"
 msgstr ""
 
-#: .\app_main\models.py:224
+#: .\app_main\models.py:226
 msgid "Используется как базовое описание, если страница не переопределяет его."
 msgstr ""
 
-#: .\app_main\models.py:227
+#: .\app_main\models.py:229
 msgid "SEO: ключевые слова по умолчанию (meta keywords)"
 msgstr ""
 
-#: .\app_main\models.py:230
+#: .\app_main\models.py:232
 msgid ""
 "Опционально. Может не использоваться поисковиками, но полезно для некоторых "
 "интеграций."
 msgstr ""
 
 #: .\app_main\models.py:235
-msgid "Включить Open Graph"
-msgstr ""
-
-#: .\app_main\models.py:237
-msgid "Если выключено, OG-теги выводиться не будут."
-msgstr ""
-
-#: .\app_main\models.py:240
-msgid "OG: тип по умолчанию"
-msgstr ""
-
-#: .\app_main\models.py:246
 msgid "OG: заголовок по умолчанию"
 msgstr ""
 
-#: .\app_main\models.py:250
+#: .\app_main\models.py:239
 msgid "Используется, если страница не задаёт свой OG-заголовок."
 msgstr ""
 
-#: .\app_main\models.py:253
+#: .\app_main\models.py:242
 msgid "OG: описание по умолчанию"
 msgstr ""
 
-#: .\app_main\models.py:258
+#: .\app_main\models.py:247
+msgid "OG: alt у изображения"
+msgstr ""
+
+#: .\app_main\models.py:254
+#, fuzzy
+#| msgid "Главная"
+msgid "H1 на главной"
+msgstr "Home"
+
+#: .\app_main\models.py:259
+msgid "Подзаголовок на главной"
+msgstr ""
+
+#: .\app_main\models.py:267
+msgid "Заголовок: почта для клиентов"
+msgstr ""
+
+#: .\app_main\models.py:269
+msgid "Если пусто — используется «Почта для клиентов»."
+msgstr ""
+
+#: .\app_main\models.py:272
+#, fuzzy
+#| msgid "Привлечено партнёров:"
+msgid "Заголовок: почта для партнёров"
+msgstr "Attracted partners:"
+
+#: .\app_main\models.py:274
+msgid "Если пусто — используется «Почта для партнёров»."
+msgstr ""
+
+#: .\app_main\models.py:277
+msgid "Заголовок: почта для общих вопросов"
+msgstr ""
+
+#: .\app_main\models.py:279
+msgid "Если пусто — используется «Почта для общих вопросов»."
+msgstr ""
+
+#: .\app_main\models.py:285
+msgid "Включить Open Graph"
+msgstr ""
+
+#: .\app_main\models.py:287
+msgid "Если выключено, OG-теги выводиться не будут."
+msgstr ""
+
+#: .\app_main\models.py:290
+msgid "OG: тип по умолчанию"
+msgstr ""
+
+#: .\app_main\models.py:297
 msgid "OG: изображение по умолчанию (1200×630)"
 msgstr ""
 
-#: .\app_main\models.py:261
+#: .\app_main\models.py:300
 msgid ""
 "Используется, если страница не задала картинку. Желательно ~1200×630, до 5 "
 "MB."
 msgstr ""
 
-#: .\app_main\models.py:268
-msgid "OG: alt у изображения"
-msgstr ""
-
-#: .\app_main\models.py:274
+#: .\app_main\models.py:307
 msgid "OG: локаль по умолчанию"
 msgstr ""
 
-#: .\app_main\models.py:277
+#: .\app_main\models.py:310
 #, fuzzy
 #| msgid "Например: supera-dmin"
 msgid "Например: ru_RU или en_US."
 msgstr "For example: supera-dmin"
 
-#: .\app_main\models.py:280
+#: .\app_main\models.py:313
 msgid "OG: альтернативные локали (через запятую)"
 msgstr ""
 
-#: .\app_main\models.py:284
+#: .\app_main\models.py:317
 msgid "Например: en_US,uk_UA. Будут выведены с og:locale:alternate."
 msgstr ""
 
-#: .\app_main\models.py:288
+#: .\app_main\models.py:321
 msgid "Включить Twitter Cards"
 msgstr ""
 
-#: .\app_main\models.py:292
+#: .\app_main\models.py:325
 msgid "Twitter: тип карточки"
 msgstr ""
 
-#: .\app_main\models.py:298
+#: .\app_main\models.py:331
 msgid "Twitter: @site (без @)"
 msgstr ""
 
-#: .\app_main\models.py:301
+#: .\app_main\models.py:334
 msgid "Имя аккаунта проекта в X/Twitter, без @."
 msgstr ""
 
-#: .\app_main\models.py:304
+#: .\app_main\models.py:337
 msgid "Twitter: @creator (без @)"
 msgstr ""
 
-#: .\app_main\models.py:307
+#: .\app_main\models.py:340
 msgid "Личный аккаунт автора/редактора, без @ (опционально)."
 msgstr ""
 
-#: .\app_main\models.py:310
+#: .\app_main\models.py:343
 msgid "Twitter: изображение по умолчанию"
 msgstr ""
 
-#: .\app_main\models.py:313
+#: .\app_main\models.py:346
 msgid "Если не задано — будет использовано OG-изображение."
 msgstr ""
 
-#: .\app_main\models.py:317
+#: .\app_main\models.py:350
 msgid "https в canonical/OG URL"
 msgstr ""
 
-#: .\app_main\models.py:319
+#: .\app_main\models.py:352
 msgid ""
 "Если выключено — будет использоваться http Объязательно включить на проде!"
 msgstr ""
 
-#: .\app_main\models.py:323
+#: .\app_main\models.py:356
 msgid "Включить hreflang ссылки"
 msgstr ""
 
-#: .\app_main\models.py:325
+#: .\app_main\models.py:358
 msgid "Включает генерацию ссылок alternates для RU/EN."
 msgstr ""
 
-#: .\app_main\models.py:328
+#: .\app_main\models.py:361
 msgid "hreflang: x-default язык"
 msgstr ""
 
-#: .\app_main\models.py:331
+#: .\app_main\models.py:364
 msgid "Например: ru или en — какая версия по умолчанию для поисковика."
 msgstr ""
 
-#: .\app_main\models.py:335
+#: .\app_main\models.py:368
 msgid "Включить JSON-LD (schema.org)"
 msgstr ""
 
-#: .\app_main\models.py:339
+#: .\app_main\models.py:372
 msgid "JSON-LD: Organization (дефолт)"
 msgstr ""
 
-#: .\app_main\models.py:342
+#: .\app_main\models.py:375
 msgid "JSON объект schema.org/Organization для главной/всего сайта."
 msgstr ""
 
-#: .\app_main\models.py:345
+#: .\app_main\models.py:378
 msgid "JSON-LD: WebSite (дефолт)"
 msgstr ""
 
-#: .\app_main\models.py:348
+#: .\app_main\models.py:381
 msgid "JSON объект schema.org/WebSite."
 msgstr ""
 
-#: .\app_main\models.py:353 .\templates\maintenance.html:4
+#: .\app_main\models.py:386 .\templates\maintenance.html:4
 #: .\templates\maintenance.html:7
 msgid "Технические работы"
 msgstr ""
 
-#: .\app_main\models.py:355
+#: .\app_main\models.py:388
 msgid ""
 "Если включено — пользователи увидят страницу техработ. По умолчанию "
 "выключено."
 msgstr ""
 
-#: .\app_main\models.py:359
+#: .\app_main\models.py:392
 msgid "Понедельник: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:360
+#: .\app_main\models.py:393
 msgid "Понедельник: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:361
+#: .\app_main\models.py:394
 msgid "Вторник: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:362
+#: .\app_main\models.py:395
 msgid "Вторник: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:363
+#: .\app_main\models.py:396
 msgid "Среда: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:364
+#: .\app_main\models.py:397
 msgid "Среда: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:365
+#: .\app_main\models.py:398
 msgid "Четверг: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:366
+#: .\app_main\models.py:399
 msgid "Четверг: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:367
+#: .\app_main\models.py:400
 msgid "Пятница: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:368
+#: .\app_main\models.py:401
 msgid "Пятница: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:369
+#: .\app_main\models.py:402
 msgid "Суббота: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:370
+#: .\app_main\models.py:403
 msgid "Суббота: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:371
+#: .\app_main\models.py:404
 msgid "Воскресенье: начало (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:372
+#: .\app_main\models.py:405
 msgid "Воскресенье: конец (UTC)"
 msgstr ""
 
-#: .\app_main\models.py:376
+#: .\app_main\models.py:409
 msgid "Список стейблкоинов"
 msgstr ""
 
-#: .\app_main\models.py:379
+#: .\app_main\models.py:412
 msgid "Через запятую, тикеры в верхнем регистре (например: USDT, USDC, DAI)."
 msgstr ""
 
-#: .\app_main\models.py:384
+#: .\app_main\models.py:417
 msgid "Путь для XML-выгрузки"
 msgstr ""
 
-#: .\app_main\models.py:387
+#: .\app_main\models.py:420
 #, fuzzy
 #| msgid "Разрешены только маленькие латинские буквы,цифры и дефис"
 msgid ""
@@ -630,252 +714,222 @@ msgid ""
 "слеша."
 msgstr "Only small Latin letters, numbers and hyphens are allowed"
 
-#: .\app_main\models.py:388
+#: .\app_main\models.py:421
 msgid "Будущая точка выдачи XML, например «xml_export» → /xml_export"
 msgstr ""
 
-#: .\app_main\models.py:393
+#: .\app_main\models.py:426
 msgid "Логотип"
 msgstr ""
 
-#: .\app_main\models.py:396
+#: .\app_main\models.py:429
 msgid "PNG/SVG; будет использоваться в шапке/мета."
 msgstr ""
 
-#: .\app_main\models.py:399
+#: .\app_main\models.py:432
 msgid "Favicon"
 msgstr ""
 
-#: .\app_main\models.py:402
+#: .\app_main\models.py:435
 msgid "PNG/ICO 32×32 или 48×48."
 msgstr ""
 
-#: .\app_main\models.py:407
+#: .\app_main\models.py:440
 msgid "Комиссия обменника, %"
 msgstr ""
 
-#: .\app_main\models.py:411
+#: .\app_main\models.py:444
 msgid "Процент с каждой сделки (0–100)."
 msgstr ""
 
-#: .\app_main\models.py:416
+#: .\app_main\models.py:449
 msgid "HTML-код для вставки в head"
 msgstr ""
 
-#: .\app_main\models.py:418
+#: .\app_main\models.py:451
 msgid "Счётчики/метрики и т.п. Вставляется как есть на всех страницах."
 msgstr ""
 
-#: .\app_main\models.py:423
+#: .\app_main\models.py:456
 msgid "E-mail отправителя (FROM)"
 msgstr ""
 
-#: .\app_main\models.py:425
+#: .\app_main\models.py:458
 #, fuzzy
 #| msgid "Например: supera-dmin"
 msgid "Например: no-reply@swap.com"
 msgstr "For example: supera-dmin"
 
-#: .\app_main\models.py:427
+#: .\app_main\models.py:460
 msgid "SMTP host"
 msgstr ""
 
-#: .\app_main\models.py:428
+#: .\app_main\models.py:461
 msgid "SMTP port"
 msgstr ""
 
-#: .\app_main\models.py:429
+#: .\app_main\models.py:462
 msgid "SMTP user"
 msgstr ""
 
-#: .\app_main\models.py:430
+#: .\app_main\models.py:463
 msgid "SMTP password"
 msgstr ""
 
-#: .\app_main\models.py:431
+#: .\app_main\models.py:464
 #, fuzzy
 #| msgid "Пользователь"
 msgid "Использовать TLS"
 msgstr "User"
 
-#: .\app_main\models.py:432
+#: .\app_main\models.py:465
 #, fuzzy
 #| msgid "Пользователь"
 msgid "Использовать SSL"
 msgstr "User"
 
-#: .\app_main\models.py:436
+#: .\app_main\models.py:469
 msgid "Telegram Bot Token"
 msgstr ""
 
-#: .\app_main\models.py:439
+#: .\app_main\models.py:472
 msgid "Токен бота для уведомлений (хранится как есть)."
 msgstr ""
 
-#: .\app_main\models.py:442
+#: .\app_main\models.py:475
 msgid "Telegram Chat/Channel ID"
 msgstr ""
 
-#: .\app_main\models.py:445
+#: .\app_main\models.py:478
 msgid ""
 "ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите "
 "бота: @username_to_id_bot"
 msgstr ""
 
-#: .\app_main\models.py:450
-#, fuzzy
-#| msgid "Главная"
-msgid "H1 на главной"
-msgstr "Home"
-
-#: .\app_main\models.py:455
-msgid "Подзаголовок на главной"
-msgstr ""
-
-#: .\app_main\models.py:463
-msgid "Заголовок: почта для клиентов"
-msgstr ""
-
-#: .\app_main\models.py:465
-msgid "Если пусто — используется «Почта для клиентов»."
-msgstr ""
-
-#: .\app_main\models.py:468
-#, fuzzy
-#| msgid "Привлечено партнёров:"
-msgid "Заголовок: почта для партнёров"
-msgstr "Attracted partners:"
-
-#: .\app_main\models.py:470
-msgid "Если пусто — используется «Почта для партнёров»."
-msgstr ""
-
-#: .\app_main\models.py:473
-msgid "Заголовок: почта для общих вопросов"
-msgstr ""
-
-#: .\app_main\models.py:475
-msgid "Если пусто — используется «Почта для общих вопросов»."
-msgstr ""
-
-#: .\app_main\models.py:478 .\templates\includes\_footer.html:21
+#: .\app_main\models.py:481 .\templates\includes\_footer.html:21
 msgid "Почта для клиентов"
 msgstr ""
 
-#: .\app_main\models.py:479 .\templates\includes\_footer.html:40
+#: .\app_main\models.py:482 .\templates\includes\_footer.html:40
 #, fuzzy
 #| msgid "Привлечено партнёров:"
 msgid "Почта для партнёров"
 msgstr "Attracted partners:"
 
-#: .\app_main\models.py:480 .\templates\includes\_footer.html:59
+#: .\app_main\models.py:483 .\templates\includes\_footer.html:59
 msgid "Почта для общих вопросов"
 msgstr ""
 
-#: .\app_main\models.py:481
+#: .\app_main\models.py:484
 msgid "Telegram для связи"
 msgstr ""
 
-#: .\app_main\models.py:481
+#: .\app_main\models.py:484
 msgid "Ссылка t.me/... или @username"
 msgstr ""
 
-#: .\app_main\models.py:492
+#: .\app_main\models.py:495
 msgid "Срок хранения куки (дней)"
 msgstr ""
 
-#: .\app_main\models.py:495
+#: .\app_main\models.py:498
 msgid ""
 "Срок жизни подписанной referral-cookie. Last click wins: последний клик по "
 "реферальной ссылке действует до регистрации. 0 — не ставить долгоживущую "
 "cookie (только сессия до закрытия браузера)."
 msgstr ""
 
-#: .\app_main\models.py:503
+#: .\app_main\models.py:506
 msgid "CSP: режим Report-Only"
 msgstr ""
 
-#: .\app_main\models.py:505
+#: .\app_main\models.py:508
 msgid ""
 "Если включено — политика будет в режиме отчётов (не блокирует), заголовок "
 "'Content-Security-Policy-Report-Only'."
 msgstr ""
 
-#: .\app_main\models.py:508
+#: .\app_main\models.py:511
 msgid "CSP: дополнительные источники script-src"
 msgstr ""
 
-#: .\app_main\models.py:511
+#: .\app_main\models.py:514
 msgid ""
 "Через запятую или пробел: например https://mc.yandex.ru https://code.jivo.ru "
 "https://www.googletagmanager.com 'unsafe-eval' (не рекомендуется)."
 msgstr ""
 
-#: .\app_main\models.py:514
+#: .\app_main\models.py:517
 msgid "CSP: дополнительные источники style-src"
 msgstr ""
 
-#: .\app_main\models.py:516
+#: .\app_main\models.py:519
 #, fuzzy
 #| msgid "Например: supera-dmin"
 msgid "Например: https://fonts.googleapis.com."
 msgstr "For example: supera-dmin"
 
-#: .\app_main\models.py:519
+#: .\app_main\models.py:522
 msgid "CSP: дополнительные источники img-src"
 msgstr ""
 
-#: .\app_main\models.py:521
+#: .\app_main\models.py:524
 msgid "Например: https://mc.yandex.ru data: blob:."
 msgstr ""
 
-#: .\app_main\models.py:524
+#: .\app_main\models.py:527
 msgid "CSP: дополнительные источники connect-src"
 msgstr ""
 
-#: .\app_main\models.py:526
+#: .\app_main\models.py:529
 msgid "Например: https://mc.yandex.ru https://api.example.com."
 msgstr ""
 
-#: .\app_main\models.py:529
+#: .\app_main\models.py:532
 msgid "CSP: дополнительные источники frame-src"
 msgstr ""
 
-#: .\app_main\models.py:531
+#: .\app_main\models.py:534
 msgid "Например: https://www.youtube.com https://player.vimeo.com."
 msgstr ""
 
-#: .\app_main\models.py:534
+#: .\app_main\models.py:537
 msgid "CSP: дополнительные источники font-src"
 msgstr ""
 
-#: .\app_main\models.py:536
+#: .\app_main\models.py:539
 msgid "Например: https://fonts.gstatic.com data:."
 msgstr ""
 
-#: .\app_main\models.py:540 .\app_main\models.py:541
+#: .\app_main\models.py:543
+msgid ""
+"Какие языки показывать на сайте (переключатель, hreflang). Если пусто — "
+"будет только основной язык."
+msgstr ""
+
+#: .\app_main\models.py:548 .\app_main\models.py:549
 msgid "Настройки сайта"
 msgstr "Site Settings"
 
-#: .\app_main\models.py:557
+#: .\app_main\models.py:565
 msgid "Этот путь зарезервирован системой."
 msgstr "This path is reserved by the system."
 
-#: .\app_main\models.py:572
+#: .\app_main\models.py:580
 #, python-format
 msgid "%(label)s: минимальный размер — %(w)s×%(h)s пикселей."
 msgstr ""
 
-#: .\app_main\models.py:581
+#: .\app_main\models.py:589
 #, python-format
 msgid "%(label)s: пропорции должны быть близки к 1.91:1 (например, 1200×630)."
 msgstr ""
 
-#: .\app_main\models.py:586
+#: .\app_main\models.py:594
 msgid "OG изображение"
 msgstr ""
 
-#: .\app_main\models.py:587
+#: .\app_main\models.py:595
 msgid "Twitter изображение"
 msgstr ""
 
@@ -889,31 +943,57 @@ msgstr ""
 msgid "Чёрный список"
 msgstr "Invalid password."
 
-#: .\app_main\views.py:64
+#: .\app_main\views.py:77
 msgid "Настройки сохранены."
 msgstr "Save settings."
 
-#: .\app_main\views.py:66
+#: .\app_main\views.py:79
 msgid "Проверьте форму — есть ошибки."
 msgstr "Check the form — there are errors."
 
-#: .\app_main\views.py:82
+#: .\app_main\views.py:95
 msgid ""
 "Удаление суперпользователя запрещено из интерфейса. Используйте админку."
 msgstr ""
 "Deleting a superuser is not allowed from the interface. Use the admin area."
 
-#: .\app_main\views.py:90
+#: .\app_main\views.py:104
 msgid "Подтверждение не совпало. Введите слово DELETE."
 msgstr "The confirmation did not match. Enter the word DELETE."
 
-#: .\app_main\views.py:94
+#: .\app_main\views.py:108
 msgid "Неверный пароль."
 msgstr "Invalid password."
 
-#: .\app_main\views.py:100
+#: .\app_main\views.py:114
 msgid "Аккаунт удалён."
 msgstr "The account has been deleted."
+
+#: .\app_main\views.py:204
+msgid "Ваш e-mail уже подтверждён."
+msgstr ""
+
+#: .\app_main\views.py:216
+#, fuzzy
+#| msgid "Неверный код. Попробуйте ещё раз."
+msgid "Слишком часто. Попробуйте ещё раз через минуту."
+msgstr "Invalid code. Try again."
+
+#: .\app_main\views.py:225
+#, fuzzy, python-format
+#| msgid "Для подтверждения введите слово"
+msgid "Ссылка для подтверждения отправлена на %(email)s."
+msgstr "To confirm, enter the word"
+
+#: .\app_main\views.py:228
+#, fuzzy
+#| msgid "Для подтверждения введите слово"
+msgid "Ссылка для подтверждения отправлена."
+msgstr "To confirm, enter the word"
+
+#: .\app_main\views.py:247
+msgid "Этот e-mail уже зарегистрирован. Войдите в аккаунт, используя его."
+msgstr ""
 
 #: .\app_main\views_2fa.py:51
 msgid "Двухфакторная аутентификация включена."
@@ -923,11 +1003,11 @@ msgstr "Two-factor authentication is enabled."
 msgid "Неверный код. Попробуйте ещё раз."
 msgstr "Invalid code. Try again."
 
-#: .\swapers\settings\base.py:24
+#: .\swapers\settings\base.py:23
 msgid "Russian"
 msgstr "Русский"
 
-#: .\swapers\settings\base.py:25
+#: .\swapers\settings\base.py:24
 msgid "English"
 msgstr "Английский"
 
@@ -956,20 +1036,95 @@ msgstr "Requires a reboot of the server"
 msgid "Мы уже работаем над решением. Попробуйте обновить страницу чуть позже."
 msgstr ""
 
-#: .\templates\account\account_delete.html:5
+#: .\templates\account\account_delete.html:6
 #, fuzzy
 #| msgid "Удаление аккаунта"
-msgid "Удаление  аккаунта"
+msgid "Удаление аккаунта"
 msgstr "Deleting an account"
 
 #: .\templates\account\account_delete.html:9
+#, fuzzy
+#| msgid "Действие необратимо. Будут удалены ваш аккаунт и связанные данные."
+msgid "Действие необратимо. Ваш аккаунт и связанные данные будут удалены."
+msgstr ""
+"The action is irreversible. Your account and related data will be deleted."
+
+#: .\templates\account\account_delete.html:17
+#, fuzzy
+#| msgid "Для подтверждения введите слово"
+msgid "Подтвердите удаление — введите слово"
+msgstr "To confirm, enter the word"
+
+#: .\templates\account\account_delete.html:26
+msgid "Безопасная проверка: нужно явно набрать DELETE."
+msgstr ""
+
+#: .\templates\account\account_delete.html:31
+#, fuzzy
+#| msgid "Хэш пароля"
+msgid "Ваш пароль"
+msgstr "Password hash"
+
+#: .\templates\account\account_delete.html:41 .\templates\includes\_nav.html:16
+msgid "Удалить аккаунт"
+msgstr "Delete account"
+
+#: .\templates\account\account_delete.html:44
+msgid "Отмена"
+msgstr ""
+
+#: .\templates\account\account_settings.html:5
+#: .\templates\account\verification_sent.html:44
+msgid "Настройки аккаунта"
+msgstr "Account Settings"
+
 #: .\templates\account\account_settings.html:10
 msgid "Сохранить"
 msgstr "Save"
 
-#: .\templates\account\account_settings.html:5
-msgid "Настройки аккаунта"
-msgstr "Account Settings"
+#: .\templates\account\verification_sent.html:4
+#: .\templates\account\verification_sent.html:8
+msgid "Подтвердите ваш адрес электронной почты"
+msgstr ""
+
+#: .\templates\account\verification_sent.html:12
+#, python-format
+msgid ""
+"\n"
+"      Мы отправили письмо со ссылкой подтверждения на %(email)s. Если письмо "
+"не пришло в течение нескольких минут, проверьте папку «Спам» или отправьте "
+"письмо повторно.\n"
+"      "
+msgstr ""
+
+#: .\templates\account\verification_sent.html:18
+#, fuzzy
+#| msgid "Мы отправили письмо для подтверждения вашего email. Проверьте почту."
+msgid ""
+"Мы отправили письмо со ссылкой подтверждения. Если письмо не пришло, "
+"проверьте папку «Спам» или отправьте письмо повторно."
+msgstr "We have sent an email to confirm your email. Check your email."
+
+#: .\templates\account\verification_sent.html:25
+#, fuzzy
+#| msgid "Отправить письмо подтверждения"
+msgid "Выслать письмо повторно"
+msgstr "Send a confirmation email"
+
+#: .\templates\account\verification_sent.html:28
+msgid "Нажимать можно не чаще одного раза в минуту."
+msgstr ""
+
+#: .\templates\account\verification_sent.html:37
+#, fuzzy
+#| msgid "Изменить пароль"
+msgid "Изменить e-mail"
+msgstr "Change the password"
+
+#: .\templates\account\verification_sent.html:51
+#: .\templates\includes\_nav.html:17
+msgid "Выйти"
+msgstr "Log out"
 
 #: .\templates\admin\base_site.html:5
 msgid "Admin"
@@ -1121,14 +1276,6 @@ msgstr "Email addresses"
 msgid "Безопасность (2FA)"
 msgstr "Security (2FA)"
 
-#: .\templates\includes\_nav.html:16
-msgid "Удалить аккаунт"
-msgstr "Delete account"
-
-#: .\templates\includes\_nav.html:17
-msgid "Выйти"
-msgstr "Log out"
-
 #: .\templates\includes\_nav.html:19
 msgid "Войти"
 msgstr "Log in"
@@ -1169,7 +1316,11 @@ msgstr ""
 msgid "закрыто"
 msgstr ""
 
-#: .\templates\includes\_nav.html:63
+#: .\templates\includes\_nav.html:54
+msgid "Выберите язык"
+msgstr ""
+
+#: .\templates\includes\_nav.html:78
 msgid "OK"
 msgstr ""
 
@@ -1272,18 +1423,11 @@ msgstr ""
 #~ msgid "Внимание!"
 #~ msgstr "Attention!"
 
-#~ msgid "Действие необратимо. Будут удалены ваш аккаунт и связанные данные."
-#~ msgstr ""
-#~ "The action is irreversible. Your account and related data will be deleted."
-
 #~ msgid ""
 #~ "Удаление суперпользователя запрещено из интерфейса. Используйте Django "
 #~ "Admin."
 #~ msgstr ""
 #~ "Deleting a superuser is prohibited from the interface. Use Django Admin."
-
-#~ msgid "Для подтверждения введите слово"
-#~ msgstr "To confirm, enter the word"
 
 #~ msgid "Да, удалить мой аккаунт"
 #~ msgstr "Yes, delete my account"
@@ -1309,9 +1453,6 @@ msgstr ""
 
 #~ msgid "Сделать основным"
 #~ msgstr "Make it the main one"
-
-#~ msgid "Отправить письмо подтверждения"
-#~ msgstr "Send a confirmation email"
 
 #~ msgid "Удалить"
 #~ msgstr "Delete"
@@ -1348,9 +1489,6 @@ msgstr ""
 
 #~ msgid "Текущий аккаунт:"
 #~ msgstr "Current account:"
-
-#~ msgid "Изменить пароль"
-#~ msgstr "Change the password"
 
 #~ msgid "Восстановление пароля"
 #~ msgstr "Password Recovery"
@@ -1403,9 +1541,6 @@ msgstr ""
 
 #~ msgid "Уже есть аккаунт?"
 #~ msgstr "Do you already have an account?"
-
-#~ msgid "Мы отправили письмо для подтверждения вашего email. Проверьте почту."
-#~ msgstr "We have sent an email to confirm your email. Check your email."
 
 #~ msgid ""
 #~ "Внимание: изменения «Путь к админке» и «Название сервиса для 2FA "

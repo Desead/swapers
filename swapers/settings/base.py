@@ -22,21 +22,33 @@ USE_TZ = True
 LANGUAGES = [
     ("ru", _("Russian")),
     ("en", _("English")),
+    ("de", _("German")),
+    ("fr", _("French")),
+    ("es", _("Spanish")),
+    ("it", _("Italian")),
+    ("uk", _("Ukrainian")),
 ]
 
-LOCALE_PATHS = [BASE_DIR / "locale"]
 
+
+PARLER_DEFAULT_LANGUAGE_CODE = LANGUAGE_CODE
 PARLER_LANGUAGES = {
-    None: (
-        {'code': 'ru'},
-        {'code': 'en'},  # можно оставить, даже если контента пока нет
-    ),
-    'default': {
-        'fallback': LANGUAGE_CODE,            # если нет перевода — берём русский
-        'hide_untranslated': False,  # показывать базовые значения, когда перевода нет
+    None: [
+        {"code": "ru"},
+        {"code": "en"},
+        {"code": "de"},
+        {"code": "fr"},
+        {"code": "es"},
+        {"code": "it"},
+        {"code": "uk"},
+    ],
+    "default": {
+        "fallbacks": [LANGUAGE_CODE, "en"],  # сначала основной (ru), затем en
+        "hide_untranslated": True,           # не показывать пустые переводы
     },
 }
-PARLER_DEFAULT_LANGUAGE_CODE = "ru"
+
+LOCALE_PATHS = [BASE_DIR / "locale"]
 
 INSTALLED_APPS = [
     "swapers.admin.OTPAdminConfig",  # админка под OTP
