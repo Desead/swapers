@@ -46,8 +46,10 @@ def home(request):
         return resp
 
     ctx = {
-        "main_h1": setup.main_h1,
-        "main_subtitle": setup.main_subtitle,
+        "main_h1": setup.safe_translation_getter("main_h1", any_language=True) or "",
+        "main_subtitle": setup.safe_translation_getter("main_subtitle", any_language=True) or "",
+        # если есть другие переводимые — по той же схеме:
+        # "field": setup.safe_translation_getter("field", any_language=True) or "",
     }
     return render(request, "home.html", ctx)
 

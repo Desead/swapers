@@ -8,6 +8,7 @@ from django.contrib.sites.models import Site
 from django.utils.translation import gettext_lazy as _  # lazy — для verbose_name/help_text
 from django.utils.translation import gettext as _gettext  # runtime — для __str__ и сообщений
 from django.core.files.images import get_image_dimensions
+from parler.models import TranslatableModel, TranslatedFields
 
 
 class UserManager(BaseUserManager):
@@ -134,7 +135,7 @@ def default_jsonld_website():
     }
 
 
-class SiteSetup(models.Model):
+class SiteSetup(TranslatableModel):
     """Singleton with site settings."""
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
 
@@ -207,27 +208,76 @@ class SiteSetup(models.Model):
     updated_at = models.DateTimeField(_("Обновлено"), auto_now=True)
 
     # --- [1] SEO по умолчанию ---
-    seo_default_title = models.CharField(
-        verbose_name=_("SEO: заголовок по умолчанию (title)"),
-        max_length=255,
-        blank=True,
-        default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
-        help_text=_("Используется как базовый title, если страница не переопределяет его."),
-    )
-    seo_default_description = models.TextField(
-        verbose_name=_("SEO: описание по умолчанию (meta description)"),
-        blank=True,
-        default=(
-            "Онлайн-обменник криптовалют. Мгновенные сделки, прозрачные курсы, фиксированная комиссия. "
-            "Поддержка Bitcoin, Ethereum и популярных стейблкоинов: USDT, USDC, DAI и другие."
+    translations = TranslatedFields(
+        seo_default_title=models.CharField(
+            verbose_name=_("SEO: заголовок по умолчанию (title)"),
+            max_length=255,
+            blank=True,
+            default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
+            help_text=_("Используется как базовый title, если страница не переопределяет его."),
         ),
-        help_text=_("Используется как базовое описание, если страница не переопределяет его."),
-    )
-    seo_default_keywords = models.TextField(
-        verbose_name=_("SEO: ключевые слова по умолчанию (meta keywords)"),
-        blank=True,
-        default="обменник, криптовалюта, обмен криптовалют, bitcoin, ethereum, usdt, usdc, dai, обмен онлайн",
-        help_text=_("Опционально. Может не использоваться поисковиками, но полезно для некоторых интеграций."),
+        seo_default_description=models.TextField(
+            verbose_name=_("SEO: описание по умолчанию (meta description)"),
+            blank=True,
+            default=(
+                "Онлайн-обменник криптовалют. Мгновенные сделки, прозрачные курсы, фиксированная комиссия. "
+                "Поддержка Bitcoin, Ethereum и популярных стейблкоинов: USDT, USDC, DAI и другие."
+            ),
+            help_text=_("Используется как базовое описание, если страница не переопределяет его."),
+        ),
+        seo_default_keywords=models.TextField(
+            verbose_name=_("SEO: ключевые слова по умолчанию (meta keywords)"),
+            blank=True,
+            default="обменник, криптовалюта, обмен криптовалют, bitcoin, ethereum, usdt, usdc, dai, обмен онлайн",
+            help_text=_("Опционально. Может не использоваться поисковиками, но полезно для некоторых интеграций."),
+        ),
+        og_title=models.CharField(
+            verbose_name=_("OG: заголовок по умолчанию"),
+            max_length=255,
+            blank=True,
+            default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
+            help_text=_("Используется, если страница не задаёт свой OG-заголовок."),
+        ),
+        og_description=models.TextField(
+            verbose_name=_("OG: описание по умолчанию"),
+            blank=True,
+            default="Мгновенный обмен BTC, ETH, USDT и других активов. Прозрачные курсы, фиксированная комиссия, 2FA защита.",
+        ),
+        og_image_alt=models.CharField(
+            verbose_name=_("OG: alt у изображения"),
+            max_length=255,
+            blank=True,
+            default="Логотип Swapers и обмен криптовалют онлайн",
+        ),
+        # --- [12] Тексты на главную ---
+        main_h1=models.CharField(
+            verbose_name=_("H1 на главной"),
+            max_length=200,
+            default="Мгновенный обмен криптовалют онлайн",
+        ),
+        main_subtitle=models.TextField(
+            verbose_name=_("Подзаголовок на главной"),
+            blank=True,
+            default="Обменивайте Bitcoin, Ethereum и стейблкоины быстро, безопасно и по честному курсу.",
+        ),
+
+        # --- [13] Контакты и соцсети ---
+        # названия (редактируемые) для трёх почтовых блоков
+        contact_label_clients=models.CharField(
+            verbose_name=_("Заголовок: почта для клиентов"),
+            max_length=120, blank=True, default="",
+            help_text=_("Если пусто — используется «Почта для клиентов»."),
+        ),
+        contact_label_partners=models.CharField(
+            verbose_name=_("Заголовок: почта для партнёров"),
+            max_length=120, blank=True, default="",
+            help_text=_("Если пусто — используется «Почта для партнёров»."),
+        ),
+        contact_label_general=models.CharField(
+            verbose_name=_("Заголовок: почта для общих вопросов"),
+            max_length=120, blank=True, default="",
+            help_text=_("Если пусто — используется «Почта для общих вопросов»."),
+        ),
     )
 
     # --- [2] Open Graph / Twitter / Canonical / hreflang / JSON-LD ---
@@ -242,18 +292,7 @@ class SiteSetup(models.Model):
         choices=[("website", "website"), ("article", "article")],
         default="website",
     )
-    og_title = models.CharField(
-        verbose_name=_("OG: заголовок по умолчанию"),
-        max_length=255,
-        blank=True,
-        default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
-        help_text=_("Используется, если страница не задаёт свой OG-заголовок."),
-    )
-    og_description = models.TextField(
-        verbose_name=_("OG: описание по умолчанию"),
-        blank=True,
-        default="Мгновенный обмен BTC, ETH, USDT и других активов. Прозрачные курсы, фиксированная комиссия, 2FA защита.",
-    )
+
     og_image = models.ImageField(
         verbose_name=_("OG: изображение по умолчанию (1200×630)"),
         upload_to="seo/",
@@ -264,12 +303,6 @@ class SiteSetup(models.Model):
     )
     og_image_width = models.PositiveIntegerField(editable=False, default=0)
     og_image_height = models.PositiveIntegerField(editable=False, default=0)
-    og_image_alt = models.CharField(
-        verbose_name=_("OG: alt у изображения"),
-        max_length=255,
-        blank=True,
-        default="Логотип Swapers и обмен криптовалют онлайн",
-    )
     og_locale_default = models.CharField(
         verbose_name=_("OG: локаль по умолчанию"),
         max_length=10,
@@ -443,36 +476,6 @@ class SiteSetup(models.Model):
         max_length=64, blank=True,
         default="",
         help_text=_("ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите бота: @username_to_id_bot"),
-    )
-
-    # --- [12] Тексты на главную ---
-    main_h1 = models.CharField(
-        verbose_name=_("H1 на главной"),
-        max_length=200,
-        default="Мгновенный обмен криптовалют онлайн",
-    )
-    main_subtitle = models.TextField(
-        verbose_name=_("Подзаголовок на главной"),
-        blank=True,
-        default="Обменивайте Bitcoin, Ethereum и стейблкоины быстро, безопасно и по честному курсу.",
-    )
-
-    # --- [13] Контакты и соцсети ---
-    # названия (редактируемые) для трёх почтовых блоков
-    contact_label_clients = models.CharField(
-        verbose_name=_("Заголовок: почта для клиентов"),
-        max_length=120, blank=True, default="",
-        help_text=_("Если пусто — используется «Почта для клиентов»."),
-    )
-    contact_label_partners = models.CharField(
-        verbose_name=_("Заголовок: почта для партнёров"),
-        max_length=120, blank=True, default="",
-        help_text=_("Если пусто — используется «Почта для партнёров»."),
-    )
-    contact_label_general = models.CharField(
-        verbose_name=_("Заголовок: почта для общих вопросов"),
-        max_length=120, blank=True, default="",
-        help_text=_("Если пусто — используется «Почта для общих вопросов»."),
     )
 
     contact_email_clients = models.EmailField(_("Почта для клиентов"), blank=True, default="")

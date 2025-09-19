@@ -27,3 +27,4 @@ python .\manage.py test
 pytest -q
 python .\manage.py runserver
 ```
+

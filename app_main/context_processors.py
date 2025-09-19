@@ -74,6 +74,7 @@ def _media_abs(request, filefield, *, force_scheme: str | None = None) -> str | 
 def seo_meta(request) -> Dict[str, object]:
     """
     Единый контекст: SEO/OG/Twitter/JSON-LD + favicon/logo + canonical/hreflang + статус работы.
+    Безопасен к отсутствию переводов (django-parler).
     """
     setup = get_site_setup()
 
@@ -81,6 +82,20 @@ def seo_meta(request) -> Dict[str, object]:
     cur_lang, tail = _split_lang_from_path(request.path_info)
     if not cur_lang:
         cur_lang = (translation.get_language() or settings.LANGUAGE_CODE).split("-")[0]
+
+    # безопасный доступ к переводимым полям SiteSetup
+    def _tr(field: str, default: str = "") -> str:
+        # Если у модели есть parler-метод — используем его,
+        # иначе обычный getattr с дефолтом.
+        if hasattr(setup, "safe_translation_getter"):
+            val = setup.safe_translation_getter(
+                field,
+                default=None,
+                language_code=cur_lang,
+                any_language=True,  # взять любой доступный перевод, если текущего нет
+            )
+            return val if val not in (None, "") else default
+        return getattr(setup, field, default)
 
     # схема для мета (уважаем настройку в SiteSetup)
     scheme = "https" if getattr(setup, "use_https_in_meta", False) else request.scheme
@@ -99,7 +114,7 @@ def seo_meta(request) -> Dict[str, object]:
     canonical_path = f"/{cur_lang}{tail}"
     CANONICAL_URL = f"{scheme}://{host}{canonical_path}"
 
-    # Медиа (favicon/logo/OG/Twitter) -> абсолютные URL (без ValueError)
+    # Медиа (favicon/logo/OG/Twitter)
     OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
     TW_IMAGE_URL = _media_abs(request, getattr(setup, "twitter_image", None), force_scheme=scheme) or OG_IMAGE_URL
     LOGO_URL = _media_abs(request, getattr(setup, "logo", None), force_scheme=scheme)
@@ -109,13 +124,13 @@ def seo_meta(request) -> Dict[str, object]:
     JSONLD_ORG = json.dumps(getattr(setup, "jsonld_organization", {}) or {}, ensure_ascii=False)
     JSONLD_WEBSITE = json.dumps(getattr(setup, "jsonld_website", {}) or {}, ensure_ascii=False)
 
-    # SEO базовые
-    SEO_TITLE = setup.seo_default_title or setup.domain_view
-    SEO_DESCRIPTION = setup.seo_default_description or ""
-    SEO_KEYWORDS = setup.seo_default_keywords or ""
+    # SEO базовые (переводимые)
+    SEO_TITLE = _tr("seo_default_title", setup.domain_view)
+    SEO_DESCRIPTION = _tr("seo_default_description", "")
+    SEO_KEYWORDS = _tr("seo_default_keywords", "")
 
     # Open Graph
-    OG_LOCALE_ALTS = [x.strip() for x in (setup.og_locale_alternates or "").split(",") if x.strip()]
+    OG_LOCALE_ALTS = [x.strip() for x in (getattr(setup, "og_locale_alternates", "") or "").split(",") if x.strip()]
 
     # -------- статус работы (UTC) --------
     def _is_open_now() -> bool:
@@ -156,10 +171,10 @@ def seo_meta(request) -> Dict[str, object]:
         # Open Graph
         "OG_ENABLED": bool(getattr(setup, "og_enabled", True)),
         "OG_TYPE": getattr(setup, "og_type_default", "website"),
-        "OG_TITLE": setup.og_title or SEO_TITLE,
-        "OG_DESCRIPTION": setup.og_description or SEO_DESCRIPTION,
+        "OG_TITLE": _tr("og_title", SEO_TITLE),
+        "OG_DESCRIPTION": _tr("og_description", SEO_DESCRIPTION),
         "OG_IMAGE_URL": OG_IMAGE_URL,
-        "OG_IMAGE_ALT": setup.og_image_alt or setup.domain_view,
+        "OG_IMAGE_ALT": _tr("og_image_alt", setup.domain_view),
         "OG_IMAGE_WIDTH": getattr(setup, "og_image_width", 0),
         "OG_IMAGE_HEIGHT": getattr(setup, "og_image_height", 0),
         "OG_SITE_NAME": setup.domain_view,
@@ -179,7 +194,7 @@ def seo_meta(request) -> Dict[str, object]:
         "JSONLD_WEBSITE": JSONLD_WEBSITE,
 
         # Вставка в <head> с CSP-нонсом (фильтр добавит nonce в script/style)
-        "HEAD_INJECT_HTML": getattr(setup, "head_inject_html", "") or "",
+        "HEAD_INJECT_HTML": getattr(setup, "head_inject_html", ""),
 
         # Статус работы
         "MAINTENANCE_MODE": bool(getattr(setup, "maintenance_mode", False)),

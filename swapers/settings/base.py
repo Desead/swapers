@@ -4,7 +4,6 @@ from django.utils.translation import gettext_lazy as _
 from csp.constants import SELF  # опционально, если используешь константы
 from datetime import timedelta
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- режим ---
@@ -27,6 +26,18 @@ LANGUAGES = [
 
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
+PARLER_LANGUAGES = {
+    None: (
+        {'code': 'ru'},
+        {'code': 'en'},  # можно оставить, даже если контента пока нет
+    ),
+    'default': {
+        'fallback': 'ru',            # если нет перевода — берём русский
+        'hide_untranslated': False,  # показывать базовые значения, когда перевода нет
+    },
+}
+PARLER_DEFAULT_LANGUAGE_CODE = "ru"
+
 INSTALLED_APPS = [
     "swapers.admin.OTPAdminConfig",  # админка под OTP
     "django.contrib.auth",
@@ -44,6 +55,7 @@ INSTALLED_APPS = [
 
     "django_otp",
     "django_otp.plugins.otp_totp",
+    "parler",
 ]
 
 AUTH_USER_MODEL = "app_main.User"

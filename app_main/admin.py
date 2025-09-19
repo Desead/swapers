@@ -8,13 +8,12 @@ from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.urls import reverse
 from django.shortcuts import redirect
 from django.utils.safestring import mark_safe
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _, get_language
 from django.contrib import admin
 from django.conf import settings
 from django.utils import timezone
 from django.db.models import Sum, Max
 from axes.utils import reset as axes_reset
-
 from .models import SiteSetup
 from app_main.models_security import BlocklistEntry
 
@@ -22,6 +21,21 @@ from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
 
 from axes.models import AccessAttempt, AccessFailureLog
+from parler.admin import TranslatableAdmin
+from django.conf import settings
+from django.contrib import admin
+from django.db import models
+from django.shortcuts import redirect
+from django.urls import reverse
+from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _, get_language
+
+from parler.admin import TranslatableAdmin
+
+# + твои импорты моделей/утилит:
+# from .models import SiteSetup
+# from .admin_utils import diff_sitesetup, format_telegram_message, send_telegram_message
+
 
 User = get_user_model()
 
@@ -131,7 +145,7 @@ class UserAdmin(BaseUserAdmin):
 # ======================= Настройки сайта (SiteSetup) =======================
 
 @admin.register(SiteSetup)
-class SiteSetupAdmin(admin.ModelAdmin):
+class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
     save_on_top = True
 
     formfield_overrides = {
@@ -142,6 +156,9 @@ class SiteSetupAdmin(admin.ModelAdmin):
         "updated_at",
         "og_image_width", "og_image_height",
         "og_image_preview", "twitter_image_preview",
+        "language_quick_switch",
+        "translation_status",
+        "translation_matrix",
     )
 
     fieldsets = (
@@ -268,9 +285,204 @@ class SiteSetupAdmin(admin.ModelAdmin):
 
         (_("Служебное"), {
             "classes": ("wide",),
-            "fields": ("updated_at",),
+            "fields": (
+                "updated_at",
+                "language_quick_switch",
+                "translation_status",
+                "translation_matrix",
+            ),
         }),
     )
+
+    # --- язык формы из ?language=xx ---
+    def get_form_language(self, request, obj=None):
+        langs = dict(getattr(settings, "LANGUAGES", (("ru", "Russian"),)))
+        lang = (request.GET.get("language") or "").lower()
+        if lang in langs:
+            return lang
+        try:
+            return super().get_form_language(request, obj)
+        except Exception:
+            return (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+
+    # подсветка «нет перевода» + фиксация языка объекта
+    def get_form(self, request, obj=None, **kwargs):
+        lang = self.get_form_language(request, obj)
+        if obj is not None and lang:
+            try:
+                obj.set_current_language(lang)
+            except Exception:
+                pass
+
+        form = super().get_form(request, obj, **kwargs)
+
+        try:
+            translated_fields = set(getattr(obj._parler_meta, "_fields_to_model", {}).keys()) if obj else set()
+        except Exception:
+            translated_fields = set()
+
+        for name in translated_fields:
+            if obj and name in form.base_fields:
+                val = obj.safe_translation_getter(name, default=None, any_language=False)
+                if not val:
+                    label = form.base_fields[name].label or name
+                    badge = (
+                        '<span style="display:inline-block;'
+                        'margin-left:6px;padding:2px 6px;border-radius:10px;'
+                        'background:#b71c1c;color:#fff;font-size:11px;'
+                        'vertical-align:middle;">'
+                        + _("нет перевода")
+                        + "</span>"
+                    )
+                    form.base_fields[name].label = mark_safe(f"{label}{badge}")
+
+        return form
+
+    # быстрый переключатель языка
+    @admin.display(description=_("Язык редактирования"))
+    def language_quick_switch(self, obj: SiteSetup):
+        if not obj:
+            return "—"
+        base_url = reverse("admin:app_main_sitesetup_change", args=[obj.pk])
+        langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
+
+        try:
+            cur = (obj.get_current_language() or "").lower()
+        except Exception:
+            cur = ""
+        if not cur:
+            cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+
+        chips = []
+        for code in langs:
+            is_active = (code.lower() == cur)
+            if is_active:
+                chips.append(
+                    '<span style="display:inline-block;margin-right:6px;margin-bottom:6px;'
+                    'padding:4px 10px;border-radius:999px;font-weight:600;'
+                    'background:#1976d2;color:#fff;font-size:12px;">'
+                    f'{code.upper()}</span>'
+                )
+            else:
+                chips.append(
+                    f'<a href="{base_url}?language={code}" '
+                    'style="display:inline-block;margin-right:6px;margin-bottom:6px;'
+                    'padding:4px 10px;border-radius:999px;text-decoration:none;'
+                    'background:#eee;color:#333;font-size:12px;">'
+                    f'{code.upper()}</a>'
+                )
+        return mark_safe("".join(chips))
+
+    @admin.display(description=_("Статус переводов"))
+    def translation_status(self, obj: SiteSetup):
+        if not obj:
+            return "—"
+        langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
+        try:
+            cur = (obj.get_current_language() or "").lower()
+        except Exception:
+            cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+
+        chips = []
+        for code in langs:
+            try:
+                has = obj.has_translation(code)
+            except Exception:
+                has = False
+            base_style = "display:inline-block;margin-right:6px;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:11px;"
+            color = "background:#2e7d32;color:#fff;" if has else "background:#b71c1c;color:#fff;"
+            highlight = "box-shadow:0 0 0 2px #00000022 inset;" if code.lower() == cur else ""
+            chips.append(
+                f'<span style="{base_style}{color}{highlight}">{code.upper()}</span>'
+            )
+        return mark_safe("".join(chips))
+
+    @admin.display(description=_("Матрица переводов (поле × язык)"))
+    def translation_matrix(self, obj: SiteSetup):
+        """Таблица: строки — переводимые поля, столбцы — языки; ✓ есть значение, • пусто.
+        В первом столбце показываем verbose_name (жирным) и код поля (мелким серым)."""
+        if not obj:
+            return "—"
+
+        fields = self._translated_field_names(obj)
+        if not fields:
+            return _("Нет переводимых полей.")
+
+        langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
+        ths = "".join(
+            f'<th style="padding:6px 10px;text-align:center;white-space:nowrap;">{code.upper()}</th>'
+            for code in langs
+        )
+
+        rows = []
+        for fname in fields:
+            verbose = self._human_field_label(obj, fname)
+
+            tds = []
+            for code in langs:
+                val = obj.safe_translation_getter(
+                    fname, default=None, language_code=code, any_language=False
+                )
+                ok = bool(val)
+                sym = "✓" if ok else "•"
+                bg = "#e8f5e9" if ok else "#ffebee"
+                color = "#2e7d32" if ok else "#b71c1c"
+                tds.append(
+                    f'<td style="padding:6px 10px;text-align:center;background:{bg};color:{color};">{sym}</td>'
+                )
+
+            name_cell = (
+                f'<td style="padding:6px 10px;white-space:nowrap;">'
+                f'{verbose}<br>'
+                f'</td>'
+            )
+            rows.append(f'<tr>{name_cell}{"".join(tds)}</tr>')
+
+        table = (
+            '<div style="overflow:auto;border:1px solid #eee;border-radius:8px;">'
+            '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+            f'<thead><tr><th style="padding:6px 10px;text-align:left;">{_("Поле")}</th>{ths}</tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody>'
+            '</table>'
+            '<div style="padding:6px 0 0 2px;font-size:11px;color:#666;">'
+            f'✓ — {_("есть значение")}, • — {_("пусто/нет перевода")}'
+            '</div>'
+            '</div>'
+        )
+        return mark_safe(table)
+
+    # --- helpers -------------------------------------------------------
+
+    def _translated_field_names(self, obj: SiteSetup):
+        """Стабильный список переводимых полей Parler (как объявлены в модели)."""
+        try:
+            return list(getattr(obj._parler_meta, "_fields_to_model", {}).keys())
+        except Exception:
+            return []
+
+    def _human_field_label(self, obj: SiteSetup, field_name: str) -> str:
+        """
+        Возвращает verbose_name для поля.
+        1) Пытаемся в основной модели;
+        2) Если нет — в переводной модели Parler для этого поля.
+        """
+        # 1) Основная модель
+        try:
+            f = obj._meta.get_field(field_name)
+            vn = getattr(f, "verbose_name", field_name) or field_name
+            return str(vn)
+        except Exception:
+            pass
+        # 2) Переводная модель Parler
+        try:
+            tr_model = obj._parler_meta.get_model_by_field(field_name)
+            f = tr_model._meta.get_field(field_name)
+            vn = getattr(f, "verbose_name", field_name) or field_name
+            return str(vn)
+        except Exception:
+            return field_name
+
+    # --- прочее штатное ------------------------------------------------
 
     def has_add_permission(self, request):
         return False
@@ -374,11 +586,11 @@ class BlocklistEntryAdmin(admin.ModelAdmin):
 
 # ======================= Axes: Попытки доступа =======================
 
-# Снимаем стандартную регистрацию, чтобы переопределить отображение
 try:
     admin.site.unregister(AccessAttempt)
 except admin.sites.NotRegistered:
     pass
+
 
 def _get_cooloff():
     """Возвращает timedelta «окна охлаждения» Axes (значение либо результат коллбэка)."""
@@ -431,11 +643,9 @@ def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None
     if "user_agent" in params and user_agent is not None:
         kwargs["user_agent"] = user_agent
 
-    # первая попытка — по определённой сигнатуре
     try:
         return axes_reset(**kwargs)
     except TypeError:
-        # fallback: попробуем противоположное имя аргумента IP
         if ip_norm is not None:
             alt = dict(kwargs)
             if "ip" in alt:
@@ -450,7 +660,6 @@ def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None
                 return axes_reset(**alt)
             except TypeError:
                 pass
-        # последний резерв — сброс только по username
         if "username" in kwargs:
             try:
                 return axes_reset(username=kwargs["username"])
@@ -460,11 +669,6 @@ def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None
 
 
 def _last_failure_dt_for(obj: AccessAttempt, kind: str):
-    """
-    Возвращает datetime последней неудачной попытки для нужной «группы блокировки»:
-    kind ∈ {"Логин + IP", "IP", "Логин"}.
-    Смотрим AccessFailureLog; если пусто — падаем к AccessAttempt.
-    """
     ip = (obj.ip_address or "").strip()
     user = (obj.username or "").strip()
 
@@ -508,51 +712,38 @@ class AccessAttemptAdmin(admin.ModelAdmin):
     list_filter = ("ip_address",)
     actions = ("reset_lock_ip", "reset_lock_username", "reset_lock_both")
 
-    # ----- вычисляемые колонки -----
-
     @admin.display(description=_("Тип блокировки"))
     def lock_key_type(self, obj: AccessAttempt):
-        """
-        Пытаемся угадать, что именно заблокировало:
-        1) если сама пара (логин+IP) превысила лимит и в конфиге есть ["username","ip_address"] → «Логин + IP»;
-        2) иначе если суммарно по IP набрали лимит и в конфиге есть ["ip_address"] → «IP»;
-        3) иначе если по логину набрали лимит и в конфиге есть ["username"] → «Логин»;
-        4) иначе — подсказка по первой комбинации из конфига.
-        """
         limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         param_sets = _axes_param_sets()
 
-        # Логин + IP
         if {"username", "ip_address"} in param_sets and obj.username and obj.ip_address:
             pair_total = (
-                AccessAttempt.objects
-                .filter(username=obj.username, ip_address=obj.ip_address)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(username=obj.username, ip_address=obj.ip_address)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if pair_total >= limit:
                 return _("Логин + IP")
 
-        # IP
         if {"ip_address"} in param_sets and obj.ip_address:
             ip_total = (
-                AccessAttempt.objects
-                .filter(ip_address=obj.ip_address)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(ip_address=obj.ip_address)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if ip_total >= limit:
                 return _("IP")
 
-        # Логин
         if {"username"} in param_sets and obj.username:
             user_total = (
-                AccessAttempt.objects
-                .filter(username=obj.username)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(username=obj.username)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if user_total >= limit:
                 return _("Логин")
 
-        # Иначе — подсказка по конфигу
         for s in param_sets:
             parts = []
             if "username" in s:
@@ -567,9 +758,6 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
     @admin.display(boolean=True, description=_("Заблокирован?"))
     def is_blocked_now(self, obj):
-        """
-        Считаем блок **по типу ключа**, а не только по текущей строке.
-        """
         cooloff = _get_cooloff()
         if not cooloff:
             return False
@@ -580,9 +768,9 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         if k == _("Логин + IP"):
             pair_total = (
-                AccessAttempt.objects
-                .filter(username=obj.username, ip_address=obj.ip_address)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(username=obj.username, ip_address=obj.ip_address)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if pair_total >= limit:
                 last = _last_failure_dt_for(obj, "Логин + IP")
@@ -591,9 +779,9 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         if k == _("IP"):
             ip_total = (
-                AccessAttempt.objects
-                .filter(ip_address=obj.ip_address)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(ip_address=obj.ip_address)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if ip_total >= limit:
                 last = _last_failure_dt_for(obj, "IP")
@@ -602,9 +790,9 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         if k == _("Логин"):
             user_total = (
-                AccessAttempt.objects
-                .filter(username=obj.username)
-                .aggregate(s=Sum("failures_since_start"))["s"] or 0
+                    AccessAttempt.objects
+                    .filter(username=obj.username)
+                    .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if user_total >= limit:
                 last = _last_failure_dt_for(obj, "Логин")
@@ -622,15 +810,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         ua = obj.user_agent or ""
         return (ua[:80] + "…") if len(ua) > 80 else ua
 
-    # ----- экшены (строже соответствуют типу блокировки) -----
-
     def _action_guard_and_reset(self, request, queryset, expected_type: str, do_reset):
-        """
-        Общий помощник:
-        - expected_type ∈ {"IP", "Логин", "Логин + IP"}
-        - do_reset(o) вызывает нужный _axes_reset_safe(...)
-        Сбрасываем только если запись сейчас действительно заблокирована И тип совпадает.
-        """
         done = 0
         skipped = 0
         for o in queryset:
@@ -655,6 +835,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         def _do(o):
             if o.ip_address:
                 _axes_reset_safe(ip=o.ip_address)
+
         self._action_guard_and_reset(request, queryset, expected_type=_("IP"), do_reset=_do)
 
     @admin.action(description=_("Снять блокировку по логину"))
@@ -662,6 +843,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         def _do(o):
             if o.username:
                 _axes_reset_safe(username=o.username)
+
         self._action_guard_and_reset(request, queryset, expected_type=_("Логин"), do_reset=_do)
 
     @admin.action(description=_("Снять блокировку по логину+IP"))
@@ -669,4 +851,5 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         def _do(o):
             if o.ip_address or o.username:
                 _axes_reset_safe(ip=o.ip_address, username=o.username)
+
         self._action_guard_and_reset(request, queryset, expected_type=_("Логин + IP"), do_reset=_do)
