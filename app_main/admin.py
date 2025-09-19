@@ -196,20 +196,18 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         "updated_at",
         "og_image_width", "og_image_height",
         "og_image_preview", "twitter_image_preview",
-        "translation_status",
         "translation_matrix",
-        "language_toolbar",      # ← панель языков вверху формы
+        "language_toolbar",  # ← панель языков вверху формы
     )
 
     fieldsets = (
-        (_("Язык формы"), {
-            "classes": ("wide",),
-            "fields": ("language_toolbar",),   # просто readonly «чипы», меняют ?language=xx
-        }),
-
         (_("Главная страница"), {
             "classes": ("wide",),
             "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode"),
+        }),
+        (_("Перевод на различные языки"), {
+            "classes": ("wide", "collapse"),
+            "fields": ("language_toolbar", "site_enabled_languages", "translation_matrix"),
         }),
 
         (_("Брендинг"), {
@@ -328,14 +326,9 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
             "fields": (("admin_path", "otp_issuer"),),
         }),
 
-        (_("Языки, показываемые на сайте"), {
-            "classes": ("wide",),
-            "fields": ( "site_enabled_languages", ),   # JSONField в модели
-        }),
-
         (_("Служебное"), {
             "classes": ("wide",),
-            "fields": ("updated_at", "translation_status", "translation_matrix"),
+            "fields": ("updated_at", ),
         }),
     )
 
@@ -363,7 +356,7 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
             pass
         return form
 
-    @admin.display(description=_("Язык"))
+    @admin.display(description=_("Языки на сайте"))
     def language_toolbar(self, obj):
         langs = [code for code, _ in self.SITE_LANG_CHOICES]
         # определяем текущий язык так же, как делает форма
@@ -417,25 +410,6 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         except Exception:
             return fname
 
-    @admin.display(description=_("Статус переводов"))
-    def translation_status(self, obj: SiteSetup):
-        if not obj:
-            return "—"
-        langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
-        cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
-        chips = []
-        for code in langs:
-            try:
-                has = obj.has_translation(code)
-            except Exception:
-                has = False
-            base = "display:inline-block;margin-right:6px;margin-bottom:4px;padding:2px 8px;border-radius:999px;font-size:11px;"
-            color = "background:#2e7d32;color:#fff;" if has else "background:#b71c1c;color:#fff;"
-            highlight = "box-shadow:0 0 0 2px #00000022 inset;" if code.lower() == cur else ""
-            title = _("есть перевод") if has else _("нет перевода")
-            chips.append(f'<span title="{title}" style="{base}{color}{highlight}">{code.upper()}</span>')
-        return mark_safe("".join(chips))
-
     @admin.display(description=_("Матрица переводов"))
     def translation_matrix(self, obj):
         if not obj:
@@ -458,8 +432,7 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
                 tds.append(f'<td style="padding:6px 10px;text-align:center;background:{bg};color:{color};">{sym}</td>')
             name_cell = (
                 f'<td style="padding:6px 10px;white-space:nowrap;">'
-                f'<strong>{verbose}</strong><br>'
-                f'<span style="opacity:.65;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">{fname}</span>'
+                f'{verbose}<br>'
                 f'</td>'
             )
             rows.append(f'<tr>{name_cell}{"".join(tds)}</tr>')
