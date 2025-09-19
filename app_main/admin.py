@@ -346,6 +346,24 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
+        # --- render site_enabled_languages as checkboxes ---
+        if "site_enabled_languages" in form.base_fields:
+            choices = list(getattr(settings, "LANGUAGES", ()))
+            # текущее значение как initial
+            initial = []
+            if obj and isinstance(getattr(obj, "site_enabled_languages", None), list):
+                valid = {c for c, _ in choices}
+                initial = [c for c in obj.site_enabled_languages if c in valid]
+
+            form.base_fields["site_enabled_languages"] = forms.MultipleChoiceField(
+                required=False,
+                choices=choices,
+                widget=forms.CheckboxSelectMultiple,
+                initial=initial,
+                label=form.base_fields.get("site_enabled_languages").label or _("Языки, показывать на сайте"),
+                help_text=_("Отмеченные языки появятся в переключателе языков на сайте."),
+            )
+
         # Активируем язык на объекте, чтобы .safe_translation_getter(...) и формы
         # показывали нужную локаль без сюрпризов.
         try:
@@ -492,6 +510,37 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         return "—"
 
     def save_model(self, request, obj: SiteSetup, form, change):
+        # --- normalize enabled languages & fallback to default if empty ---
+        valid_codes = [code for code, _ in getattr(settings, "LANGUAGES", ())]
+        langs = getattr(obj, "site_enabled_languages", None)
+
+        # если пришла строка (теоретически из JSON-поля) — попробуем распарсить
+        if isinstance(langs, str):
+            try:
+                import json
+                parsed = json.loads(langs)
+                langs = parsed if isinstance(parsed, list) else []
+            except Exception:
+                langs = []
+
+        # гарантируем список
+        if not isinstance(langs, list):
+            langs = []
+
+        # отфильтровать по settings.LANGUAGES и убрать дубли с сохранением порядка
+        seen = set()
+        langs = [c for c in langs if isinstance(c, str) and c in valid_codes and not (c in seen or seen.add(c))]
+
+        # если пусто — подставить дефолтный язык
+        if not langs:
+            default_code = (getattr(settings, "LANGUAGE_CODE", "en") or "en").split("-")[0]
+            if default_code not in valid_codes and valid_codes:
+                default_code = valid_codes[0]
+            langs = [default_code]
+
+        obj.site_enabled_languages = langs
+
+
         # сохраняем «видимые языки на сайте»
         sel = None
         if form is not None and hasattr(form, "cleaned_data"):

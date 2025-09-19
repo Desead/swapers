@@ -46,19 +46,34 @@
             {% endif %}
         </div>
 
-        {# Переключатель языка без inline-обработчиков (CSP-friendly) #}
-        <form action="{% url 'set_language' %}" method="post" style="display:inline" class="lang-switch-form">
+        {# Переключатель языка: берём ТОЛЬКО то, что пришло из контекста LANG_MENU #}
+        <form action="{% url 'set_language' %}" method="post" class="lang-switch-form" style="display:inline">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <select id="lang-select" name="language" data-lang-switch>
-                {% get_available_languages as LANGS %}
-                {% get_language_info_list for LANGS as languages %}
-                {% for lang in languages %}
-                    <option value="{{ lang.code }}"{% if lang.code == CUR_LANG %} selected{% endif %}>
-                        {{ lang.name_local }}
-                    </option>
-                {% endfor %}
-            </select>
+
+            <label for="lang-select" class="visually-hidden">{% trans "Выберите язык" %}</label>
+
+            {% if LANG_MENU and LANG_MENU|length > 0 %}
+                <select id="lang-select" name="language" data-lang-switch>
+                    {% for item in LANG_MENU %}
+                        <option value="{{ item.code }}"{% if item.active %} selected{% endif %}>
+                            {{ item.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            {% else %}
+                {# Фолбэк: если по какой-то причине LANG_MENU нет, показываем все языки из настроек #}
+                {% get_available_languages as ALL_LANGS %}
+                {% get_language_info_list for ALL_LANGS as ALL_LANG_INFOS %}
+                <select id="lang-select" name="language" data-lang-switch>
+                    {% for lang in ALL_LANG_INFOS %}
+                        <option value="{{ lang.code }}"{% if lang.code == CUR_LANG %} selected{% endif %}>
+                            {{ lang.name_local }}
+                        </option>
+                    {% endfor %}
+                </select>
+            {% endif %}
+
             <noscript>
                 <button type="submit">{% trans "OK" %}</button>
             </noscript>

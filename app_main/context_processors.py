@@ -95,13 +95,11 @@ def seo_meta(request) -> Dict[str, object]:
     # --- включённые на сайте языки (выбор в админке) ---
     def _enabled_lang_codes() -> list[str]:
         """
-        Читаем один из возможных полей настроек (какое у тебя есть в модели),
-        допускаем форматы: list/tuple, JSON-строка, строка "ru,en,..." .
-        Если ничего нет — берём все из settings.LANGUAGES.
+        Читаем SiteSetup.site_enabled_languages.
+        Допускаем форматы: list/tuple, JSON-строка, строка "ru,en,...".
+        Если поле пустое/невалидное — берём все языки из settings.LANGUAGES.
         """
-        raw = (
-            getattr(setup, "site_enabled_languages", None)
-        )
+        raw = getattr(setup, "site_enabled_languages", None)
 
         def _norm_list(x) -> list[str]:
             if x is None:
@@ -124,12 +122,11 @@ def seo_meta(request) -> Dict[str, object]:
 
         enabled_raw = _norm_list(raw)
         all_codes_in_settings = [code.split("-")[0].lower() for code, _ in settings.LANGUAGES]
-        # фильтруем и сохраняем порядок как в settings.LANGUAGES
+
         if enabled_raw:
             want = set(enabled_raw)
             result = [c for c in all_codes_in_settings if c in want]
-            # если почему-то ничего не совпало — fallback на все
-            return result or all_codes_in_settings
+            return result or all_codes_in_settings  # если не совпало — показываем все
         return all_codes_in_settings
 
     LANGS_ENABLED = _enabled_lang_codes()
@@ -148,6 +145,22 @@ def seo_meta(request) -> Dict[str, object]:
         if tail.endswith("/"):
             alt_path = alt_path[:-1]  # не удваиваем слэш в конце
         hreflangs[short] = f"{scheme}://{host}{alt_path}"
+
+    # меню языков для UI (только включённые)
+    lang_name_by_code = {code.split("-")[0].lower(): name for code, name in settings.LANGUAGES}
+    LANG_MENU = []
+    for short in LANGS_ENABLED:
+        alt_path = f"/{short}{'' if tail == '/' else tail}/".replace("//", "/")
+        if tail.endswith("/"):
+            alt_path = alt_path[:-1]
+        LANG_MENU.append(
+            {
+                "code": short,
+                "name": lang_name_by_code.get(short, short.upper()),
+                "url": f"{scheme}://{host}{alt_path}",
+                "active": short == cur_lang,
+            }
+        )
 
     # canonical
     CANONICAL_URL = f"{scheme}://{host}{request.path}"
@@ -200,8 +213,9 @@ def seo_meta(request) -> Dict[str, object]:
         "BLOCK_INDEXING": bool(getattr(setup, "block_indexing", False)),
 
         # Языки
-        "LANGS_ENABLED": LANGS_ENABLED,  # ← список кодов включённых языков
+        "LANGS_ENABLED": LANGS_ENABLED,                     # список кодов включённых языков
         "LANGS_ALL": [code.split("-")[0].lower() for code, _ in settings.LANGUAGES],
+        "LANG_MENU": LANG_MENU,                             # элементы для переключателя в UI
 
         # SEO
         "SEO_TITLE": SEO_TITLE,
