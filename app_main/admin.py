@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from django.contrib.sites import admin   #   НЕ УДАЛЯТЬ. ЗАГРУЖАЕМ САЙТ ЧТОБЫ СМОГЛИ СНЯТЬ ЕГО РЕГИСТРАЦИЮ В АДМИНКЕ!
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
@@ -12,7 +12,6 @@ from app_main.models_security import BlocklistEntry
 from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
 from axes.models import AccessAttempt, AccessFailureLog
-from django.contrib import admin
 from django.conf import settings
 from django.utils.translation import get_language, gettext_lazy as _
 from django.utils.safestring import mark_safe
@@ -22,10 +21,9 @@ from django.db import models
 from parler.admin import TranslatableAdmin
 from parler.forms import TranslatableModelForm
 from django.core.exceptions import FieldDoesNotExist
-
-# + твои импорты моделей/утилит:
-# from .models import SiteSetup
-# from .admin_utils import diff_sitesetup, format_telegram_message, send_telegram_message
+from django.contrib import admin
+from django.contrib.admin.sites import NotRegistered
+from django.contrib.sites.models import Site
 
 
 User = get_user_model()
@@ -888,3 +886,8 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                 _axes_reset_safe(ip=o.ip_address, username=o.username)
 
         self._action_guard_and_reset(request, queryset, expected_type=_("Логин + IP"), do_reset=_do)
+
+try:
+    admin.site.unregister(Site)
+except NotRegistered:
+    pass
