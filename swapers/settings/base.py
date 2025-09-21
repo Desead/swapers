@@ -228,3 +228,5 @@ AXES_USERNAME_CALLABLE = "app_main.axes_handler.axes_get_username"
 LANGUAGE_COOKIE_NAME = "sw_lang"
 LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
 LANGUAGE_COOKIE_SAMESITE = "Lax"
+
+FORMS_URLFIELD_ASSUME_HTTPS = True

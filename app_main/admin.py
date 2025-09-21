@@ -333,16 +333,25 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
     )
 
     # ---------- Язык формы ----------
+    # в SiteSetupAdmin
     def get_form_language(self, request, obj=None):
         """
-        Текущий язык вкладки/формы (Parler ориентируется на это).
-        При клике на чип мы идём на ?language=xx, здесь это подхватываем.
+        Возвращает текущий язык вкладки формы Parler.
+        Должно работать даже если у request нет session (как в тестах с RequestFactory).
         """
         lang = request.GET.get("language")
+
+        session = getattr(request, "session", None)
         if lang:
-            request.session["PARLER_CURRENT_LANGUAGE"] = lang
+            if session is not None:
+                session["PARLER_CURRENT_LANGUAGE"] = lang
             return lang
-        return request.session.get("PARLER_CURRENT_LANGUAGE") or (get_language() or settings.LANGUAGE_CODE)
+
+        if session is not None:
+            return session.get("PARLER_CURRENT_LANGUAGE") or (get_language() or settings.LANGUAGE_CODE)
+
+        # Фолбэк без сессии (напр., в тестах)
+        return get_language() or settings.LANGUAGE_CODE
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
@@ -510,53 +519,45 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
         return "—"
 
     def save_model(self, request, obj: SiteSetup, form, change):
-        # --- гарантируем, что всегда сохранится хотя бы один язык ---
-        allowed = [c.lower() for c, _ in getattr(settings, "LANGUAGES", ())]
-        def _normalize(code: str | None) -> str | None:
-            if not code:
-                return None
-            c = code.lower().replace("_", "-")
-            if c in allowed:
-                return c
-            base = c.split("-", 1)[0]
-            # ищем близкий вариант из allowed (ru ↔ ru-ru и т.п.)
-            for a in allowed:
-                if a == base or a.split("-", 1)[0] == base:
-                    return a
-            return None
-
-        # берём выбранные из формы (поддерживаем оба варианта поля),
-        # иначе — текущее значение на объекте
-        selected = None
+        # --- правим список языков ТОЛЬКО при реальном сохранении формы ---
         if form is not None and hasattr(form, "cleaned_data"):
+            allowed = [c.lower() for c, _ in getattr(settings, "LANGUAGES", ())]
+
+            def _normalize(code: str | None) -> str | None:
+                if not code:
+                    return None
+                c = str(code).lower().replace("_", "-")
+                if c in allowed:
+                    return c
+                base = c.split("-", 1)[0]
+                for a in allowed:
+                    if a == base or a.split("-", 1)[0] == base:
+                        return a
+                return None
+
             selected = (
-                form.cleaned_data.get("site_enabled_languages")
-                or form.cleaned_data.get("site_enabled_languages_list")
+                    form.cleaned_data.get("site_enabled_languages")
+                    or form.cleaned_data.get("site_enabled_languages_list")
+                    or obj.site_enabled_languages
+                    or []
             )
-        if selected is None:
-            selected = obj.site_enabled_languages or []
 
-        # нормализуем, фильтруем и убираем дубли
-        norm = []
-        seen = set()
-        for code in selected:
-            n = _normalize(code)
-            if n and n not in seen:
-                norm.append(n)
-                seen.add(n)
+            norm, seen = [], set()
+            for code in selected:
+                n = _normalize(code)
+                if n and n not in seen:
+                    norm.append(n);
+                    seen.add(n)
 
-        # если пусто — подставляем дефолтный
-        if not norm:
-            default_norm = _normalize(getattr(settings, "LANGUAGE_CODE", ""))
-            if not default_norm and allowed:
-                default_norm = allowed[0]
-            if default_norm:
-                norm = [default_norm]
+            if not norm:
+                default_norm = _normalize(getattr(settings, "LANGUAGE_CODE", "")) or (allowed[0] if allowed else None)
+                if default_norm:
+                    norm = [default_norm]
 
-        obj.site_enabled_languages = norm
-        # --- /гарантия одного языка ---
+            obj.site_enabled_languages = norm
+        # --- /правка языков ---
 
-        # дальше — твоя существующая логика (diff, телеграм и т.д.)
+        # Снимок "до"
         original = None
         if change and obj.pk:
             try:
@@ -564,16 +565,20 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
             except SiteSetup.DoesNotExist:
                 original = None
 
+        # Сохраняем
         super().save_model(request, obj, form, change)
 
+        # Если не было "до" — нечего сравнивать
         if not original:
             return
 
+        # Разница
         label_map = {f.name: (getattr(f, "verbose_name", f.name) or f.name) for f in obj._meta.fields}
         changes = diff_sitesetup(original, obj, label_map)
         if not changes:
             return
 
+        # Телеграм только если заданы креды
         token = (obj.telegram_bot_token or "").strip()
         chat_id = (obj.telegram_chat_id or "").strip()
         if not token or not chat_id:
