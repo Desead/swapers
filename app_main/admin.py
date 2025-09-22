@@ -26,6 +26,7 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin
 from django.db import models
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 
 
 class DecimalPlainWidget(forms.NumberInput):
@@ -926,10 +927,10 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         "last_payout_at", "api_access",
     )
     autocomplete_fields = ()
-    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt","last_payout_at","last_payout_amount_usdt",)
+    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt", "last_payout_at", "last_payout_amount_usdt",)
     list_filter = ("is_active", "partner_type", "api_access")
     search_fields = ("name", "link")
-    list_editable = ("is_active","number", )
+    list_editable = ("is_active", "number",)
 
     fieldsets = (
         (_("Основное"), {
@@ -960,7 +961,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         }),
         (_("Прочее"), {
             "classes": ("wide", "collapse"),
-            "fields": ("api_access", "title","comment"),
+            "fields": ("api_access", "title", "comment"),
         }),
     )
 
@@ -1009,7 +1010,37 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
             })
         return formfield
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
 
+        # одинаковая простая подсказка без иконок
+        common_help = _("PNG/JPG/SVG, ≤ 1 MB, рекомендуемый размер 88×31")
+
+        for fname in ("banner_dark_asset", "banner_light_asset"):
+            if fname not in form.base_fields:
+                continue
+
+            field = form.base_fields[fname]
+
+            # 1) убираем нашу старую HTML-подсказку с иконками (если была)
+            field.help_text = common_help  # без лишнего HTML
+
+            # 2) снимаем обёртку Django (карандаш/плюс/крест/глаз), если она есть
+            w = field.widget
+            if isinstance(w, RelatedFieldWidgetWrapper):
+                # на всякий случай выключим флаги и развернём обёртку
+                w.can_add_related = False
+                w.can_change_related = False
+                w.can_delete_related = False
+                w.can_view_related = False
+                field.widget = w.widget  # <- теперь обычный select, без иконок
+
+            # 3) делаем выпадашку пошире
+            if hasattr(field.widget, "attrs"):
+                field.widget.attrs.setdefault("style", "")
+                field.widget.attrs["style"] += "min-width:360px;width:100%;"
+
+        return form
 
 
 try:
