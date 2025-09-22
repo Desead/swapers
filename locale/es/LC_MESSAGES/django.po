@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-19 21:17+0300\n"
+"POT-Creation-Date: 2025-09-22 15:18+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,6 +18,50 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? "
 "1 : 2;\n"
+
+msgid "Размер"
+msgstr ""
+
+msgid "Превью"
+msgstr ""
+
+msgid "Библиотека"
+msgstr ""
+
+#, python-format
+msgid "Максимальный размер файла — %(mb)d МБ. Сейчас: %(size).1f МБ."
+msgstr ""
+
+msgid "Тёмный"
+msgstr ""
+
+msgid "Светлый"
+msgstr ""
+
+msgid "Название"
+msgstr ""
+
+msgid "Тема"
+msgstr ""
+
+msgid "Файл баннера"
+msgstr ""
+
+msgid "Размер файла (байт)"
+msgstr ""
+
+msgid "Создан"
+msgstr ""
+
+msgid "Обновлён"
+msgstr ""
+
+msgid "Баннер"
+msgstr ""
+
+msgid "Библиотека баннеров"
+msgstr ""
+
 msgid "Пароль"
 msgstr ""
 
@@ -177,6 +221,36 @@ msgid "Снять блокировку по логину"
 msgstr ""
 
 msgid "Снять блокировку по логину+IP"
+msgstr ""
+
+msgid "Основное"
+msgstr ""
+
+msgid "Условия партнёрки"
+msgstr ""
+
+msgid ""
+"100% партнёру от прибыли значит вы отдадите всю прибыль и ничего не "
+"заработаете.<br> 100% партнёру от суммы, значит вы всю сумму отдадите "
+"партнёру и ещё должны совершить обмен клиенту"
+msgstr ""
+
+msgid "Финансы (USDT)"
+msgstr ""
+
+msgid "PNG/JPG, ≤ 1 МБ, рекомендуемый размер 88×31"
+msgstr ""
+
+msgid "Прочее"
+msgstr ""
+
+msgid "Зафиксировать выплату (обнулить баланс)"
+msgstr ""
+
+msgid "Тёмный баннер"
+msgstr ""
+
+msgid "Светлый баннер"
 msgstr ""
 
 msgid "Управление сайтом"
@@ -667,6 +741,69 @@ msgid "OG изображение"
 msgstr ""
 
 msgid "Twitter изображение"
+msgstr ""
+
+msgid "От прибыли"
+msgstr ""
+
+msgid "От полной суммы"
+msgstr ""
+
+msgid "Ссылка"
+msgstr ""
+
+msgid "Место на сайте"
+msgstr ""
+
+msgid "Включён"
+msgstr ""
+
+msgid "Баннер тёмный"
+msgstr ""
+
+msgid "Баннер светлый"
+msgstr ""
+
+msgid "Баннер (тёмный) из библиотеки"
+msgstr ""
+
+msgid "Баннер (светлый) из библиотеки"
+msgstr ""
+
+msgid "Партнёрский процент"
+msgstr ""
+
+msgid "Тип партнёрки"
+msgstr ""
+
+msgid "Текущий Баланс (USDT)"
+msgstr ""
+
+msgid "Сумма к выплате с момента последнего вывода."
+msgstr ""
+
+msgid "Общая прибыль (USDT)"
+msgstr ""
+
+msgid "Накопленная сумма за всё время."
+msgstr ""
+
+msgid "Дата последнего списания средств"
+msgstr ""
+
+msgid "Сумма последнего вывода (USDT)"
+msgstr ""
+
+msgid "Доступ к API"
+msgstr ""
+
+msgid "Комментарий"
+msgstr ""
+
+msgid "Мониторинг"
+msgstr ""
+
+msgid "Мониторинги"
 msgstr ""
 
 msgid "Запись чёрного списка"

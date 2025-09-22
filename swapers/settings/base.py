@@ -29,8 +29,6 @@ LANGUAGES = [
     ("uk", _("Ukrainian")),
 ]
 
-
-
 PARLER_DEFAULT_LANGUAGE_CODE = LANGUAGE_CODE
 PARLER_LANGUAGES = {
     None: [
@@ -44,7 +42,7 @@ PARLER_LANGUAGES = {
     ],
     "default": {
         "fallbacks": [LANGUAGE_CODE, "en"],  # сначала основной (ru), затем en
-        "hide_untranslated": True,           # не показывать пустые переводы
+        "hide_untranslated": True,  # не показывать пустые переводы
     },
 }
 
@@ -58,6 +56,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
+    "app_library.apps.AppLibraryConfig",
     "app_main.apps.AxesRusConfig",  # rate-limit/lockout
     "app_main.apps.AppMainConfig",  # <= чтобы сработал ready()
 

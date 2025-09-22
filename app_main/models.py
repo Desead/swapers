@@ -9,6 +9,8 @@ from django.utils.translation import gettext_lazy as _  # lazy — для verbos
 from django.utils.translation import gettext as _gettext  # runtime — для __str__ и сообщений
 from django.core.files.images import get_image_dimensions
 from parler.models import TranslatableModel, TranslatedFields
+from .models_monitoring import Monitoring
+from .models_security import BlocklistEntry
 
 
 class UserManager(BaseUserManager):

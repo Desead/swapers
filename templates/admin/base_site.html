@@ -1,9 +1,14 @@
 {% extends "admin/base.html" %}
-{% load i18n %}
+{% load static i18n %}
 
 {# опционально можешь переопределить <title> админки:
 {% block title %}{% trans "Admin" %}{% endblock %}
 #}
+
+{% block extrastyle %}
+  {{ block.super }}
+{#  <link rel="stylesheet" href="{% static 'admin/hide_app_groups.css' %}">#}
+{% endblock %}
 
 {# добавим селектор языка в правый верхний угол, рядом с userlinks #}
 {% block userlinks %}

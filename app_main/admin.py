@@ -1,10 +1,8 @@
 from __future__ import annotations
-from django.contrib.sites import admin   #   НЕ УДАЛЯТЬ. ЗАГРУЖАЕМ САЙТ ЧТОБЫ СМОГЛИ СНЯТЬ ЕГО РЕГИСТРАЦИЮ В АДМИНКЕ!
-from django import forms
+from django.contrib.sites import admin  # НЕ УДАЛЯТЬ. ЗАГРУЖАЕМ САЙТ ЧТОБЫ СМОГЛИ СНЯТЬ ЕГО РЕГИСТРАЦИЮ В АДМИНКЕ!
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
-from django.utils import timezone
 from django.db.models import Sum
 from axes.utils import reset as axes_reset
 from .models import SiteSetup
@@ -17,13 +15,43 @@ from django.utils.translation import get_language, gettext_lazy as _
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.shortcuts import redirect
-from django.db import models
 from parler.admin import TranslatableAdmin
 from parler.forms import TranslatableModelForm
 from django.core.exceptions import FieldDoesNotExist
-from django.contrib import admin
 from django.contrib.admin.sites import NotRegistered
 from django.contrib.sites.models import Site
+from app_main.models_monitoring import Monitoring
+from django.utils import timezone
+from decimal import Decimal
+from django import forms
+from django.contrib import admin
+from django.db import models
+
+
+class DecimalPlainWidget(forms.NumberInput):
+    """Показывает Decimal как фиксированное число (без экспоненты)."""
+
+    def __init__(self, *, decimal_places=None, **kwargs):
+        # self.decimal_places = decimal_places
+        self.decimal_places = 5
+        super().__init__(**kwargs)
+
+    def format_value(self, value):
+        if isinstance(value, Decimal):
+            places = self.decimal_places if self.decimal_places is not None else 2
+            q = Decimal(1).scaleb(-places)  # 1E-places
+            return format(value.quantize(q), "f")
+        return super().format_value(value)
+
+
+class DecimalFormatMixin:
+    """Подставляет DecimalPlainWidget для всех DecimalField в форме админки."""
+
+    def formfield_for_dbfield(self, db_field, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, **kwargs)
+        if isinstance(db_field, models.DecimalField) and formfield:
+            formfield.widget = DecimalPlainWidget(decimal_places=db_field.decimal_places)
+        return formfield
 
 
 User = get_user_model()
@@ -177,7 +205,7 @@ class SiteSetupAdminForm(TranslatableModelForm):
 
 
 @admin.register(SiteSetup)
-class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
+class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
     # Вкладки Parler
     change_form_template = "admin/parler/change_form.html"
     save_on_top = True
@@ -326,7 +354,7 @@ class SiteSetupAdmin(TranslatableAdmin, admin.ModelAdmin):
 
         (_("Служебное"), {
             "classes": ("wide",),
-            "fields": ("updated_at", ),
+            "fields": ("updated_at",),
         }),
     )
 
@@ -886,6 +914,102 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                 _axes_reset_safe(ip=o.ip_address, username=o.username)
 
         self._action_guard_and_reset(request, queryset, expected_type=_("Логин + IP"), do_reset=_do)
+
+
+@admin.register(Monitoring)
+class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
+    save_on_top = True
+
+    list_display = (
+        "name", "number", "is_active", "partner_type",
+        "percent", "balance_usdt", "total_profit_usdt",
+        "last_payout_at", "api_access",
+    )
+    autocomplete_fields = ()
+    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt","last_payout_at","last_payout_amount_usdt",)
+    list_filter = ("is_active", "partner_type", "api_access")
+    search_fields = ("name", "link")
+
+    fieldsets = (
+        (_("Основное"), {
+            "classes": ("wide",),
+            "fields": ("name", "link", "number", "is_active",),
+        }),
+
+        (_("Условия партнёрки"), {
+            "description": _(
+                "100% партнёру от прибыли значит вы отдадите всю прибыль и ничего не заработаете.<br> 100% партнёру от суммы, значит вы всю сумму отдадите партнёру и ещё должны совершить обмен клиенту"),
+            "classes": ("wide", "collapse"),
+            "fields": (("partner_type", "percent"),),
+        }),
+        (_("Финансы (USDT)"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("balance_usdt", "total_profit_usdt",),
+                ("last_payout_at", "last_payout_amount_usdt"),
+            ),
+        }),
+        (_("Баннер"), {
+            "description": _("PNG/JPG, ≤ 1 МБ, рекомендуемый размер 88×31"),
+            "classes": ("wide", "collapse"),
+            "fields": (
+                ("banner_dark_asset", "banner_dark_preview"),
+                ("banner_light_asset", "banner_light_preview"),
+            ),
+        }),
+        (_("Прочее"), {
+            "classes": ("wide", "collapse"),
+            "fields": ("api_access", "comment"),
+        }),
+    )
+
+    # Удобное действие: зафиксировать выплату — обнулить баланс и записать дату/сумму
+    @admin.action(description=_("Зафиксировать выплату (обнулить баланс)"))
+    def action_payout(self, request, queryset):
+        now = timezone.now()
+        updated = 0
+        for obj in queryset:
+            amount = obj.balance_usdt or Decimal("0")
+            obj.last_payout_amount_usdt = amount
+            obj.last_payout_at = now
+            obj.balance_usdt = Decimal("0")
+            obj.save(update_fields=["last_payout_amount_usdt", "last_payout_at", "balance_usdt"])
+            updated += 1
+        self.message_user(request, _(f"Выплата зафиксирована, записей обновлено: {updated}"))
+
+    actions = ("action_payout",)
+
+    @admin.display(description=_("Тёмный баннер"))
+    def banner_dark_preview(self, obj):
+        url = getattr(obj, "banner_dark_url", None)
+        if callable(url):
+            url = obj.banner_dark_url
+        if url:
+            return mark_safe(
+                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">')
+        return "—"
+
+    @admin.display(description=_("Светлый баннер"))
+    def banner_light_preview(self, obj):
+        url = getattr(obj, "banner_light_url", None)
+        if callable(url):
+            url = obj.banner_light_url
+        if url:
+            return mark_safe(
+                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">')
+        return "—"
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
+        if db_field.name in ("banner_dark_asset", "banner_light_asset"):
+            # один стиль для обоих списков
+            formfield.widget.attrs.update({
+                "style": "width:30%; min-width: 32rem;",  # широкие и одинаковые
+            })
+        return formfield
+
+
+
 
 try:
     admin.site.unregister(Site)
