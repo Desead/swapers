@@ -1,34 +1,28 @@
 from __future__ import annotations
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect
-from django.contrib import messages
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET
-from django.views.decorators.cache import cache_page
 from django.views.decorators.vary import vary_on_headers
-from django.core.cache import cache
 import re
 from django.http import HttpResponse
-from django.urls import reverse
 from django.contrib.sites.models import Site
-from django.utils.translation import override
 from django.conf import settings
-import xml.etree.ElementTree as ET
-
 from django.views.decorators.http import require_POST
 from django.core.cache import cache
 from django.urls import NoReverseMatch
 from allauth.account.models import EmailAddress
 from urllib.parse import urlencode
-
 from allauth.account.views import SignupView
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from .models import SiteSetup
+from .models_monitoring import Monitoring
+from django.db.models import Case, When, Value, IntegerField
 
 _OUTLINK_SALT = "outlinks.v1"
 _ALLOWED_SCHEMES = {"http", "https", "mailto", "tg", "tel"}
@@ -45,11 +39,22 @@ def home(request):
         resp["Retry-After"] = "3600"  # можно подстроить (в секундах)
         return resp
 
+    monitorings = (
+        Monitoring.objects
+        .filter(is_active=True)
+        .annotate(
+            is_best=Case(
+                When(name__icontains="bestchange", then=Value(1)),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("-is_best", "number", "id")  # Bestchange всегда первый, затем по порядку
+    )
     ctx = {
         "main_h1": setup.safe_translation_getter("main_h1", any_language=True) or "",
         "main_subtitle": setup.safe_translation_getter("main_subtitle", any_language=True) or "",
-        # если есть другие переводимые — по той же схеме:
-        # "field": setup.safe_translation_getter("field", any_language=True) or "",
+        "monitorings": monitorings,
     }
     return render(request, "home.html", ctx)
 

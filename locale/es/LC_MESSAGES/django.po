@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-22 15:18+0300\n"
+"POT-Creation-Date: 2025-09-22 19:59+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -758,12 +758,6 @@ msgstr ""
 msgid "Включён"
 msgstr ""
 
-msgid "Баннер тёмный"
-msgstr ""
-
-msgid "Баннер светлый"
-msgstr ""
-
 msgid "Баннер (тёмный) из библиотеки"
 msgstr ""
 
@@ -795,6 +789,9 @@ msgid "Сумма последнего вывода (USDT)"
 msgstr ""
 
 msgid "Доступ к API"
+msgstr ""
+
+msgid "Оставить отзыв о нас"
 msgstr ""
 
 msgid "Комментарий"

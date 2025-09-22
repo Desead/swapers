@@ -929,6 +929,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
     readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt","last_payout_at","last_payout_amount_usdt",)
     list_filter = ("is_active", "partner_type", "api_access")
     search_fields = ("name", "link")
+    list_editable = ("is_active","number", )
 
     fieldsets = (
         (_("Основное"), {
@@ -959,7 +960,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         }),
         (_("Прочее"), {
             "classes": ("wide", "collapse"),
-            "fields": ("api_access", "comment"),
+            "fields": ("api_access", "title","comment"),
         }),
     )
 

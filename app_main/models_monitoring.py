@@ -72,6 +72,7 @@ class Monitoring(models.Model):
     )
 
     api_access = models.BooleanField(_("Доступ к API"), default=False)
+    title=models.CharField(verbose_name=_("Оставить отзыв о нас"), max_length=120, null=True, blank=True, default=_("Оставить отзыв о нас"))
     comment = models.TextField(_("Комментарий"), blank=True, default="")
 
     class Meta:

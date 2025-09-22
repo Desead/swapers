@@ -440,7 +440,7 @@ class SiteSetup(TranslatableModel):
     # --- [8] Комиссия обменника ---
     fee_percent = models.DecimalField(
         verbose_name=_("Комиссия обменника, %"),
-        max_digits=5, decimal_places=2,
+        max_digits=20, decimal_places=8,
         default=0.50,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text=_("Процент с каждой сделки (0–100)."),
