@@ -1,11 +1,8 @@
-# app_main/middleware_csp_fallback.py
 from __future__ import annotations
 import secrets
 from typing import List, Tuple
-
 from django.conf import settings
 from django.utils.deprecation import MiddlewareMixin
-
 from .services.site_setup import get_site_setup
 
 

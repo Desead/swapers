@@ -9,7 +9,7 @@ from django.contrib.auth import logout
 from django.http import HttpResponseRedirect
 from django.utils import timezone
 from django.utils.deprecation import MiddlewareMixin
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _t
 
 from django_otp import devices_for_user
 
@@ -93,7 +93,7 @@ class AdminSessionTimeoutMiddleware:
                     delta = (now - last).total_seconds()
                     if delta > minutes * 60:
                         logout(request)
-                        messages.warning(request, _("Сессия админки завершена из-за отсутствия активности."))
+                        messages.warning(request, _t("Сессия админки завершена из-за отсутствия активности."))
                         login_url = f"{admin_prefix}login/?next={quote(request.get_full_path())}"
                         from django.shortcuts import redirect
                         return redirect(login_url)

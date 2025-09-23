@@ -4,13 +4,13 @@ from django.apps import apps as django_apps
 from django.contrib.admin.sites import NotRegistered
 from django.db.models.signals import post_migrate
 from importlib import import_module
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _t
 
 
 class AppMainConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "app_main"
-    verbose_name = _("Управление сайтом")
+    verbose_name = _t("Управление сайтом")
 
     def ready(self):
         # подключаем сигналы (внутри файла нет запросов при импорте)
@@ -99,5 +99,5 @@ class AxesRusConfig(AxesBaseConfig):
     """
     name = "axes"
     label = "axes"
-    verbose_name = _("Блокировки входа")
+    verbose_name = _t("Блокировки входа")
     default_auto_field = "django.db.models.AutoField"

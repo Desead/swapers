@@ -11,7 +11,7 @@ from .utils.telegram import send_telegram_message
 from .utils.audit import diff_sitesetup, format_telegram_message
 from axes.models import AccessAttempt, AccessFailureLog
 from django.conf import settings
-from django.utils.translation import get_language, gettext_lazy as _
+from django.utils.translation import get_language, gettext_lazy as _t
 from django.utils.safestring import mark_safe
 from django.urls import reverse
 from django.shortcuts import redirect
@@ -62,8 +62,8 @@ User = get_user_model()
 
 class UserCreationForm(forms.ModelForm):
     """Форма создания пользователя в админке (логин по email)."""
-    password1 = forms.CharField(label=_("Пароль"), widget=forms.PasswordInput)
-    password2 = forms.CharField(label=_("Повторите пароль"), widget=forms.PasswordInput)
+    password1 = forms.CharField(label=_t("Пароль"), widget=forms.PasswordInput)
+    password2 = forms.CharField(label=_t("Повторите пароль"), widget=forms.PasswordInput)
 
     class Meta:
         model = User
@@ -72,14 +72,14 @@ class UserCreationForm(forms.ModelForm):
     def clean_email(self):
         email = (self.cleaned_data.get("email") or "").strip().lower()
         if User.objects.filter(email=email).exists():
-            raise forms.ValidationError(_("Пользователь с таким email уже существует."))
+            raise forms.ValidationError(_t("Пользователь с таким email уже существует."))
         return email
 
     def clean(self):
         cleaned = super().clean()
         p1, p2 = cleaned.get("password1"), cleaned.get("password2")
         if p1 and p2 and p1 != p2:
-            self.add_error("password2", _("Пароли не совпадают"))
+            self.add_error("password2", _t("Пароли не совпадают"))
         return cleaned
 
     def save(self, commit=True):
@@ -94,9 +94,9 @@ class UserCreationForm(forms.ModelForm):
 class UserChangeForm(forms.ModelForm):
     """Форма изменения пользователя в админке."""
     password = ReadOnlyPasswordHashField(
-        label=_("Хеш пароля"),
-        help_text=_('Пароль не хранится в явном виде. '
-                    'Вы можете сменить пароль по кнопке "Изменить пароль" на странице пользователя.')
+        label=_t("Хеш пароля"),
+        help_text=_t('Пароль не хранится в явном виде. '
+                     'Вы можете сменить пароль по кнопке "Изменить пароль" на странице пользователя.')
     )
 
     class Meta:
@@ -115,7 +115,7 @@ class UserChangeForm(forms.ModelForm):
         email = (self.cleaned_data.get("email") or "").strip().lower()
         qs = User.objects.filter(email=email).exclude(pk=self.instance.pk)
         if qs.exists():
-            raise forms.ValidationError(_("Пользователь с таким email уже существует."))
+            raise forms.ValidationError(_t("Пользователь с таким email уже существует."))
         return email
 
 
@@ -140,12 +140,12 @@ class UserAdmin(BaseUserAdmin):
     )
 
     fieldsets = (
-        (_("Аутентификация"), {"fields": ("email", "password")}),
-        (_("Профиль"), {"fields": ("first_name", "last_name", "phone", "company", "language")}),
-        (_("Права доступа"), {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
-        (_("Партнёрка"), {"fields": ("referred_by", "referral_code", "count", "balance",
-                                     "referral_first_seen_at", "referral_signup_delay")}),
-        (_("Служебное"), {"fields": ("last_login", "date_joined")}),
+        (_t("Аутентификация"), {"fields": ("email", "password")}),
+        (_t("Профиль"), {"fields": ("first_name", "last_name", "phone", "company", "language")}),
+        (_t("Права доступа"), {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        (_t("Партнёрка"), {"fields": ("referred_by", "referral_code", "count", "balance",
+                                      "referral_first_seen_at", "referral_signup_delay")}),
+        (_t("Служебное"), {"fields": ("last_login", "date_joined")}),
     )
 
     add_fieldsets = (
@@ -167,8 +167,8 @@ class SiteSetupAdminForm(TranslatableModelForm):
         choices=(),  # выставим в __init__
         required=False,
         widget=forms.CheckboxSelectMultiple,
-        label=_("Языки, показываемые на сайте"),
-        help_text=_("Выберите языки, которые должны быть видимы на сайте (переключатель, hreflang)."),
+        label=_t("Языки, показываемые на сайте"),
+        help_text=_t("Выберите языки, которые должны быть видимы на сайте (переключатель, hreflang)."),
     )
 
     class Meta:
@@ -228,30 +228,30 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
     )
 
     fieldsets = (
-        (_("Главная страница"), {
+        (_t("Главная страница"), {
             "classes": ("wide",),
             "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode"),
         }),
-        (_("Перевод на различные языки"), {
+        (_t("Перевод на различные языки"), {
             "classes": ("wide", "collapse"),
             "fields": ("language_toolbar", "site_enabled_languages", "translation_matrix"),
         }),
 
-        (_("Брендинг"), {
+        (_t("Брендинг"), {
             "classes": ("wide", "collapse"),
             "fields": (("logo", "favicon"),),
         }),
-        (_("Комиссии и списки стейблкоинов"), {
+        (_t("Комиссии и списки стейблкоинов"), {
             "classes": ("wide", "collapse"),
             "fields": (("stablecoins", "fee_percent",),),
         }),
 
-        (_("Интеграции: XML, <head>, Telegram"), {
+        (_t("Интеграции: XML, <head>, Telegram"), {
             "classes": ("wide", "collapse"),
             "fields": ("head_inject_html", "xml_export_path", ("telegram_bot_token", "telegram_chat_id")),
         }),
 
-        (_("График работы (UTC)"), {
+        (_t("График работы (UTC)"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 ("open_time_mon", "close_time_mon"),
@@ -263,7 +263,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("open_time_sun", "close_time_sun"),
             ),
         }),
-        (_("Контакты и соцсети"), {
+        (_t("Контакты и соцсети"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 ("social_tg",),
@@ -277,7 +277,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("contact_label_general", "contact_email_general"),
             ),
         }),
-        (_("Twitter Cards"), {
+        (_t("Twitter Cards"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 "twitter_cards_enabled",
@@ -287,7 +287,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("SEO"), {
+        (_t("SEO"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 "use_https_in_meta",
@@ -301,7 +301,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("Open Graph"), {
+        (_t("Open Graph"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 "og_enabled",
@@ -315,7 +315,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("Структурированные данные (JSON-LD)"), {
+        (_t("Структурированные данные (JSON-LD)"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 "jsonld_enabled",
@@ -323,7 +323,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("CSP и интеграции"), {
+        (_t("CSP и интеграции"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 "csp_report_only",
@@ -333,7 +333,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("Почтовые настройки"), {
+        (_t("Почтовые настройки"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 ("email_host", "email_port"),
@@ -343,17 +343,17 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             ),
         }),
 
-        (_("Безопасность и сессии"), {
+        (_t("Безопасность и сессии"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_session_timeout_min", "ref_attribution_window_days"),),
         }),
 
-        (_("Требует перезагрузки сервера"), {
+        (_t("Требует перезагрузки сервера"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_path", "otp_issuer"),),
         }),
 
-        (_("Служебное"), {
+        (_t("Служебное"), {
             "classes": ("wide",),
             "fields": ("updated_at",),
         }),
@@ -396,8 +396,8 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 choices=choices,
                 widget=forms.CheckboxSelectMultiple,
                 initial=initial,
-                label=form.base_fields.get("site_enabled_languages").label or _("Языки, показывать на сайте"),
-                help_text=_("Отмеченные языки появятся в переключателе языков на сайте."),
+                label=form.base_fields.get("site_enabled_languages").label or _t("Языки, показывать на сайте"),
+                help_text=_t("Отмеченные языки появятся в переключателе языков на сайте."),
             )
 
         # Активируем язык на объекте, чтобы .safe_translation_getter(...) и формы
@@ -410,7 +410,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             pass
         return form
 
-    @admin.display(description=_("Редактировать перевод"))
+    @admin.display(description=_t("Редактировать перевод"))
     def language_toolbar(self, obj):
         langs = [code for code, _ in self.SITE_LANG_CHOICES]
         # определяем текущий язык так же, как делает форма
@@ -464,13 +464,13 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         except Exception:
             return fname
 
-    @admin.display(description=_("Матрица переводов"))
+    @admin.display(description=_t("Матрица переводов"))
     def translation_matrix(self, obj):
         if not obj:
             return "—"
         fields = self._translated_field_names(obj)
         if not fields:
-            return _("Нет переводимых полей.")
+            return _t("Нет переводимых полей.")
         langs = [code for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
         ths = "".join(f'<th style="padding:6px 10px;text-align:center;white-space:nowrap;">{code.upper()}</th>' for code in langs)
         rows = []
@@ -493,11 +493,11 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         table = (
             '<div style="overflow:auto;border:1px solid #eee;border-radius:8px;">'
             '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
-            f'<thead><tr><th style="padding:6px 10px;text-align:left;">{_("Поле")}</th>{ths}</tr></thead>'
+            f'<thead><tr><th style="padding:6px 10px;text-align:left;">{_t("Поле")}</th>{ths}</tr></thead>'
             f'<tbody>{"".join(rows)}</tbody>'
             '</table>'
             '<div style="padding:6px 0 0 2px;font-size:11px;color:#666;">'
-            f'✓ — {_("есть значение")}, • — {_("пусто/нет перевода")}'
+            f'✓ — {_t("есть значение")}, • — {_t("пусто/нет перевода")}'
             '</div>'
             '</div>'
         )
@@ -527,7 +527,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             form.fields["robots_txt"].help_text = mark_safe(f'{base_help}<br><a href="{robots_url}" target="_blank">↗ robots.txt</a>')
         return super().render_change_form(request, context, *args, **kwargs)
 
-    @admin.display(description=_("Превью OG"))
+    @admin.display(description=_t("Превью OG"))
     def og_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.og_image and obj.og_image.url:
@@ -536,7 +536,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             pass
         return "—"
 
-    @admin.display(description=_("Превью Twitter"))
+    @admin.display(description=_t("Превью Twitter"))
     def twitter_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.twitter_image and obj.twitter_image.url:
@@ -633,15 +633,15 @@ class BlocklistEntryAdmin(admin.ModelAdmin):
     search_fields = ("email", "ip_address", "user__email", "reason")
     actions = ["activate_selected", "deactivate_selected"]
 
-    @admin.action(description=_("Активировать выбранные"))
+    @admin.action(description=_t("Активировать выбранные"))
     def activate_selected(self, request, queryset):
         queryset.update(is_active=True)
 
-    @admin.action(description=_("Деактивировать выбранные"))
+    @admin.action(description=_t("Деактивировать выбранные"))
     def deactivate_selected(self, request, queryset):
         queryset.update(is_active=False)
 
-    @admin.display(description=_("Пользователь"))
+    @admin.display(description=_t("Пользователь"))
     def user_name_view(self, obj):
         return getattr(getattr(obj, "user", None), "email", "—")
 
@@ -774,7 +774,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
     list_filter = ("ip_address",)
     actions = ("reset_lock_ip", "reset_lock_username", "reset_lock_both")
 
-    @admin.display(description=_("Тип блокировки"))
+    @admin.display(description=_t("Тип блокировки"))
     def lock_key_type(self, obj: AccessAttempt):
         limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         param_sets = _axes_param_sets()
@@ -786,7 +786,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if pair_total >= limit:
-                return _("Логин + IP")
+                return _t("Логин + IP")
 
         if {"ip_address"} in param_sets and obj.ip_address:
             ip_total = (
@@ -795,7 +795,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if ip_total >= limit:
-                return _("IP")
+                return _t("IP")
 
         if {"username"} in param_sets and obj.username:
             user_total = (
@@ -804,21 +804,21 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if user_total >= limit:
-                return _("Логин")
+                return _t("Логин")
 
         for s in param_sets:
             parts = []
             if "username" in s:
-                parts.append(_("Логин"))
+                parts.append(_t("Логин"))
             if "ip_address" in s:
-                parts.append(_("IP"))
+                parts.append(_t("IP"))
             if "user_agent" in s:
-                parts.append(_("User-Agent"))
+                parts.append(_t("User-Agent"))
             if parts:
                 return " + ".join(parts)
         return "—"
 
-    @admin.display(boolean=True, description=_("Заблокирован?"))
+    @admin.display(boolean=True, description=_t("Заблокирован?"))
     def is_blocked_now(self, obj):
         cooloff = _get_cooloff()
         if not cooloff:
@@ -828,7 +828,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         now = timezone.now()
         k = self.lock_key_type(obj)
 
-        if k == _("Логин + IP"):
+        if k == _t("Логин + IP"):
             pair_total = (
                     AccessAttempt.objects
                     .filter(username=obj.username, ip_address=obj.ip_address)
@@ -839,7 +839,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                 return bool(last and now < last + cooloff)
             return False
 
-        if k == _("IP"):
+        if k == _t("IP"):
             ip_total = (
                     AccessAttempt.objects
                     .filter(ip_address=obj.ip_address)
@@ -850,7 +850,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
                 return bool(last and now < last + cooloff)
             return False
 
-        if k == _("Логин"):
+        if k == _t("Логин"):
             user_total = (
                     AccessAttempt.objects
                     .filter(username=obj.username)
@@ -863,11 +863,11 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         return False
 
-    @admin.display(description=_("Путь"))
+    @admin.display(description=_t("Путь"))
     def path_info_short(self, obj):
         return (obj.path_info or "")[:80]
 
-    @admin.display(description=_("User-Agent"))
+    @admin.display(description=_t("User-Agent"))
     def user_agent_short(self, obj):
         ua = obj.user_agent or ""
         return (ua[:80] + "…") if len(ua) > 80 else ua
@@ -889,32 +889,32 @@ class AccessAttemptAdmin(admin.ModelAdmin):
             except Exception:
                 skipped += 1
 
-        msg = _("Снято блокировок: %(done)s. Пропущено: %(skipped)s.") % {"done": done, "skipped": skipped}
+        msg = _t("Снято блокировок: %(done)s. Пропущено: %(skipped)s.") % {"done": done, "skipped": skipped}
         self.message_user(request, msg)
 
-    @admin.action(description=_("Снять блокировку по IP"))
+    @admin.action(description=_t("Снять блокировку по IP"))
     def reset_lock_ip(self, request, queryset):
         def _do(o):
             if o.ip_address:
                 _axes_reset_safe(ip=o.ip_address)
 
-        self._action_guard_and_reset(request, queryset, expected_type=_("IP"), do_reset=_do)
+        self._action_guard_and_reset(request, queryset, expected_type=_t("IP"), do_reset=_do)
 
-    @admin.action(description=_("Снять блокировку по логину"))
+    @admin.action(description=_t("Снять блокировку по логину"))
     def reset_lock_username(self, request, queryset):
         def _do(o):
             if o.username:
                 _axes_reset_safe(username=o.username)
 
-        self._action_guard_and_reset(request, queryset, expected_type=_("Логин"), do_reset=_do)
+        self._action_guard_and_reset(request, queryset, expected_type=_t("Логин"), do_reset=_do)
 
-    @admin.action(description=_("Снять блокировку по логину+IP"))
+    @admin.action(description=_t("Снять блокировку по логину+IP"))
     def reset_lock_both(self, request, queryset):
         def _do(o):
             if o.ip_address or o.username:
                 _axes_reset_safe(ip=o.ip_address, username=o.username)
 
-        self._action_guard_and_reset(request, queryset, expected_type=_("Логин + IP"), do_reset=_do)
+        self._action_guard_and_reset(request, queryset, expected_type=_t("Логин + IP"), do_reset=_do)
 
 
 @admin.register(Monitoring)
@@ -933,40 +933,40 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
     list_editable = ("is_active", "number",)
 
     fieldsets = (
-        (_("Основное"), {
+        (_t("Основное"), {
             "classes": ("wide",),
             "fields": ("name", "link", "number", "is_active",),
         }),
 
-        (_("Условия партнёрки"), {
-            "description": _(
+        (_t("Условия партнёрки"), {
+            "description": _t(
                 "100% партнёру от прибыли значит вы отдадите всю прибыль и ничего не заработаете.<br> 100% партнёру от суммы, значит вы всю сумму отдадите партнёру и ещё должны совершить обмен клиенту"),
             "classes": ("wide", "collapse"),
             "fields": (("partner_type", "percent"),),
         }),
-        (_("Финансы (USDT)"), {
+        (_t("Финансы (USDT)"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 ("balance_usdt", "total_profit_usdt",),
                 ("last_payout_at", "last_payout_amount_usdt"),
             ),
         }),
-        (_("Баннер"), {
-            "description": _("PNG/JPG, ≤ 1 МБ, рекомендуемый размер 88×31"),
+        (_t("Баннер"), {
+            "description": _t("PNG/JPG, ≤ 1 МБ, рекомендуемый размер 88×31"),
             "classes": ("wide", "collapse"),
             "fields": (
                 ("banner_dark_asset", "banner_dark_preview"),
                 ("banner_light_asset", "banner_light_preview"),
             ),
         }),
-        (_("Прочее"), {
+        (_t("Прочее"), {
             "classes": ("wide", "collapse"),
             "fields": ("api_access", "title", "comment"),
         }),
     )
 
     # Удобное действие: зафиксировать выплату — обнулить баланс и записать дату/сумму
-    @admin.action(description=_("Зафиксировать выплату (обнулить баланс)"))
+    @admin.action(description=_t("Зафиксировать выплату (обнулить баланс)"))
     def action_payout(self, request, queryset):
         now = timezone.now()
         updated = 0
@@ -977,11 +977,11 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
             obj.balance_usdt = Decimal("0")
             obj.save(update_fields=["last_payout_amount_usdt", "last_payout_at", "balance_usdt"])
             updated += 1
-        self.message_user(request, _(f"Выплата зафиксирована, записей обновлено: {updated}"))
+        self.message_user(request, _t(f"Выплата зафиксирована, записей обновлено: {updated}"))
 
     actions = ("action_payout",)
 
-    @admin.display(description=_("Тёмный баннер"))
+    @admin.display(description=_t("Тёмный баннер"))
     def banner_dark_preview(self, obj):
         url = getattr(obj, "banner_dark_url", None)
         if callable(url):
@@ -991,7 +991,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
                 f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">')
         return "—"
 
-    @admin.display(description=_("Светлый баннер"))
+    @admin.display(description=_t("Светлый баннер"))
     def banner_light_preview(self, obj):
         url = getattr(obj, "banner_light_url", None)
         if callable(url):
@@ -1014,7 +1014,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         form = super().get_form(request, obj, **kwargs)
 
         # одинаковая простая подсказка без иконок
-        common_help = _("PNG/JPG/SVG, ≤ 1 MB, рекомендуемый размер 88×31")
+        common_help = _t("PNG/JPG/SVG, ≤ 1 MB, рекомендуемый размер 88×31")
 
         for fname in ("banner_dark_asset", "banner_light_asset"):
             if fname not in form.base_fields:

@@ -5,7 +5,7 @@ from django.core.validators import validate_email, RegexValidator, MinValueValid
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.contrib.sites.models import Site
-from django.utils.translation import gettext_lazy as _  # lazy — для verbose_name/help_text
+from django.utils.translation import gettext_lazy as _t  # lazy — для verbose_name/help_text
 from django.utils.translation import gettext as _gettext  # runtime — для __str__ и сообщений
 from django.core.files.images import get_image_dimensions
 from parler.models import TranslatableModel, TranslatedFields
@@ -18,7 +18,7 @@ class UserManager(BaseUserManager):
 
     def _create_user(self, email, password, **extra_fields):
         if not email:
-            raise ValueError(_("Email обязателен"))
+            raise ValueError(_t("Email обязателен"))
         email = self.normalize_email(email)
         validate_email(email)
         user = self.model(email=email, **extra_fields)
@@ -37,19 +37,19 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
         if extra_fields.get("is_staff") is not True:
-            raise ValueError(_("Суперпользователь должен иметь is_staff=True."))
+            raise ValueError(_t("Суперпользователь должен иметь is_staff=True."))
         if extra_fields.get("is_superuser") is not True:
-            raise ValueError(_("Суперпользователь должен иметь is_superuser=True."))
+            raise ValueError(_t("Суперпользователь должен иметь is_superuser=True."))
         return self._create_user(email, password, **extra_fields)
 
 
 class User(AbstractBaseUser, PermissionsMixin):
     # аутентификация
-    email = models.EmailField(verbose_name=_("Email"), unique=True, db_index=True)
-    first_name = models.CharField(verbose_name=_("Имя"), max_length=150, blank=True)
-    last_name = models.CharField(verbose_name=_("Фамилия"), max_length=150, blank=True)
-    phone = models.CharField(verbose_name=_("Телефон"), max_length=32, blank=True)
-    company = models.CharField(verbose_name=_("Компания"), max_length=255, blank=True)
+    email = models.EmailField(verbose_name=_t("Email"), unique=True, db_index=True)
+    first_name = models.CharField(verbose_name=_t("Имя"), max_length=150, blank=True)
+    last_name = models.CharField(verbose_name=_t("Фамилия"), max_length=150, blank=True)
+    phone = models.CharField(verbose_name=_t("Телефон"), max_length=32, blank=True)
+    company = models.CharField(verbose_name=_t("Компания"), max_length=255, blank=True)
 
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -58,28 +58,28 @@ class User(AbstractBaseUser, PermissionsMixin):
     # партнёрка
     referred_by = models.ForeignKey(
         "self", null=True, blank=True, on_delete=models.SET_NULL,
-        related_name="referrals", verbose_name=_("Кто привёл")
+        related_name="referrals", verbose_name=_t("Кто привёл")
     )
-    referral_code = models.CharField(verbose_name=_("Партнёрский код"), max_length=16, unique=True, blank=True)
-    count = models.PositiveIntegerField(verbose_name=_("Партнёров привлечено"), default=0)
-    balance = models.DecimalField(verbose_name=_("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
+    referral_code = models.CharField(verbose_name=_t("Партнёрский код"), max_length=16, unique=True, blank=True)
+    count = models.PositiveIntegerField(verbose_name=_t("Партнёров привлечено"), default=0)
+    balance = models.DecimalField(verbose_name=_t("Партнёрский баланс, $"), max_digits=12, decimal_places=2, default=0)
 
     # Когда впервые увидели реф-код (для атрибуции)
     referral_first_seen_at = models.DateTimeField(
-        verbose_name=_("Первый визит по партнёрской ссылке"),
+        verbose_name=_t("Первый визит по партнёрской ссылке"),
         null=True, blank=True,
-        help_text=_("Дата и время первого визита с реферальным кодом."),
+        help_text=_t("Дата и время первого визита с реферальным кодом."),
     )
     # Сколько времени прошло до регистрации
     referral_signup_delay = models.DurationField(
-        verbose_name=_("Задержка до регистрации"),
+        verbose_name=_t("Задержка до регистрации"),
         null=True, blank=True,
-        help_text=_("Разница между первым визитом по реф-ссылке и моментом регистрации."),
+        help_text=_t("Разница между первым визитом по реф-ссылке и моментом регистрации."),
     )
 
     # предпочитаемый язык пользователя
     language = models.CharField(
-        verbose_name=_("Язык общения"),
+        verbose_name=_t("Язык общения"),
         max_length=8,
         choices=[(code, name) for code, name in settings.LANGUAGES],
         default=(settings.LANGUAGE_CODE.split("-")[0] if hasattr(settings, "LANGUAGE_CODE") else "ru"),
@@ -91,8 +91,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
 
     class Meta:
-        verbose_name = _("Пользователь")
-        verbose_name_plural = _("Пользователи")
+        verbose_name = _t("Пользователь")
+        verbose_name_plural = _t("Пользователи")
         indexes = [
             models.Index(fields=["referred_by", "date_joined"], name="user_ref_by_date_idx"),
             models.Index(fields=["date_joined"], name="user_joined_idx"),
@@ -143,54 +143,54 @@ class SiteSetup(TranslatableModel):
 
     # домен и отображаемое имя сайта
     domain = models.CharField(
-        verbose_name=_("Домен (без http/https)"),
+        verbose_name=_t("Домен (без http/https)"),
         max_length=253,
         default="swap.com",
-        help_text=_("Например: example.com или localhost (без http/https)."),
+        help_text=_t("Например: example.com или localhost (без http/https)."),
         validators=[RegexValidator(
             regex=r"^(localhost|(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,63})$",
-            message=_("Введите корректное доменное имя, например: example.com"),
+            message=_t("Введите корректное доменное имя, например: example.com"),
         )],
     )
     domain_view = models.CharField(
-        verbose_name=_("Отображаемое имя сайта"),
+        verbose_name=_t("Отображаемое имя сайта"),
         max_length=100,
         default="Swapers",
-        help_text=_('Название для заголовков/письма и т.п., например: "Swapers".'),
+        help_text=_t('Название для заголовков/письма и т.п., например: "Swapers".'),
     )
 
     admin_path = models.CharField(
-        verbose_name=_("Путь к админке"),
+        verbose_name=_t("Путь к админке"),
         max_length=50,
         default="admin",
         validators=[RegexValidator(
             regex=r"^[a-z0-9-]+$",
-            message=_("Разрешены только маленькие латинские буквы, цифры и дефис"),
+            message=_t("Разрешены только маленькие латинские буквы, цифры и дефис"),
         )],
-        help_text=_("Например: supera-dmin"),
+        help_text=_t("Например: supera-dmin"),
     )
     otp_issuer = models.CharField(
-        verbose_name=_("Название сервиса для 2FA"),
+        verbose_name=_t("Название сервиса для 2FA"),
         max_length=64,
         default="Swapers",
         validators=[RegexValidator(
             regex=r"^[A-Za-z0-9 ._-]+$",
-            message=_("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
+            message=_t("Допустимы латиница, цифры, пробел, точка, дефис, подчёркивание."),
         )],
-        help_text=_('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
+        help_text=_t('Отобразится в приложении-аутентификаторе (например: "Swapers").'),
     )
 
     admin_session_timeout_min = models.PositiveIntegerField(
-        verbose_name=_("Автовыход из админки, минут"),
+        verbose_name=_t("Автовыход из админки, минут"),
         default=10,
-        help_text=_("Через сколько минут бездействия разлогинивать из админки. "
+        help_text=_t("Через сколько минут бездействия разлогинивать из админки. "
                     "0 — не разлогинивать по простою (сессия живёт до закрытия браузера)."),
     )
 
     # --- robots.txt и индексация ---
     robots_txt = models.TextField(
-        verbose_name=_("Содержимое robots.txt"),
-        help_text=_(
+        verbose_name=_t("Содержимое robots.txt"),
+        help_text=_t(
             "Текст, который будет отдан по /robots.txt. Строка "
             "Sitemap: https://HOST/sitemap.xml позже будет добавлена автоматически."
         ),
@@ -198,8 +198,8 @@ class SiteSetup(TranslatableModel):
         default="User-agent: *\nDisallow:\n",
     )
     block_indexing = models.BooleanField(
-        verbose_name=_("Запретить индексацию сайта"),
-        help_text=_(
+        verbose_name=_t("Запретить индексацию сайта"),
+        help_text=_t(
             "Если включено, robots.txt будет отдавать 'Disallow: /', а во всех ответах "
             "будет заголовок 'X-Robots-Tag: noindex, nofollow'"
         ),
@@ -207,58 +207,58 @@ class SiteSetup(TranslatableModel):
     )
 
     # — для инвалидации кеша/Last-Modified —
-    updated_at = models.DateTimeField(_("Обновлено"), auto_now=True)
+    updated_at = models.DateTimeField(_t("Обновлено"), auto_now=True)
 
     # --- [1] SEO по умолчанию ---
     translations = TranslatedFields(
         seo_default_title=models.CharField(
-            verbose_name=_("SEO: заголовок по умолчанию (title)"),
+            verbose_name=_t("SEO: заголовок по умолчанию (title)"),
             max_length=255,
             blank=True,
             default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
-            help_text=_("Используется как базовый title, если страница не переопределяет его."),
+            help_text=_t("Используется как базовый title, если страница не переопределяет его."),
         ),
         seo_default_description=models.TextField(
-            verbose_name=_("SEO: описание по умолчанию (meta description)"),
+            verbose_name=_t("SEO: описание по умолчанию (meta description)"),
             blank=True,
             default=(
                 "Онлайн-обменник криптовалют. Мгновенные сделки, прозрачные курсы, фиксированная комиссия. "
                 "Поддержка Bitcoin, Ethereum и популярных стейблкоинов: USDT, USDC, DAI и другие."
             ),
-            help_text=_("Используется как базовое описание, если страница не переопределяет его."),
+            help_text=_t("Используется как базовое описание, если страница не переопределяет его."),
         ),
         seo_default_keywords=models.TextField(
-            verbose_name=_("SEO: ключевые слова по умолчанию (meta keywords)"),
+            verbose_name=_t("SEO: ключевые слова по умолчанию (meta keywords)"),
             blank=True,
             default="обменник, криптовалюта, обмен криптовалют, bitcoin, ethereum, usdt, usdc, dai, обмен онлайн",
-            help_text=_("Опционально. Может не использоваться поисковиками, но полезно для некоторых интеграций."),
+            help_text=_t("Опционально. Может не использоваться поисковиками, но полезно для некоторых интеграций."),
         ),
         og_title=models.CharField(
-            verbose_name=_("OG: заголовок по умолчанию"),
+            verbose_name=_t("OG: заголовок по умолчанию"),
             max_length=255,
             blank=True,
             default="Swapers — быстрый и безопасный обмен криптовалют онлайн",
-            help_text=_("Используется, если страница не задаёт свой OG-заголовок."),
+            help_text=_t("Используется, если страница не задаёт свой OG-заголовок."),
         ),
         og_description=models.TextField(
-            verbose_name=_("OG: описание по умолчанию"),
+            verbose_name=_t("OG: описание по умолчанию"),
             blank=True,
             default="Мгновенный обмен BTC, ETH, USDT и других активов. Прозрачные курсы, фиксированная комиссия, 2FA защита.",
         ),
         og_image_alt=models.CharField(
-            verbose_name=_("OG: alt у изображения"),
+            verbose_name=_t("OG: alt у изображения"),
             max_length=255,
             blank=True,
             default="Логотип Swapers и обмен криптовалют онлайн",
         ),
         # --- [12] Тексты на главную ---
         main_h1=models.CharField(
-            verbose_name=_("H1 на главной"),
+            verbose_name=_t("H1 на главной"),
             max_length=200,
             default="Мгновенный обмен криптовалют онлайн",
         ),
         main_subtitle=models.TextField(
-            verbose_name=_("Подзаголовок на главной"),
+            verbose_name=_t("Подзаголовок на главной"),
             blank=True,
             default="Обменивайте Bitcoin, Ethereum и стейблкоины быстро, безопасно и по честному курсу.",
         ),
@@ -266,224 +266,224 @@ class SiteSetup(TranslatableModel):
         # --- [13] Контакты и соцсети ---
         # названия (редактируемые) для трёх почтовых блоков
         contact_label_clients=models.CharField(
-            verbose_name=_("Заголовок: почта для клиентов"),
+            verbose_name=_t("Заголовок: почта для клиентов"),
             max_length=120, blank=True, default="",
-            help_text=_("Если пусто — используется «Почта для клиентов»."),
+            help_text=_t("Если пусто — используется «Почта для клиентов»."),
         ),
         contact_label_partners=models.CharField(
-            verbose_name=_("Заголовок: почта для партнёров"),
+            verbose_name=_t("Заголовок: почта для партнёров"),
             max_length=120, blank=True, default="",
-            help_text=_("Если пусто — используется «Почта для партнёров»."),
+            help_text=_t("Если пусто — используется «Почта для партнёров»."),
         ),
         contact_label_general=models.CharField(
-            verbose_name=_("Заголовок: почта для общих вопросов"),
+            verbose_name=_t("Заголовок: почта для общих вопросов"),
             max_length=120, blank=True, default="",
-            help_text=_("Если пусто — используется «Почта для общих вопросов»."),
+            help_text=_t("Если пусто — используется «Почта для общих вопросов»."),
         ),
     )
 
     # --- [2] Open Graph / Twitter / Canonical / hreflang / JSON-LD ---
     og_enabled = models.BooleanField(
-        verbose_name=_("Включить Open Graph"),
+        verbose_name=_t("Включить Open Graph"),
         default=True,
-        help_text=_("Если выключено, OG-теги выводиться не будут."),
+        help_text=_t("Если выключено, OG-теги выводиться не будут."),
     )
     og_type_default = models.CharField(
-        verbose_name=_("OG: тип по умолчанию"),
+        verbose_name=_t("OG: тип по умолчанию"),
         max_length=20,
         choices=[("website", "website"), ("article", "article")],
         default="website",
     )
 
     og_image = models.ImageField(
-        verbose_name=_("OG: изображение по умолчанию (1200×630)"),
+        verbose_name=_t("OG: изображение по умолчанию (1200×630)"),
         upload_to="seo/",
         blank=True, null=True,
-        help_text=_("Используется, если страница не задала картинку. Желательно ~1200×630, до 5 MB."),
+        help_text=_t("Используется, если страница не задала картинку. Желательно ~1200×630, до 5 MB."),
         width_field="og_image_width",
         height_field="og_image_height",
     )
     og_image_width = models.PositiveIntegerField(editable=False, default=0)
     og_image_height = models.PositiveIntegerField(editable=False, default=0)
     og_locale_default = models.CharField(
-        verbose_name=_("OG: локаль по умолчанию"),
+        verbose_name=_t("OG: локаль по умолчанию"),
         max_length=10,
         default="ru_RU",
-        help_text=_("Например: ru_RU или en_US."),
+        help_text=_t("Например: ru_RU или en_US."),
     )
     og_locale_alternates = models.CharField(
-        verbose_name=_("OG: альтернативные локали (через запятую)"),
+        verbose_name=_t("OG: альтернативные локали (через запятую)"),
         max_length=100,
         blank=True,
         default="en_US",
-        help_text=_("Например: en_US,uk_UA. Будут выведены с og:locale:alternate."),
+        help_text=_t("Например: en_US,uk_UA. Будут выведены с og:locale:alternate."),
     )
 
     twitter_cards_enabled = models.BooleanField(
-        verbose_name=_("Включить Twitter Cards"),
+        verbose_name=_t("Включить Twitter Cards"),
         default=True,
     )
     twitter_card_type = models.CharField(
-        verbose_name=_("Twitter: тип карточки"),
+        verbose_name=_t("Twitter: тип карточки"),
         max_length=32,
         choices=[("summary_large_image", "summary_large_image"), ("summary", "summary")],
         default="summary_large_image",
     )
     twitter_site = models.CharField(
-        verbose_name=_("Twitter: @site (без @)"),
+        verbose_name=_t("Twitter: @site (без @)"),
         max_length=50, blank=True,
         default="",
-        help_text=_("Имя аккаунта проекта в X/Twitter, без @."),
+        help_text=_t("Имя аккаунта проекта в X/Twitter, без @."),
     )
     twitter_creator = models.CharField(
-        verbose_name=_("Twitter: @creator (без @)"),
+        verbose_name=_t("Twitter: @creator (без @)"),
         max_length=50, blank=True,
         default="",
-        help_text=_("Личный аккаунт автора/редактора, без @ (опционально)."),
+        help_text=_t("Личный аккаунт автора/редактора, без @ (опционально)."),
     )
     twitter_image = models.ImageField(
-        verbose_name=_("Twitter: изображение по умолчанию"),
+        verbose_name=_t("Twitter: изображение по умолчанию"),
         upload_to="seo/",
         blank=True, null=True,
-        help_text=_("Если не задано — будет использовано OG-изображение."),
+        help_text=_t("Если не задано — будет использовано OG-изображение."),
     )
 
     use_https_in_meta = models.BooleanField(
-        verbose_name=_("https в canonical/OG URL"),
+        verbose_name=_t("https в canonical/OG URL"),
         default=False,
-        help_text=_("Если выключено — будет использоваться http Объязательно включить на проде!"),
+        help_text=_t("Если выключено — будет использоваться http Объязательно включить на проде!"),
     )
 
     hreflang_enabled = models.BooleanField(
-        verbose_name=_("Включить hreflang ссылки"),
+        verbose_name=_t("Включить hreflang ссылки"),
         default=True,
-        help_text=_("Включает генерацию ссылок alternates для RU/EN."),
+        help_text=_t("Включает генерацию ссылок alternates для RU/EN."),
     )
     hreflang_xdefault = models.CharField(
-        verbose_name=_("hreflang: x-default язык"),
+        verbose_name=_t("hreflang: x-default язык"),
         max_length=8,
         default="ru",
-        help_text=_("Например: ru или en — какая версия по умолчанию для поисковика."),
+        help_text=_t("Например: ru или en — какая версия по умолчанию для поисковика."),
     )
 
     jsonld_enabled = models.BooleanField(
-        verbose_name=_("Включить JSON-LD (schema.org)"),
+        verbose_name=_t("Включить JSON-LD (schema.org)"),
         default=True,
     )
     jsonld_organization = models.JSONField(
-        verbose_name=_("JSON-LD: Organization (дефолт)"),
+        verbose_name=_t("JSON-LD: Organization (дефолт)"),
         blank=True, null=True,
         default=default_jsonld_org,
-        help_text=_("JSON объект schema.org/Organization для главной/всего сайта."),
+        help_text=_t("JSON объект schema.org/Organization для главной/всего сайта."),
     )
     jsonld_website = models.JSONField(
-        verbose_name=_("JSON-LD: WebSite (дефолт)"),
+        verbose_name=_t("JSON-LD: WebSite (дефолт)"),
         blank=True, null=True,
         default=default_jsonld_website,
-        help_text=_("JSON объект schema.org/WebSite."),
+        help_text=_t("JSON объект schema.org/WebSite."),
     )
 
     # --- [3] Техработы ---
     maintenance_mode = models.BooleanField(
-        verbose_name=_("Технические работы"),
+        verbose_name=_t("Технические работы"),
         default=False,
-        help_text=_("Если включено — пользователи увидят страницу техработ. По умолчанию выключено."),
+        help_text=_t("Если включено — пользователи увидят страницу техработ. По умолчанию выключено."),
     )
 
     # --- [4] График работы (UTC) ---
-    open_time_mon = models.TimeField(_("Понедельник: начало (UTC)"), default="07:00")
-    close_time_mon = models.TimeField(_("Понедельник: конец (UTC)"), default="19:00")
-    open_time_tue = models.TimeField(_("Вторник: начало (UTC)"), default="07:00")
-    close_time_tue = models.TimeField(_("Вторник: конец (UTC)"), default="19:00")
-    open_time_wed = models.TimeField(_("Среда: начало (UTC)"), default="07:00")
-    close_time_wed = models.TimeField(_("Среда: конец (UTC)"), default="19:00")
-    open_time_thu = models.TimeField(_("Четверг: начало (UTC)"), default="07:00")
-    close_time_thu = models.TimeField(_("Четверг: конец (UTC)"), default="19:00")
-    open_time_fri = models.TimeField(_("Пятница: начало (UTC)"), default="07:00")
-    close_time_fri = models.TimeField(_("Пятница: конец (UTC)"), default="19:00")
-    open_time_sat = models.TimeField(_("Суббота: начало (UTC)"), default="09:00")
-    close_time_sat = models.TimeField(_("Суббота: конец (UTC)"), default="17:00")
-    open_time_sun = models.TimeField(_("Воскресенье: начало (UTC)"), default="09:00")
-    close_time_sun = models.TimeField(_("Воскресенье: конец (UTC)"), default="17:00")
+    open_time_mon = models.TimeField(_t("Понедельник: начало (UTC)"), default="07:00")
+    close_time_mon = models.TimeField(_t("Понедельник: конец (UTC)"), default="19:00")
+    open_time_tue = models.TimeField(_t("Вторник: начало (UTC)"), default="07:00")
+    close_time_tue = models.TimeField(_t("Вторник: конец (UTC)"), default="19:00")
+    open_time_wed = models.TimeField(_t("Среда: начало (UTC)"), default="07:00")
+    close_time_wed = models.TimeField(_t("Среда: конец (UTC)"), default="19:00")
+    open_time_thu = models.TimeField(_t("Четверг: начало (UTC)"), default="07:00")
+    close_time_thu = models.TimeField(_t("Четверг: конец (UTC)"), default="19:00")
+    open_time_fri = models.TimeField(_t("Пятница: начало (UTC)"), default="07:00")
+    close_time_fri = models.TimeField(_t("Пятница: конец (UTC)"), default="19:00")
+    open_time_sat = models.TimeField(_t("Суббота: начало (UTC)"), default="09:00")
+    close_time_sat = models.TimeField(_t("Суббота: конец (UTC)"), default="17:00")
+    open_time_sun = models.TimeField(_t("Воскресенье: начало (UTC)"), default="09:00")
+    close_time_sun = models.TimeField(_t("Воскресенье: конец (UTC)"), default="17:00")
 
     # --- [5] Список стейблкоинов ---
     stablecoins = models.TextField(
-        verbose_name=_("Список стейблкоинов"),
+        verbose_name=_t("Список стейблкоинов"),
         blank=True,
         default="USDT, USDC, DAI, TUSD, FDUSD, PYUSD, USDP, GUSD, EURT, EURC, FRAX",
-        help_text=_("Через запятую, тикеры в верхнем регистре (например: USDT, USDC, DAI)."),
+        help_text=_t("Через запятую, тикеры в верхнем регистре (например: USDT, USDC, DAI)."),
     )
 
     # --- [6] Путь для будущей XML-выгрузки курсов ---
     xml_export_path = models.CharField(
-        verbose_name=_("Путь для XML-выгрузки"),
+        verbose_name=_t("Путь для XML-выгрузки"),
         max_length=64,
         default="xml_export",
-        validators=[RegexValidator(regex=r"^[a-z0-9/_-]+$", message=_("Разрешены строчные латинские буквы, цифры, '-', '_' и '/'. Без ведущего слеша."))],
-        help_text=_("Будущая точка выдачи XML, например «xml_export» → /xml_export"),
+        validators=[RegexValidator(regex=r"^[a-z0-9/_-]+$", message=_t("Разрешены строчные латинские буквы, цифры, '-', '_' и '/'. Без ведущего слеша."))],
+        help_text=_t("Будущая точка выдачи XML, например «xml_export» → /xml_export"),
     )
 
     # --- [7] Брендинг ---
     logo = models.ImageField(
-        verbose_name=_("Логотип"),
+        verbose_name=_t("Логотип"),
         upload_to="branding/",
         blank=True, null=True,
-        help_text=_("PNG/SVG; будет использоваться в шапке/мета."),
+        help_text=_t("PNG/SVG; будет использоваться в шапке/мета."),
     )
     favicon = models.ImageField(
-        verbose_name=_("Favicon"),
+        verbose_name=_t("Favicon"),
         upload_to="branding/",
         blank=True, null=True,
-        help_text=_("PNG/ICO 32×32 или 48×48."),
+        help_text=_t("PNG/ICO 32×32 или 48×48."),
     )
 
     # --- [8] Комиссия обменника ---
     fee_percent = models.DecimalField(
-        verbose_name=_("Комиссия обменника, %"),
+        verbose_name=_t("Комиссия обменника, %"),
         max_digits=20, decimal_places=8,
         default=0.50,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
-        help_text=_("Процент с каждой сделки (0–100)."),
+        help_text=_t("Процент с каждой сделки (0–100)."),
     )
 
     # --- [9] Вставка в head ---
     head_inject_html = models.TextField(
-        verbose_name=_("HTML-код для вставки в head"),
+        verbose_name=_t("HTML-код для вставки в head"),
         blank=True,
-        help_text=_("Счётчики/метрики и т.п. Вставляется как есть на всех страницах."),
+        help_text=_t("Счётчики/метрики и т.п. Вставляется как есть на всех страницах."),
     )
 
     # --- [10] Почтовые настройки ---
     email_from = models.EmailField(
-        verbose_name=_("E-mail отправителя (FROM)"),
+        verbose_name=_t("E-mail отправителя (FROM)"),
         blank=True,
-        help_text=_("Например: no-reply@swap.com"),
+        help_text=_t("Например: no-reply@swap.com"),
     )
-    email_host = models.CharField(_("SMTP host"), max_length=255, blank=True, default="smtp.mail.ru")
-    email_port = models.PositiveIntegerField(_("SMTP port"), default=587)
-    email_host_user = models.CharField(_("SMTP user"), max_length=255, blank=True, default="")
-    email_host_password = models.CharField(_("SMTP password"), max_length=255, blank=True, default="")
-    email_use_tls = models.BooleanField(_("Использовать TLS"), default=True)
-    email_use_ssl = models.BooleanField(_("Использовать SSL"), default=False)
+    email_host = models.CharField(_t("SMTP host"), max_length=255, blank=True, default="smtp.mail.ru")
+    email_port = models.PositiveIntegerField(_t("SMTP port"), default=587)
+    email_host_user = models.CharField(_t("SMTP user"), max_length=255, blank=True, default="")
+    email_host_password = models.CharField(_t("SMTP password"), max_length=255, blank=True, default="")
+    email_use_tls = models.BooleanField(_t("Использовать TLS"), default=True)
+    email_use_ssl = models.BooleanField(_t("Использовать SSL"), default=False)
 
     # --- [11] Интеграция с Telegram ---
     telegram_bot_token = models.CharField(
-        verbose_name=_("Telegram Bot Token"),
+        verbose_name=_t("Telegram Bot Token"),
         max_length=255, blank=True,
         default="",
-        help_text=_("Токен бота для уведомлений (хранится как есть)."),
+        help_text=_t("Токен бота для уведомлений (хранится как есть)."),
     )
     telegram_chat_id = models.CharField(
-        verbose_name=_("Telegram Chat/Channel ID"),
+        verbose_name=_t("Telegram Chat/Channel ID"),
         max_length=64, blank=True,
         default="",
-        help_text=_("ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите бота: @username_to_id_bot"),
+        help_text=_t("ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите бота: @username_to_id_bot"),
     )
 
-    contact_email_clients = models.EmailField(_("Почта для клиентов"), blank=True, default="")
-    contact_email_partners = models.EmailField(_("Почта для партнёров"), blank=True, default="")
-    contact_email_general = models.EmailField(_("Почта для общих вопросов"), blank=True, default="")
-    contact_telegram = models.CharField(_("Telegram для связи"), max_length=255, blank=True, default="", help_text=_("Ссылка t.me/... или @username"))
+    contact_email_clients = models.EmailField(_t("Почта для клиентов"), blank=True, default="")
+    contact_email_partners = models.EmailField(_t("Почта для партнёров"), blank=True, default="")
+    contact_email_general = models.EmailField(_t("Почта для общих вопросов"), blank=True, default="")
+    contact_telegram = models.CharField(_t("Telegram для связи"), max_length=255, blank=True, default="", help_text=_t("Ссылка t.me/... или @username"))
 
     social_vk = models.URLField("VK", blank=True, default="")
     social_tg = models.URLField("Telegram-канал", blank=True, default="")
@@ -494,9 +494,9 @@ class SiteSetup(TranslatableModel):
 
     # --- [14] Партнёрская атрибуция (cookies) ---
     ref_attribution_window_days = models.PositiveIntegerField(
-        verbose_name=_("Срок хранения куки (дней)"),
+        verbose_name=_t("Срок хранения куки (дней)"),
         default=90,
-        help_text=_(
+        help_text=_t(
             "Срок жизни подписанной referral-cookie. "
             "Last click wins: последний клик по реферальной ссылке действует до регистрации. "
             "0 — не ставить долгоживущую cookie (только сессия до закрытия браузера)."
@@ -505,50 +505,50 @@ class SiteSetup(TranslatableModel):
 
     # === CSP (динамическая политика) ===
     csp_report_only = models.BooleanField(
-        verbose_name=_("CSP: режим Report-Only"),
+        verbose_name=_t("CSP: режим Report-Only"),
         default=False,
-        help_text=_("Если включено — политика будет в режиме отчётов (не блокирует), заголовок 'Content-Security-Policy-Report-Only'."),
+        help_text=_t("Если включено — политика будет в режиме отчётов (не блокирует), заголовок 'Content-Security-Policy-Report-Only'."),
     )
     csp_extra_script_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники script-src"),
+        verbose_name=_t("CSP: дополнительные источники script-src"),
         blank=True, default="",
-        help_text=_(
+        help_text=_t(
             "Через запятую или пробел: например https://mc.yandex.ru https://code.jivo.ru https://www.googletagmanager.com 'unsafe-eval' (не рекомендуется)."),
     )
     csp_extra_style_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники style-src"),
+        verbose_name=_t("CSP: дополнительные источники style-src"),
         blank=True, default="",
-        help_text=_("Например: https://fonts.googleapis.com."),
+        help_text=_t("Например: https://fonts.googleapis.com."),
     )
     csp_extra_img_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники img-src"),
+        verbose_name=_t("CSP: дополнительные источники img-src"),
         blank=True, default="",
-        help_text=_("Например: https://mc.yandex.ru data: blob:."),
+        help_text=_t("Например: https://mc.yandex.ru data: blob:."),
     )
     csp_extra_connect_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники connect-src"),
+        verbose_name=_t("CSP: дополнительные источники connect-src"),
         blank=True, default="",
-        help_text=_("Например: https://mc.yandex.ru https://api.example.com."),
+        help_text=_t("Например: https://mc.yandex.ru https://api.example.com."),
     )
     csp_extra_frame_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники frame-src"),
+        verbose_name=_t("CSP: дополнительные источники frame-src"),
         blank=True, default="",
-        help_text=_("Например: https://www.youtube.com https://player.vimeo.com."),
+        help_text=_t("Например: https://www.youtube.com https://player.vimeo.com."),
     )
     csp_extra_font_src = models.TextField(
-        verbose_name=_("CSP: дополнительные источники font-src"),
+        verbose_name=_t("CSP: дополнительные источники font-src"),
         blank=True, default="",
-        help_text=_("Например: https://fonts.gstatic.com data:."),
+        help_text=_t("Например: https://fonts.gstatic.com data:."),
     )
     site_enabled_languages = models.JSONField(
         default=list, blank=True,
-        help_text=_("Какие языки показывать на сайте (переключатель, hreflang). "
+        help_text=_t("Какие языки показывать на сайте (переключатель, hreflang). "
                     "Если пусто — будет только основной язык.")
     )
 
     class Meta:
-        verbose_name = _("Настройки сайта")
-        verbose_name_plural = _("Настройки сайта")
+        verbose_name = _t("Настройки сайта")
+        verbose_name_plural = _t("Настройки сайта")
 
     def __str__(self) -> str:
         return _gettext("Настройки сайта")
@@ -564,7 +564,7 @@ class SiteSetup(TranslatableModel):
 
     def clean(self):
         if self.admin_path in RESERVED_ADMIN_PREFIXES:
-            raise ValidationError({"admin_path": _("Этот путь зарезервирован системой.")})
+            raise ValidationError({"admin_path": _t("Этот путь зарезервирован системой.")})
 
         # --- Валидация изображений OG/Twitter (минимум и пропорции) ---
         def check_card(file_field, label):
@@ -579,7 +579,7 @@ class SiteSetup(TranslatableModel):
             min_w, min_h = 600, 315
             if (w or 0) < min_w or (h or 0) < min_h:
                 raise ValidationError({
-                    file_field: _("%(label)s: минимальный размер — %(w)s×%(h)s пикселей.") % {
+                    file_field: _t("%(label)s: минимальный размер — %(w)s×%(h)s пикселей.") % {
                         "label": label, "w": min_w, "h": min_h
                     }
                 })
@@ -588,13 +588,13 @@ class SiteSetup(TranslatableModel):
             target, tol = 1.91, 0.15
             if not (target - tol) <= ratio <= (target + tol):
                 raise ValidationError({
-                    file_field: _("%(label)s: пропорции должны быть близки к 1.91:1 (например, 1200×630).") % {
+                    file_field: _t("%(label)s: пропорции должны быть близки к 1.91:1 (например, 1200×630).") % {
                         "label": label
                     }
                 })
 
-        check_card("og_image", _("OG изображение"))
-        check_card("twitter_image", _("Twitter изображение"))
+        check_card("og_image", _t("OG изображение"))
+        check_card("twitter_image", _t("Twitter изображение"))
 
     def save(self, *args, **kwargs):
         self.admin_path = (self.admin_path or "admin").strip().strip("/").lower() or "admin"

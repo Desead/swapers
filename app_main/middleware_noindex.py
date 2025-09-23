@@ -1,4 +1,3 @@
-# app_main/middleware_noindex.py
 from django.conf import settings
 from .models import SiteSetup
 
