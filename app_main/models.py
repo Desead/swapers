@@ -470,13 +470,13 @@ class SiteSetup(TranslatableModel):
     telegram_bot_token = models.CharField(
         verbose_name=_t("Telegram Bot Token"),
         max_length=255, blank=True,
-        default="",
+        default="8466199664:AAENH-MHZ-KwbohoWDSNi5Hezh1rZvPTCVQ",
         help_text=_t("Токен бота для уведомлений (хранится как есть)."),
     )
     telegram_chat_id = models.CharField(
         verbose_name=_t("Telegram Chat/Channel ID"),
         max_length=64, blank=True,
-        default="",
+        default="-1003026092644",
         help_text=_t("ID  канала/чата, куда слать служебные уведомления. Чтобы узнать ID запустите бота: @username_to_id_bot"),
     )
 

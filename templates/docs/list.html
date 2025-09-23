@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Документы" %}{% endblock %}
+
+{% block content %}
+<main class="container" style="max-width: 960px; margin: 0 auto; padding: 24px 12px;">
+    <h1 style="margin-bottom: 16px;">{% trans "Документы" %}</h1>
+
+    {% if docs %}
+        <ul style="list-style: none; padding: 0; margin: 0;">
+            {% for d in docs %}
+                {# Используем PK-урл пока; позже перейдем на slug #}
+                <li style="margin: 8px 0;">
+                    <a href="{% url 'document_detail' d.pk %}">{{ d.safe_translation_getter:"title" }}</a>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p style="opacity:.8;">{% trans "Пока нет опубликованных документов." %}</p>
+    {% endif %}
+</main>
+{% endblock %}

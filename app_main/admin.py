@@ -1,3 +1,4 @@
+# admin.py
 from __future__ import annotations
 from django.contrib.sites import admin  # НЕ УДАЛЯТЬ. ЗАГРУЖАЕМ САЙТ ЧТОБЫ СМОГЛИ СНЯТЬ ЕГО РЕГИСТРАЦИЮ В АДМИНКЕ!
 from django.contrib.auth import get_user_model
@@ -24,23 +25,120 @@ from app_main.models_monitoring import Monitoring
 from django.utils import timezone
 from decimal import Decimal
 from django import forms
-from django.contrib import admin
+from django.contrib import admin as djadmin
 from django.db import models
 from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+from .models_documents import Document
+from django.utils.text import slugify
+
+
+# --- UNIFIED PARLER LANGUAGE CHIPS MIXIN -------------------------------------
+class ParlerLanguageChipsMixin:
+    """Единый UI для переключения языков (Parler) без правок шаблонов."""
+
+    def _lang_codes(self):
+        return [code.lower() for code, _ in getattr(settings, "LANGUAGES", (("ru", "Russian"),))]
+
+    def get_form_language(self, request, obj=None):
+        # 1) Язык из query (?language=xx) — всегда самый высокий приоритет
+        lang = request.GET.get("language")
+        if lang:
+            if hasattr(request, "session"):
+                request.session["PARLER_CURRENT_LANGUAGE"] = lang
+            return lang
+
+        # 2) Если мы СОЗДАЁМ документ (obj is None) — всегда дефолт проекта
+        if obj is None:
+            return getattr(settings, "LANGUAGE_CODE", "ru")
+
+        # 3) Иначе: из сессии (чипы), далее — текущая активная локаль, далее — дефолт
+        if hasattr(request, "session"):
+            return request.session.get("PARLER_CURRENT_LANGUAGE") or (get_language() or settings.LANGUAGE_CODE)
+        return get_language() or settings.LANGUAGE_CODE
+
+    @djadmin.display(description=_t("Языки"))
+    def language_toolbar(self, obj=None):
+        cur = (get_language() or settings.LANGUAGE_CODE or "ru").lower()
+        chips = []
+        base_css = (
+            "display:inline-block;margin:0 6px 6px 0;padding:2px 10px;"
+            "border-radius:999px;font-size:12px;text-decoration:none;"
+        )
+        for code in self._lang_codes():
+            try:
+                has = obj.has_translation(code) if obj else False
+            except Exception:
+                has = False
+            bg = "#2e7d32" if has else "#9e9e9e"  # зелёный / серый
+            ring = "box-shadow:0 0 0 2px #00000022 inset;" if code == cur else ""
+            chips.append(
+                f'<a href="?language={code}" '
+                f'style="{base_css}background:{bg};color:#fff;{ring}">{code.upper()}</a>'
+            )
+        return mark_safe("".join(chips))
+
+    def get_readonly_fields(self, request, obj=None):
+        ro = list(super().get_readonly_fields(request, obj))
+        if "language_toolbar" not in ro:
+            ro.append("language_toolbar")
+        return ro
+
+    def get_fieldsets(self, request, obj=None):
+        fs = list(super().get_fieldsets(request, obj))
+        if not any("language_toolbar" in (f[1].get("fields") or ()) for f in fs):
+            fs.insert(0, (_t("Языки"), {"fields": ("language_toolbar",), "classes": ("wide",)}))
+        return fs
+
+    def _append_language_query(self, request, response):
+        """
+        Всегда дописываем ?language=<текущий> к редиректу после save,
+        чтобы форма/чипы и Parler были в одном языке.
+        """
+        try:
+            is_redirect = getattr(response, "status_code", 200) in (301, 302, 303, 307, 308)
+            has_location = "Location" in response
+        except Exception:
+            return response
+        if not (is_redirect and has_location):
+            return response
+
+        # берём язык так же, как и форма его берёт
+        lang = self.get_form_language(request) or (get_language() or settings.LANGUAGE_CODE)
+        if not lang:
+            return response
+
+        from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+        parts = urlparse(response["Location"])
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        if query.get("language") != lang:
+            query["language"] = lang
+            response["Location"] = urlunparse(parts._replace(query=urlencode(query)))
+        return response
+
+    def response_change(self, request, obj):
+        return self._append_language_query(request, super().response_change(request, obj))
+
+    def response_post_save_add(self, request, obj):
+        return self._append_language_query(request, super().response_post_save_add(request, obj))
+
+    def response_post_save_change(self, request, obj):
+        return self._append_language_query(request, super().response_post_save_change(request, obj))
+
+
+# --- /UNIFIED MIXIN ----------------------------------------------------------
 
 
 class DecimalPlainWidget(forms.NumberInput):
     """Показывает Decimal как фиксированное число (без экспоненты)."""
 
     def __init__(self, *, decimal_places=None, **kwargs):
-        # self.decimal_places = decimal_places
-        self.decimal_places = 5
+        self.decimal_places = 5 if decimal_places is None else decimal_places
         super().__init__(**kwargs)
 
     def format_value(self, value):
         if isinstance(value, Decimal):
-            places = self.decimal_places if self.decimal_places is not None else 2
-            q = Decimal(1).scaleb(-places)  # 1E-places
+            q = Decimal(1).scaleb(-self.decimal_places)  # 1E-places
             return format(value.quantize(q), "f")
         return super().format_value(value)
 
@@ -61,7 +159,6 @@ User = get_user_model()
 # ======================= Пользователи =======================
 
 class UserCreationForm(forms.ModelForm):
-    """Форма создания пользователя в админке (логин по email)."""
     password1 = forms.CharField(label=_t("Пароль"), widget=forms.PasswordInput)
     password2 = forms.CharField(label=_t("Повторите пароль"), widget=forms.PasswordInput)
 
@@ -92,7 +189,6 @@ class UserCreationForm(forms.ModelForm):
 
 
 class UserChangeForm(forms.ModelForm):
-    """Форма изменения пользователя в админке."""
     password = ReadOnlyPasswordHashField(
         label=_t("Хеш пароля"),
         help_text=_t('Пароль не хранится в явном виде. '
@@ -119,9 +215,8 @@ class UserChangeForm(forms.ModelForm):
         return email
 
 
-@admin.register(User)
+@djadmin.register(User)
 class UserAdmin(BaseUserAdmin):
-    """Админка для кастомной модели User (логин по email)."""
     add_form = UserCreationForm
     form = UserChangeForm
     model = User
@@ -161,10 +256,10 @@ class UserAdmin(BaseUserAdmin):
 
 
 # ======================= Настройки сайта (SiteSetup) =======================
+
 class SiteSetupAdminForm(TranslatableModelForm):
-    # Рисуем чекбоксы вместо JSON-текста
     site_enabled_languages = forms.MultipleChoiceField(
-        choices=(),  # выставим в __init__
+        choices=(),
         required=False,
         widget=forms.CheckboxSelectMultiple,
         label=_t("Языки, показываемые на сайте"),
@@ -177,23 +272,19 @@ class SiteSetupAdminForm(TranslatableModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # choices берем из настроек
         self.fields["site_enabled_languages"].choices = list(
             getattr(settings, "LANGUAGES", (("ru", "Russian"),))
         )
-
         inst = kwargs.get("instance")
         if inst is not None:
             initial = inst.site_enabled_languages or inst.get_enabled_languages()
         else:
-            # форма "добавить" нам не нужна, но пусть работает
             default = (getattr(settings, "LANGUAGE_CODE", "ru") or "ru").split("-")[0].lower()
             initial = [default]
         self.fields["site_enabled_languages"].initial = initial
 
     def clean_site_enabled_languages(self):
         langs = self.cleaned_data.get("site_enabled_languages") or []
-        # нормализуем: только известные языки, в нижнем регистре, без дублей
         known = [code for code, _ in getattr(settings, "LANGUAGES", ())]
         known_set = {c.lower() for c in known}
         out, seen = [], set()
@@ -205,9 +296,8 @@ class SiteSetupAdminForm(TranslatableModelForm):
         return out
 
 
-@admin.register(SiteSetup)
-class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
-    # Вкладки Parler
+@djadmin.register(SiteSetup)
+class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableAdmin, djadmin.ModelAdmin):
     change_form_template = "admin/parler/change_form.html"
     save_on_top = True
     form = SiteSetupAdminForm
@@ -216,7 +306,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         models.URLField: {"assume_scheme": "https"},
     }
 
-    # из settings.LANGUAGES (какие вообще есть в проекте)
     SITE_LANG_CHOICES = tuple(getattr(settings, "LANGUAGES", (("ru", "Russian"),)))
 
     readonly_fields = (
@@ -224,7 +313,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         "og_image_width", "og_image_height",
         "og_image_preview", "twitter_image_preview",
         "translation_matrix",
-        "language_toolbar",  # ← панель языков вверху формы
+        "language_toolbar",
     )
 
     fieldsets = (
@@ -236,7 +325,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             "classes": ("wide", "collapse"),
             "fields": ("language_toolbar", "site_enabled_languages", "translation_matrix"),
         }),
-
         (_t("Брендинг"), {
             "classes": ("wide", "collapse"),
             "fields": (("logo", "favicon"),),
@@ -245,12 +333,10 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             "classes": ("wide", "collapse"),
             "fields": (("stablecoins", "fee_percent",),),
         }),
-
         (_t("Интеграции: XML, <head>, Telegram"), {
             "classes": ("wide", "collapse"),
             "fields": ("head_inject_html", "xml_export_path", ("telegram_bot_token", "telegram_chat_id")),
         }),
-
         (_t("График работы (UTC)"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -286,7 +372,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("twitter_image", "twitter_image_preview"),
             ),
         }),
-
         (_t("SEO"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -300,7 +385,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 "seo_default_keywords",
             ),
         }),
-
         (_t("Open Graph"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -314,7 +398,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("og_locale_alternates",),
             ),
         }),
-
         (_t("Структурированные данные (JSON-LD)"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -322,7 +405,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("jsonld_organization", "jsonld_website"),
             ),
         }),
-
         (_t("CSP и интеграции"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -332,7 +414,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 ("csp_extra_frame_src", "csp_extra_font_src"),
             ),
         }),
-
         (_t("Почтовые настройки"), {
             "classes": ("wide", "collapse"),
             "fields": (
@@ -342,98 +423,20 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 "email_use_tls", "email_use_ssl",
             ),
         }),
-
         (_t("Безопасность и сессии"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_session_timeout_min", "ref_attribution_window_days"),),
         }),
-
         (_t("Требует перезагрузки сервера"), {
             "classes": ("wide", "collapse"),
             "fields": (("admin_path", "otp_issuer"),),
         }),
-
         (_t("Служебное"), {
             "classes": ("wide",),
             "fields": ("updated_at",),
         }),
     )
 
-    # ---------- Язык формы ----------
-    # в SiteSetupAdmin
-    def get_form_language(self, request, obj=None):
-        """
-        Возвращает текущий язык вкладки формы Parler.
-        Должно работать даже если у request нет session (как в тестах с RequestFactory).
-        """
-        lang = request.GET.get("language")
-
-        session = getattr(request, "session", None)
-        if lang:
-            if session is not None:
-                session["PARLER_CURRENT_LANGUAGE"] = lang
-            return lang
-
-        if session is not None:
-            return session.get("PARLER_CURRENT_LANGUAGE") or (get_language() or settings.LANGUAGE_CODE)
-
-        # Фолбэк без сессии (напр., в тестах)
-        return get_language() or settings.LANGUAGE_CODE
-
-    def get_form(self, request, obj=None, **kwargs):
-        form = super().get_form(request, obj, **kwargs)
-        # --- render site_enabled_languages as checkboxes ---
-        if "site_enabled_languages" in form.base_fields:
-            choices = list(getattr(settings, "LANGUAGES", ()))
-            # текущее значение как initial
-            initial = []
-            if obj and isinstance(getattr(obj, "site_enabled_languages", None), list):
-                valid = {c for c, _ in choices}
-                initial = [c for c in obj.site_enabled_languages if c in valid]
-
-            form.base_fields["site_enabled_languages"] = forms.MultipleChoiceField(
-                required=False,
-                choices=choices,
-                widget=forms.CheckboxSelectMultiple,
-                initial=initial,
-                label=form.base_fields.get("site_enabled_languages").label or _t("Языки, показывать на сайте"),
-                help_text=_t("Отмеченные языки появятся в переключателе языков на сайте."),
-            )
-
-        # Активируем язык на объекте, чтобы .safe_translation_getter(...) и формы
-        # показывали нужную локаль без сюрпризов.
-        try:
-            lang = self.get_form_language(request)
-            if obj is not None and hasattr(obj, "set_current_language"):
-                obj.set_current_language(lang)
-        except Exception:
-            pass
-        return form
-
-    @admin.display(description=_t("Редактировать перевод"))
-    def language_toolbar(self, obj):
-        langs = [code for code, _ in self.SITE_LANG_CHOICES]
-        # определяем текущий язык так же, как делает форма
-        if hasattr(self, "request") and self.request is not None:
-            cur = (self.get_form_language(self.request, obj) or settings.LANGUAGE_CODE).lower()
-        else:
-            cur = (get_language() or settings.LANGUAGE_CODE).lower()
-
-        chips = []
-        base_style = (
-            "display:inline-block;margin:2px 6px 2px 0;padding:4px 10px;border-radius:999px;"
-            "font-size:12px;text-decoration:none;border:1px solid #ddd;"
-        )
-        for code in langs:
-            is_cur = (code.lower() == cur)
-            style = base_style + (
-                "background:#2e7d32;color:#fff;border-color:#2e7d32;" if is_cur
-                else "background:#f5f5f5;color:#333;"
-            )
-            chips.append(f'<a href="?language={code}" style="{style}">{code.upper()}</a>')
-        return mark_safe("".join(chips))
-
-    # ---------- Таблица/статус переводов (оставляем как было) ----------
     def _translated_field_names(self, obj):
         try:
             return list(getattr(obj._parler_meta, "_fields_to_model", {}).keys())
@@ -441,22 +444,13 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             return []
 
     def _human_field_label(self, obj, fname: str) -> str:
-        """
-        Возвращает человекочитаемый ярлык поля:
-        - сначала пытаемся достать verbose_name с основного объекта;
-        - если поля там нет, берём verbose_name с translation-модели Parler;
-        - в крайнем случае — возвращаем имя поля.
-        """
         try:
             f = obj._meta.get_field(fname)
             return getattr(f, "verbose_name", fname) or fname
         except FieldDoesNotExist:
             pass
         except Exception:
-            # на случай неожиданных ситуаций не падаем
             pass
-
-        # Поле не на основной модели -> пробуем на translation-модели Parler
         try:
             tr_model = obj._parler_meta.get_model_by_field(fname)
             f = tr_model._meta.get_field(fname)
@@ -464,7 +458,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         except Exception:
             return fname
 
-    @admin.display(description=_t("Матрица переводов"))
+    @djadmin.display(description=_t("Матрица переводов"))
     def translation_matrix(self, obj):
         if not obj:
             return "—"
@@ -484,12 +478,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                 bg = "#e8f5e9" if ok else "#ffebee"
                 color = "#2e7d32" if ok else "#b71c1c"
                 tds.append(f'<td style="padding:6px 10px;text-align:center;background:{bg};color:{color};">{sym}</td>')
-            name_cell = (
-                f'<td style="padding:6px 10px;white-space:nowrap;">'
-                f'{verbose}<br>'
-                f'</td>'
-            )
-            rows.append(f'<tr>{name_cell}{"".join(tds)}</tr>')
+            rows.append(f'<tr><td style="padding:6px 10px;white-space:nowrap;">{verbose}</td>{"".join(tds)}</tr>')
         table = (
             '<div style="overflow:auto;border:1px solid #eee;border-radius:8px;">'
             '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
@@ -503,7 +492,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         )
         return mark_safe(table)
 
-    # ---------- Прочее оставляем как было ----------
     def has_add_permission(self, request):
         return False
 
@@ -516,7 +504,6 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
         return redirect(url)
 
     def render_change_form(self, request, context, *args, **kwargs):
-        # сохраним request, чтобы language_toolbar знал текущий язык
         self.request = request
         scheme = "https" if not settings.DEBUG else "http"
         domain = request.get_host()
@@ -527,7 +514,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             form.fields["robots_txt"].help_text = mark_safe(f'{base_help}<br><a href="{robots_url}" target="_blank">↗ robots.txt</a>')
         return super().render_change_form(request, context, *args, **kwargs)
 
-    @admin.display(description=_t("Превью OG"))
+    @djadmin.display(description=_t("Превью OG"))
     def og_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.og_image and obj.og_image.url:
@@ -536,7 +523,7 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             pass
         return "—"
 
-    @admin.display(description=_t("Превью Twitter"))
+    @djadmin.display(description=_t("Превью Twitter"))
     def twitter_image_preview(self, obj: SiteSetup):
         try:
             if obj and obj.twitter_image and obj.twitter_image.url:
@@ -545,8 +532,31 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             pass
         return "—"
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        if "site_enabled_languages" in form.base_fields:
+            choices = list(getattr(settings, "LANGUAGES", ()))
+            initial = []
+            if obj and isinstance(getattr(obj, "site_enabled_languages", None), list):
+                valid = {c for c, _ in choices}
+                initial = [c for c in obj.site_enabled_languages if c in valid]
+            form.base_fields["site_enabled_languages"] = forms.MultipleChoiceField(
+                required=False,
+                choices=choices,
+                widget=forms.CheckboxSelectMultiple,
+                initial=initial,
+                label=form.base_fields.get("site_enabled_languages").label or _t("Языки, показывать на сайте"),
+                help_text=_t("Отмеченные языки появятся в переключателе языков на сайте."),
+            )
+        try:
+            lang = self.get_form_language(request)
+            if obj is not None and hasattr(obj, "set_current_language"):
+                obj.set_current_language(lang)
+        except Exception:
+            pass
+        return form
+
     def save_model(self, request, obj: SiteSetup, form, change):
-        # --- правим список языков ТОЛЬКО при реальном сохранении формы ---
         if form is not None and hasattr(form, "cleaned_data"):
             allowed = [c.lower() for c, _ in getattr(settings, "LANGUAGES", ())]
 
@@ -568,23 +578,18 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
                     or obj.site_enabled_languages
                     or []
             )
-
             norm, seen = [], set()
             for code in selected:
                 n = _normalize(code)
                 if n and n not in seen:
                     norm.append(n);
                     seen.add(n)
-
             if not norm:
                 default_norm = _normalize(getattr(settings, "LANGUAGE_CODE", "")) or (allowed[0] if allowed else None)
                 if default_norm:
                     norm = [default_norm]
-
             obj.site_enabled_languages = norm
-        # --- /правка языков ---
 
-        # Снимок "до"
         original = None
         if change and obj.pk:
             try:
@@ -592,56 +597,47 @@ class SiteSetupAdmin(DecimalFormatMixin, TranslatableAdmin, admin.ModelAdmin):
             except SiteSetup.DoesNotExist:
                 original = None
 
-        # Сохраняем
         super().save_model(request, obj, form, change)
 
-        # Если не было "до" — нечего сравнивать
         if not original:
             return
-
-        # Разница
         label_map = {f.name: (getattr(f, "verbose_name", f.name) or f.name) for f in obj._meta.fields}
         changes = diff_sitesetup(original, obj, label_map)
         if not changes:
             return
-
-        # Телеграм только если заданы креды
         token = (obj.telegram_bot_token or "").strip()
         chat_id = (obj.telegram_chat_id or "").strip()
         if not token or not chat_id:
             return
-
         user_email = getattr(request.user, "email", "") or getattr(request.user, "username", "")
         ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
         ua = request.META.get("HTTP_USER_AGENT", "")
-
         _, message = format_telegram_message(user_email, ip, ua, changes, label_map)
         send_telegram_message(token, chat_id, message)
 
     class Media:
-        # На всякий случай подгрузим ресурсы Parler (если шаблон уже их не подключил)
         js = ("admin/js/jquery.init.js", "parler/js/admin/parler.js")
         css = {"all": ("parler/css/admin/parler.css",)}
 
 
 # ======================= Чёрный список =======================
 
-@admin.register(BlocklistEntry)
-class BlocklistEntryAdmin(admin.ModelAdmin):
+@djadmin.register(BlocklistEntry)
+class BlocklistEntryAdmin(djadmin.ModelAdmin):
     list_display = ("user_name_view", "email", "ip_address", "is_active", "reason", "created_at")
     list_filter = ("is_active",)
     search_fields = ("email", "ip_address", "user__email", "reason")
     actions = ["activate_selected", "deactivate_selected"]
 
-    @admin.action(description=_t("Активировать выбранные"))
+    @djadmin.action(description=_t("Активировать выбранные"))
     def activate_selected(self, request, queryset):
         queryset.update(is_active=True)
 
-    @admin.action(description=_t("Деактивировать выбранные"))
+    @djadmin.action(description=_t("Деактивировать выбранные"))
     def deactivate_selected(self, request, queryset):
         queryset.update(is_active=False)
 
-    @admin.display(description=_t("Пользователь"))
+    @djadmin.display(description=_t("Пользователь"))
     def user_name_view(self, obj):
         return getattr(getattr(obj, "user", None), "email", "—")
 
@@ -649,13 +645,12 @@ class BlocklistEntryAdmin(admin.ModelAdmin):
 # ======================= Axes: Попытки доступа =======================
 
 try:
-    admin.site.unregister(AccessAttempt)
-except admin.sites.NotRegistered:
+    djadmin.site.unregister(AccessAttempt)
+except djadmin.sites.NotRegistered:
     pass
 
 
 def _get_cooloff():
-    """Возвращает timedelta «окна охлаждения» Axes (значение либо результат коллбэка)."""
     cooloff = getattr(settings, "AXES_COOLOFF_TIME", None)
     if callable(cooloff):
         cooloff = cooloff()
@@ -663,10 +658,6 @@ def _get_cooloff():
 
 
 def _axes_param_sets():
-    """
-    Нормализуем AXES_LOCKOUT_PARAMETERS к списку множеств:
-    [["username", "ip_address"], "ip_address"] -> [{"username","ip_address"}, {"ip_address"}]
-    """
     params = getattr(settings, "AXES_LOCKOUT_PARAMETERS", [["username", "ip_address"]])
     seq = params if isinstance(params, (list, tuple, set)) else [params]
     out = []
@@ -679,32 +670,22 @@ def _axes_param_sets():
 
 
 def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None):
-    """
-    Совместимая обёртка над axes.reset:
-    - в одних версиях ожидается ip_address=..., в других ip=...
-    - часть параметров может отсутствовать в сигнатуре → отбрасываем лишнее
-    """
     import inspect
-
     ip_norm = ip if ip is not None else ip_address
     try:
         params = inspect.signature(axes_reset).parameters
     except Exception:
         params = {}
-
     kwargs = {}
     if "username" in params and username is not None:
         kwargs["username"] = username
-
     if ip_norm is not None:
         if "ip" in params:
             kwargs["ip"] = ip_norm
         elif "ip_address" in params:
             kwargs["ip_address"] = ip_norm
-
     if "user_agent" in params and user_agent is not None:
         kwargs["user_agent"] = user_agent
-
     try:
         return axes_reset(**kwargs)
     except TypeError:
@@ -733,7 +714,6 @@ def _axes_reset_safe(*, username=None, ip=None, ip_address=None, user_agent=None
 def _last_failure_dt_for(obj: AccessAttempt, kind: str):
     ip = (obj.ip_address or "").strip()
     user = (obj.username or "").strip()
-
     qs = AccessFailureLog.objects.all()
     if kind == "Логин + IP":
         if not ip or not user:
@@ -752,147 +732,119 @@ def _last_failure_dt_for(obj: AccessAttempt, kind: str):
         fallback_qs = AccessAttempt.objects.filter(username=user)
     else:
         return None
-
     last = qs.order_by("-attempt_time").values_list("attempt_time", flat=True).first()
     if last:
         return last
     return fallback_qs.order_by("-attempt_time").values_list("attempt_time", flat=True).first()
 
 
-@admin.register(AccessAttempt)
-class AccessAttemptAdmin(admin.ModelAdmin):
+@djadmin.register(AccessAttempt)
+class AccessAttemptAdmin(djadmin.ModelAdmin):
     list_display = (
-        "ip_address",
-        "username",
-        "failures_since_start",
-        "lock_key_type",
-        "is_blocked_now",
-        "path_info_short",
-        "user_agent_short",
+        "ip_address", "username", "failures_since_start",
+        "lock_key_type", "is_blocked_now", "path_info_short", "user_agent_short",
     )
     search_fields = ("ip_address", "username", "path_info", "user_agent")
     list_filter = ("ip_address",)
     actions = ("reset_lock_ip", "reset_lock_username", "reset_lock_both")
 
-    @admin.display(description=_t("Тип блокировки"))
+    @djadmin.display(description=_t("Тип блокировки"))
     def lock_key_type(self, obj: AccessAttempt):
         limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         param_sets = _axes_param_sets()
-
         if {"username", "ip_address"} in param_sets and obj.username and obj.ip_address:
             pair_total = (
-                    AccessAttempt.objects
-                    .filter(username=obj.username, ip_address=obj.ip_address)
+                    AccessAttempt.objects.filter(username=obj.username, ip_address=obj.ip_address)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if pair_total >= limit:
                 return _t("Логин + IP")
-
         if {"ip_address"} in param_sets and obj.ip_address:
             ip_total = (
-                    AccessAttempt.objects
-                    .filter(ip_address=obj.ip_address)
+                    AccessAttempt.objects.filter(ip_address=obj.ip_address)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if ip_total >= limit:
                 return _t("IP")
-
         if {"username"} in param_sets and obj.username:
             user_total = (
-                    AccessAttempt.objects
-                    .filter(username=obj.username)
+                    AccessAttempt.objects.filter(username=obj.username)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if user_total >= limit:
                 return _t("Логин")
-
         for s in param_sets:
             parts = []
-            if "username" in s:
-                parts.append(_t("Логин"))
-            if "ip_address" in s:
-                parts.append(_t("IP"))
-            if "user_agent" in s:
-                parts.append(_t("User-Agent"))
+            if "username" in s: parts.append(_t("Логин"))
+            if "ip_address" in s: parts.append(_t("IP"))
+            if "user_agent" in s: parts.append(_t("User-Agent"))
             if parts:
                 return " + ".join(parts)
         return "—"
 
-    @admin.display(boolean=True, description=_t("Заблокирован?"))
+    @djadmin.display(boolean=True, description=_t("Заблокирован?"))
     def is_blocked_now(self, obj):
         cooloff = _get_cooloff()
         if not cooloff:
             return False
-
         limit = int(getattr(settings, "AXES_FAILURE_LIMIT", 5) or 5)
         now = timezone.now()
         k = self.lock_key_type(obj)
-
         if k == _t("Логин + IP"):
             pair_total = (
-                    AccessAttempt.objects
-                    .filter(username=obj.username, ip_address=obj.ip_address)
+                    AccessAttempt.objects.filter(username=obj.username, ip_address=obj.ip_address)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if pair_total >= limit:
                 last = _last_failure_dt_for(obj, "Логин + IP")
                 return bool(last and now < last + cooloff)
             return False
-
         if k == _t("IP"):
             ip_total = (
-                    AccessAttempt.objects
-                    .filter(ip_address=obj.ip_address)
+                    AccessAttempt.objects.filter(ip_address=obj.ip_address)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if ip_total >= limit:
                 last = _last_failure_dt_for(obj, "IP")
                 return bool(last and now < last + cooloff)
             return False
-
         if k == _t("Логин"):
             user_total = (
-                    AccessAttempt.objects
-                    .filter(username=obj.username)
+                    AccessAttempt.objects.filter(username=obj.username)
                     .aggregate(s=Sum("failures_since_start"))["s"] or 0
             )
             if user_total >= limit:
                 last = _last_failure_dt_for(obj, "Логин")
                 return bool(last and now < last + cooloff)
             return False
-
         return False
 
-    @admin.display(description=_t("Путь"))
+    @djadmin.display(description=_t("Путь"))
     def path_info_short(self, obj):
         return (obj.path_info or "")[:80]
 
-    @admin.display(description=_t("User-Agent"))
+    @djadmin.display(description=_t("User-Agent"))
     def user_agent_short(self, obj):
         ua = obj.user_agent or ""
         return (ua[:80] + "…") if len(ua) > 80 else ua
 
     def _action_guard_and_reset(self, request, queryset, expected_type: str, do_reset):
-        done = 0
-        skipped = 0
+        done = skipped = 0
         for o in queryset:
             is_blocked = self.is_blocked_now(o)
             lock_type = self.lock_key_type(o)
-
             if not is_blocked or lock_type != expected_type:
                 skipped += 1
                 continue
-
             try:
                 do_reset(o)
                 done += 1
             except Exception:
                 skipped += 1
-
         msg = _t("Снято блокировок: %(done)s. Пропущено: %(skipped)s.") % {"done": done, "skipped": skipped}
         self.message_user(request, msg)
 
-    @admin.action(description=_t("Снять блокировку по IP"))
+    @djadmin.action(description=_t("Снять блокировку по IP"))
     def reset_lock_ip(self, request, queryset):
         def _do(o):
             if o.ip_address:
@@ -900,7 +852,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         self._action_guard_and_reset(request, queryset, expected_type=_t("IP"), do_reset=_do)
 
-    @admin.action(description=_t("Снять блокировку по логину"))
+    @djadmin.action(description=_t("Снять блокировку по логину"))
     def reset_lock_username(self, request, queryset):
         def _do(o):
             if o.username:
@@ -908,7 +860,7 @@ class AccessAttemptAdmin(admin.ModelAdmin):
 
         self._action_guard_and_reset(request, queryset, expected_type=_t("Логин"), do_reset=_do)
 
-    @admin.action(description=_t("Снять блокировку по логину+IP"))
+    @djadmin.action(description=_t("Снять блокировку по логину+IP"))
     def reset_lock_both(self, request, queryset):
         def _do(o):
             if o.ip_address or o.username:
@@ -917,28 +869,27 @@ class AccessAttemptAdmin(admin.ModelAdmin):
         self._action_guard_and_reset(request, queryset, expected_type=_t("Логин + IP"), do_reset=_do)
 
 
-@admin.register(Monitoring)
-class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
-    save_on_top = True
+# ======================= Мониторинги =======================
 
-    list_display = (
-        "name", "number", "is_active", "partner_type",
-        "percent", "balance_usdt", "total_profit_usdt",
-        "last_payout_at", "api_access", "clicks_total", "last_click_at",
-    )
+@djadmin.register(Monitoring)
+class MonitoringAdmin(DecimalFormatMixin, djadmin.ModelAdmin):
+    save_on_top = True
+    list_display = ("name", "number", "is_active", "partner_type",
+                    "percent", "balance_usdt", "total_profit_usdt",
+                    "last_payout_at", "api_access", "clicks_total", "last_click_at",)
     autocomplete_fields = ()
-    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt", "last_payout_at", "last_payout_amount_usdt",
-                       "clicks_total", "last_click_at",)
+    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt",
+                       "last_payout_at", "last_payout_amount_usdt", "clicks_total", "last_click_at",)
     list_filter = ("is_active", "partner_type", "api_access")
     search_fields = ("name", "link")
     list_editable = ("is_active", "number",)
+    ordering = ("last_payout_at",)
 
     fieldsets = (
         (_t("Основное"), {
             "classes": ("wide",),
             "fields": ("name", "link", "number", "is_active",),
         }),
-
         (_t("Условия партнёрки"), {
             "description": _t(
                 "100% партнёру от прибыли значит вы отдадите всю прибыль и ничего не заработаете.<br> 100% партнёру от суммы, значит вы всю сумму отдадите партнёру и ещё должны совершить обмен клиенту"),
@@ -947,18 +898,14 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         }),
         (_t("Финансы (USDT)"), {
             "classes": ("wide", "collapse"),
-            "fields": (
-                ("balance_usdt", "total_profit_usdt",),
-                ("last_payout_at", "last_payout_amount_usdt"),
-            ),
+            "fields": (("balance_usdt", "total_profit_usdt",),
+                       ("last_payout_at", "last_payout_amount_usdt"),),
         }),
         (_t("Баннер"), {
             "description": _t("PNG/JPG, ≤ 1 МБ, рекомендуемый размер 88×31"),
             "classes": ("wide", "collapse"),
-            "fields": (
-                ("banner_dark_asset", "banner_dark_preview"),
-                ("banner_light_asset", "banner_light_preview"),
-            ),
+            "fields": (("banner_dark_asset", "banner_dark_preview"),
+                       ("banner_light_asset", "banner_light_preview"),),
         }),
         (_t("Прочее"), {
             "classes": ("wide", "collapse"),
@@ -966,8 +913,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         }),
     )
 
-    # Удобное действие: зафиксировать выплату — обнулить баланс и записать дату/сумму
-    @admin.action(description=_t("Зафиксировать выплату (обнулить баланс)"))
+    @djadmin.action(description=_t("Зафиксировать выплату (обнулить баланс)"))
     def action_payout(self, request, queryset):
         now = timezone.now()
         updated = 0
@@ -982,69 +928,178 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
 
     actions = ("action_payout",)
 
-    @admin.display(description=_t("Тёмный баннер"))
+    @djadmin.display(description=_t("Тёмный баннер"))
     def banner_dark_preview(self, obj):
         url = getattr(obj, "banner_dark_url", None)
-        if callable(url):
-            url = obj.banner_dark_url
+        if callable(url): url = obj.banner_dark_url
         if url:
             return mark_safe(
-                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">')
+                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">'
+            )
         return "—"
 
-    @admin.display(description=_t("Светлый баннер"))
+    @djadmin.display(description=_t("Светлый баннер"))
     def banner_light_preview(self, obj):
         url = getattr(obj, "banner_light_url", None)
-        if callable(url):
-            url = obj.banner_light_url
+        if callable(url): url = obj.banner_light_url
         if url:
             return mark_safe(
-                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">')
+                f'<img src="{url}" alt="" style="max-width:176px; max-height:62px; height:auto; width:auto; border:1px solid #ddd; border-radius:4px;">'
+            )
         return "—"
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         formfield = super().formfield_for_foreignkey(db_field, request, **kwargs)
         if db_field.name in ("banner_dark_asset", "banner_light_asset"):
-            # один стиль для обоих списков
-            formfield.widget.attrs.update({
-                "style": "width:30%; min-width: 32rem;",  # широкие и одинаковые
-            })
+            formfield.widget.attrs.update({"style": "width:30%; min-width: 32rem;"})
         return formfield
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)
-
-        # одинаковая простая подсказка без иконок
         common_help = _t("PNG/JPG/SVG, ≤ 1 MB, рекомендуемый размер 88×31")
-
         for fname in ("banner_dark_asset", "banner_light_asset"):
             if fname not in form.base_fields:
                 continue
-
             field = form.base_fields[fname]
-
-            # 1) убираем нашу старую HTML-подсказку с иконками (если была)
-            field.help_text = common_help  # без лишнего HTML
-
-            # 2) снимаем обёртку Django (карандаш/плюс/крест/глаз), если она есть
+            field.help_text = common_help
             w = field.widget
             if isinstance(w, RelatedFieldWidgetWrapper):
-                # на всякий случай выключим флаги и развернём обёртку
                 w.can_add_related = False
                 w.can_change_related = False
                 w.can_delete_related = False
                 w.can_view_related = False
-                field.widget = w.widget  # <- теперь обычный select, без иконок
-
-            # 3) делаем выпадашку пошире
+                field.widget = w.widget
             if hasattr(field.widget, "attrs"):
                 field.widget.attrs.setdefault("style", "")
                 field.widget.attrs["style"] += "min-width:360px;width:100%;"
-
         return form
 
 
+# ======================= Документы =======================
+
+@djadmin.register(Document)
+class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
+    save_on_top = True
+    list_display = ("title_col", "slug_col", "show_in_site", "updated_at")
+    list_display_links = ("title_col",)
+    readonly_fields = ("updated_at", "slug_current", "placeholders_help",)
+
+    fieldsets = (
+        (_t("Содержимое"), {
+            "classes": ("wide",),
+            "fields": (("title", "show_in_site"), "slug_current", "body", "placeholders_help"),
+        }),
+        (_t("Служебное"), {
+            "classes": ("wide",),
+            "fields": ("updated_at",),
+        }),
+    )
+
+    # --- ВАЖНО: язык формы + скрытое поле language_code ---
+    def get_form(self, request, obj=None, **kwargs):
+        form_class = super().get_form(request, obj, **kwargs)
+
+        # вычисляем язык так же, как его берёт Parler/чипы
+        lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
+        setattr(form_class, "language_code", lang)
+
+        if obj is not None and hasattr(obj, "set_current_language"):
+            obj.set_current_language(lang)
+
+        # гарантируем скрытое поле language_code с корректным initial
+        base = getattr(form_class, "base_fields", None)
+        if base is not None:
+            from django import forms
+            if "language_code" not in base:
+                base["language_code"] = forms.CharField(required=False, widget=forms.HiddenInput)
+            base["language_code"].initial = lang
+
+        return form_class
+
+    # --- /ВАЖНО ---
+
+    @djadmin.display(description=_t("Шаблоны"))
+    def placeholders_help(self, obj=None):
+        html = """
+        <div style="font-size:13px;line-height:1.5">
+            <p><strong>Вставляйте в текст документа:</strong></p>
+            <ul style="margin:0 0 0 18px;padding:0">
+                <li><code>[[DOMAIN]]</code> — реальный домен (из Настройки сайта: Домен)</li>
+                <li><code>[[DOMAIN_VIEW]]</code> — отображаемый домен</li>
+            </ul>
+            <p style="margin-top:8px">
+                Подстановка делается при рендере шаблона.
+                В шаблоне используйте:
+                <code>{% load placeholders %}</code> и
+                <code>{% render_placeholders document.body %}</code>.
+            </p>
+        </div>
+        """
+        return mark_safe(html)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).translated()
+
+    @djadmin.display(description=_t("Заголовок"))
+    def title_col(self, obj: Document):
+        return obj.safe_translation_getter("title", any_language=True) or f"#{obj.pk}"
+
+    @djadmin.display(description="Slug")
+    def slug_col(self, obj: Document):
+        return obj.safe_translation_getter("slug", any_language=True) or "—"
+
+    @djadmin.display(description="Slug")
+    def slug_current(self, obj: Document):
+        if not obj or not obj.pk:
+            return "—"
+        lang = self.get_form_language(getattr(self, "request", None)) if hasattr(self, "request") else (get_language() or settings.LANGUAGE_CODE)
+        obj.set_current_language(lang)
+        return obj.slug or "—"
+
+    def render_change_form(self, request, context, *args, **kwargs):
+        # Сохраняем request, чтобы slug_current мог узнать активный язык
+        self.request = request
+        return super().render_change_form(request, context, *args, **kwargs)
+
+    def save_model(self, request, obj: Document, form, change):
+        # Определяем язык формы так же, как его использует Parler
+        lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
+
+        # ВАЖНО: ставим язык ДО сохранения, чтобы перевод этого языка точно сохранился
+        if hasattr(obj, "set_current_language"):
+            obj.set_current_language(lang)
+
+        # Если слаг пуст — сгенерим его в текущем языке (из title в этом же языке)
+        title_val = ""
+        if form is not None and hasattr(form, "cleaned_data"):
+            title_val = (form.cleaned_data.get("title") or "").strip()
+        if not title_val:
+            title_val = (obj.title or "").strip()
+
+        if not (obj.slug or "").strip():
+            base = slugify(title_val) or "doc"
+            slug = base
+            i = 2
+            # уникальность слага — в рамках текущего языка
+            while Document.objects.translated(language_code=lang, slug=slug).exclude(pk=obj.pk).exists():
+                slug = f"{base}-{i}"
+                i += 1
+            obj.slug = slug
+
+        super().save_model(request, obj, form, change)
+
+    def add_view(self, request, form_url="", extra_context=None):
+        """
+        На странице создания документа принудительно фиксируем язык формы
+        в settings.LANGUAGE_CODE (чтобы не зависеть от Accept-Language браузера).
+        """
+        if hasattr(request, "session"):
+            request.session["PARLER_CURRENT_LANGUAGE"] = getattr(settings, "LANGUAGE_CODE", "ru")
+        return super().add_view(request, form_url, extra_context)
+
+
+# ======================= Сайты: скрыть в админке =======================
 try:
-    admin.site.unregister(Site)
+    djadmin.site.unregister(Site)
 except NotRegistered:
     pass

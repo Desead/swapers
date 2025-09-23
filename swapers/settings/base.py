@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     "django_otp",
     "django_otp.plugins.otp_totp",
     "parler",
+    "django_ckeditor_5",
 ]
 
 AUTH_USER_MODEL = "app_main.User"
@@ -229,3 +230,13 @@ LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
 LANGUAGE_COOKIE_SAMESITE = "Lax"
 
 FORMS_URLFIELD_ASSUME_HTTPS = True
+
+CKEDITOR_5_CONFIGS = {
+    'default': {
+        'toolbar': [
+            'heading', '|', 'bold', 'italic', 'link', 'bulletedList', 'numberedList',
+            '|', 'outdent', 'indent', '|', 'blockQuote', 'insertTable', '|', 'undo', 'redo'
+        ],
+        'language': 'ru',
+    },
+}

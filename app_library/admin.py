@@ -10,6 +10,7 @@ class BannerAssetAdmin(admin.ModelAdmin):
     list_display = ("name", "theme", "size_kb", "preview")
     search_fields = ("name",)
     readonly_fields = ("preview", "size_kb")
+    ordering = ("name",)
     fieldsets = (
         (None, {
             "fields": ("name", "theme", "file", "preview", "size_kb")

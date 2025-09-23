@@ -52,6 +52,7 @@ urlpatterns = [
     # path("jsi18n/", JavaScriptCatalog.as_view(), name="javascript-catalog"),
 
     path("robots.txt", robots_txt, name="robots_txt"),
+    path("ckeditor5/", include("django_ckeditor_5.urls")),
 ]
 
 # Rosetta — удобнее прятать за DEBUG
@@ -67,7 +68,7 @@ urlpatterns += [
 # Пользовательские маршруты — под префиксом языка
 urlpatterns += i18n_patterns(
     # allauth (вход/регистрация/сброс)
-path("accounts/signup/", SignupOrLoginRedirectView.as_view(), name="account_signup"),
+    path("accounts/signup/", SignupOrLoginRedirectView.as_view(), name="account_signup"),
 
     path("accounts/", include("allauth.urls")),
 

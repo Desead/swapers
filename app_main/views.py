@@ -4,10 +4,8 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_GET
-from django.views.decorators.vary import vary_on_headers
 import re
-from django.http import HttpResponse,HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, Http404
 from django.contrib.sites.models import Site
 from django.conf import settings
 from django.views.decorators.http import require_POST
@@ -19,11 +17,15 @@ from allauth.account.views import SignupView
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from django.utils.translation import gettext as _
 from .models import SiteSetup
 from .models_monitoring import Monitoring
 from django.db.models import Case, When, Value, IntegerField
 from django.utils import timezone
+from django.views.decorators.http import require_GET
+from django.views.decorators.vary import vary_on_headers
+from django.utils.translation import get_language
+
+from .models_documents import Document
 
 _OUTLINK_SALT = "outlinks.v1"
 _ALLOWED_SCHEMES = {"http", "https", "mailto", "tg", "tel"}
@@ -260,6 +262,7 @@ class SignupOrLoginRedirectView(SignupView):
         # Иначе обычный флоу регистрации allauth
         return super().post(request, *args, **kwargs)
 
+
 # Примитивная сигнатура бота по User-Agent
 _BOT_UA_RE = re.compile(
     r"(?:bot|crawler|spider|scrapy|httpclient|libwww|curl|wget|"
@@ -268,9 +271,11 @@ _BOT_UA_RE = re.compile(
     re.I,
 )
 
+
 def _client_ip(request) -> str:
     xff = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
     return xff or request.META.get("REMOTE_ADDR", "") or ""
+
 
 def _looks_like_bot(request) -> bool:
     # В разработке и для тест-клиента не блокируем
@@ -283,6 +288,7 @@ def _looks_like_bot(request) -> bool:
         return False
     return bool(_BOT_UA_RE.search(ua))
 
+
 def _rate_limited(mon_id: int, ip: str) -> bool:
     """
     Рейт-лимит по одному мониторингу с одного IP:
@@ -291,7 +297,7 @@ def _rate_limited(mon_id: int, ip: str) -> bool:
     """
     conf = getattr(settings, "MONITORING_GO_GUARD", {})
     per_min = int(conf.get("RATE_LIMIT_PER_MIN", 10))  # по умолчанию 10/мин
-    window = int(conf.get("RATE_LIMIT_WINDOW", 60))    # окно 60 сек
+    window = int(conf.get("RATE_LIMIT_WINDOW", 60))  # окно 60 сек
     if per_min <= 0:
         return False
 
@@ -305,6 +311,7 @@ def _rate_limited(mon_id: int, ip: str) -> bool:
     except Exception:
         # если кэш недоступен — не лочим клики
         return False
+
 
 def _passes_guard(request, mon_id: int) -> bool:
     conf = getattr(settings, "MONITORING_GO_GUARD", {})
@@ -356,3 +363,30 @@ def monitoring_go(request, pk: int):
 
     # Временный редирект на партнёрскую ссылку
     return redirect(target)
+
+
+@require_GET
+@vary_on_headers("Accept-Language")
+def documents_list(request):
+    # Показываем только опубликованные; без «дыр» по переводам:
+    docs = []
+    for d in Document.objects.filter(is_published=True).order_by("order", "id"):
+        title = d.safe_translation_getter("title", default=None, any_language=False)
+        if title:
+            docs.append(d)
+
+    ctx = {"docs": docs}
+    return render(request, "docs/list.html", ctx)
+
+
+@require_GET
+@vary_on_headers("Accept-Language")
+def document_detail(request, pk: int):
+    doc = get_object_or_404(Document, pk=pk, is_published=True)
+    # если нет перевода для текущего языка — 404 (поведение как у других частей сайта)
+    title = doc.safe_translation_getter("title", default=None, any_language=False)
+    if not title:
+        # можно сделать редирект на /docs/ или 404; выберем 404
+        raise Http404("Document has no translation for current language")
+    ctx = {"doc": doc}
+    return render(request, "docs/detail.html", ctx)

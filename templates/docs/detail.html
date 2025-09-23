@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}
+  {{ doc.safe_translation_getter:"seo_title" | default:doc.safe_translation_getter:"title" }}
+{% endblock %}
+
+{% block meta_description %}
+  {{ doc.safe_translation_getter:"seo_description" | default_if_none:"" }}
+{% endblock %}
+
+{% block content %}
+<main class="container" style="max-width: 960px; margin: 0 auto; padding: 24px 12px;">
+    <h1 style="margin-bottom: 16px;">
+        {{ doc.safe_translation_getter:"title" }}
+    </h1>
+
+    {# В следующем шаге добавим санитайзер + рич-редактор.
+       Пока просто выводим как есть; если в body будет HTML — он отрендерится.
+       Захочешь — временно убрать |safe. #}
+    <div class="doc-body">
+        {{ doc.safe_translation_getter:"body" | default_if_none:"" | safe }}
+    </div>
+</main>
+{% endblock %}
