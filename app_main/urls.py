@@ -1,11 +1,10 @@
 from django.urls import path
-from . import views
+from .views import home, monitoring_go, document_view
 from .views_2fa import twofa_setup
 
 urlpatterns = [
-    path("docs/", views.documents_list, name="documents_list"),
-    path("docs/<int:pk>/", views.document_detail, name="document_detail"),
-    path("go/monitoring/<int:pk>/", views.monitoring_go, name="monitoring_go"),
+    path("docs/<slug:slug>/", document_view, name="document_view"),
+    path("go/monitoring/<int:pk>/", monitoring_go, name="monitoring_go"),
     path("security/2fa/setup/", twofa_setup, name="twofa_setup"),
-    path("", views.home, name="home"),
+    path("", home, name="home"),
 ]

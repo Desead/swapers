@@ -1,12 +1,13 @@
 from __future__ import annotations
-
 import json
 from typing import Dict
 from urllib.parse import urlsplit, urlunsplit
-
 from django.conf import settings
+from django.urls import reverse
 from django.utils import translation, timezone
+from django.utils.translation import get_language
 
+from app_main.models_documents import Document
 from .services.site_setup import get_site_setup
 
 
@@ -180,6 +181,7 @@ def seo_meta(request) -> Dict[str, object]:
     SEO_TITLE = _tr("seo_default_title", getattr(setup, "domain_view", ""))
     SEO_DESCRIPTION = _tr("seo_default_description", "")
     SEO_KEYWORDS = _tr("seo_default_keywords", "")
+    COPYRIGHT_FIELD = _tr("copyright_field", "")
 
     # Open Graph
     OG_IMAGE_URL = _media_abs(request, getattr(setup, "og_image", None), force_scheme=scheme)
@@ -204,7 +206,42 @@ def seo_meta(request) -> Dict[str, object]:
 
     IS_OPEN_NOW = _is_open_now()
 
+    # --- Документы для меню и футера (фолбэк на RU) ---
+    try:
+        cur = (get_language() or settings.LANGUAGE_CODE).split("-")[0]
+    except Exception:
+        cur = (translation.get_language() or settings.LANGUAGE_CODE).split("-")[0]
+
+    # ищем, какой код считать «русским»
+    ru_like = "ru"
+    for code, _name in getattr(settings, "LANGUAGES", (("ru", "Russian"),)):
+        c = code.lower().split("-")[0]
+        if c == "ru":
+            ru_like = code
+            break
+
+    docs = []
+    for d in Document.objects.filter(show_in_site=True):
+        # title/slug для текущего языка, затем фолбэк на RU, иначе пропускаем
+        title = d.safe_translation_getter("title", default=None, language_code=cur, any_language=False) \
+                or d.safe_translation_getter("title", default=None, language_code=ru_like, any_language=False)
+        slug = d.safe_translation_getter("slug", default=None, language_code=cur, any_language=False) \
+               or d.safe_translation_getter("slug", default=None, language_code=ru_like, any_language=False)
+        if not title or not slug:
+            continue
+        docs.append({"title": title, "href": reverse("document_view", kwargs={"slug": slug})})
+
+    # по названию, чтобы везде одинаково
+    try:
+        docs.sort(key=lambda x: x["title"].lower())
+    except Exception:
+        pass
+
+    # --- /документы ---
+
     return {
+        "DOCS_MENU": docs,
+
         # Базовое
         "CUR_LANG": cur_lang,
         "SITE_NAME": getattr(setup, "domain_view", ""),
@@ -213,14 +250,15 @@ def seo_meta(request) -> Dict[str, object]:
         "BLOCK_INDEXING": bool(getattr(setup, "block_indexing", False)),
 
         # Языки
-        "LANGS_ENABLED": LANGS_ENABLED,                     # список кодов включённых языков
+        "LANGS_ENABLED": LANGS_ENABLED,  # список кодов включённых языков
         "LANGS_ALL": [code.split("-")[0].lower() for code, _ in settings.LANGUAGES],
-        "LANG_MENU": LANG_MENU,                             # элементы для переключателя в UI
+        "LANG_MENU": LANG_MENU,  # элементы для переключателя в UI
 
         # SEO
         "SEO_TITLE": SEO_TITLE,
         "SEO_DESCRIPTION": SEO_DESCRIPTION,
         "SEO_KEYWORDS": SEO_KEYWORDS,
+        "COPYRIGHT_FIELD": COPYRIGHT_FIELD,
 
         # Брендинг
         "FAVICON_URL": FAVICON_URL,

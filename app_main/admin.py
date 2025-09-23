@@ -319,7 +319,7 @@ class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableA
     fieldsets = (
         (_t("Главная страница"), {
             "classes": ("wide",),
-            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode"),
+            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode", "copyright_field"),
         }),
         (_t("Перевод на различные языки"), {
             "classes": ("wide", "collapse"),

@@ -4,8 +4,20 @@
 <footer>
     <div class="container">
         <p class="muted">
-            {% blocktrans with year=current_year %}© {{ year }} Обменник для умных{% endblocktrans %}
+            © {{ current_year }}  {{ COPYRIGHT_FIELD }}
         </p>
+
+        {% if DOCS_MENU and DOCS_MENU|length > 0 %}
+            <nav aria-label="{% trans 'Документы' %}">
+                <ul style="display:flex;flex-wrap:wrap;gap:.75rem;margin:.25rem 0 1rem;padding:0;">
+                    {% for d in DOCS_MENU %}
+                        <li style="list-style:none;">
+                            <a href="{{ d.href }}">{{ d.title }}</a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </nav>
+        {% endif %}
 
         {% with s=site_setup %}
             <table role="presentation">
@@ -118,8 +130,7 @@
                                         <li>
                                             <button type="button" class="deeplink" role="link"
                                                     data-href="{{ s.social_vk }}" data-target="_blank"
-                                                    aria-label="{% trans 'Открыть VK' %}">
-                                                VK
+                                                    aria-label="{% trans 'Открыть VK' %}">VK
                                             </button>
                                             <noscript>
                                                 <a href="{{ s.social_vk }}" target="_blank"
@@ -131,8 +142,7 @@
                                         <li>
                                             <button type="button" class="deeplink" role="link"
                                                     data-href="{{ s.social_youtube }}" data-target="_blank"
-                                                    aria-label="{% trans 'Открыть YouTube' %}">
-                                                YouTube
+                                                    aria-label="{% trans 'Открыть YouTube' %}">YouTube
                                             </button>
                                             <noscript>
                                                 <a href="{{ s.social_youtube }}" target="_blank"
@@ -144,9 +154,7 @@
                                         <li>
                                             <button type="button" class="deeplink" role="link"
                                                     data-href="{{ s.social_dzen }}" data-target="_blank"
-                                                    aria-label="{% trans 'Открыть Дзен' %}">
-                                                {% trans "Дзен" %}
-                                            </button>
+                                                    aria-label="{% trans 'Открыть Дзен' %}">{% trans "Дзен" %}</button>
                                             <noscript>
                                                 <a href="{{ s.social_dzen }}" target="_blank"
                                                    rel="noopener noreferrer nofollow">{% trans "Дзен" %}</a>
@@ -157,8 +165,7 @@
                                         <li>
                                             <button type="button" class="deeplink" role="link"
                                                     data-href="{{ s.social_rutube }}" data-target="_blank"
-                                                    aria-label="{% trans 'Открыть RuTube' %}">
-                                                RuTube
+                                                    aria-label="{% trans 'Открыть RuTube' %}">RuTube
                                             </button>
                                             <noscript>
                                                 <a href="{{ s.social_rutube }}" target="_blank"
@@ -170,8 +177,7 @@
                                         <li>
                                             <button type="button" class="deeplink" role="link"
                                                     data-href="{{ s.social_instagram }}" data-target="_blank"
-                                                    aria-label="{% trans 'Открыть Instagram' %}">
-                                                Instagram
+                                                    aria-label="{% trans 'Открыть Instagram' %}">Instagram
                                             </button>
                                             <noscript>
                                                 <a href="{{ s.social_instagram }}" target="_blank"

@@ -184,7 +184,7 @@ class SiteSetup(TranslatableModel):
         verbose_name=_t("Автовыход из админки, минут"),
         default=10,
         help_text=_t("Через сколько минут бездействия разлогинивать из админки. "
-                    "0 — не разлогинивать по простою (сессия живёт до закрытия браузера)."),
+                     "0 — не разлогинивать по простою (сессия живёт до закрытия браузера)."),
     )
 
     # --- robots.txt и индексация ---
@@ -211,6 +211,8 @@ class SiteSetup(TranslatableModel):
 
     # --- [1] SEO по умолчанию ---
     translations = TranslatedFields(
+        copyright_field=models.CharField(verbose_name=_t("Копирайт в подвал"), max_length=50, blank=True, default=_t("Обменник для умных"),
+                                         help_text=_t("Отображается сразу после © и текущего года")),
         seo_default_title=models.CharField(
             verbose_name=_t("SEO: заголовок по умолчанию (title)"),
             max_length=255,
@@ -543,7 +545,7 @@ class SiteSetup(TranslatableModel):
     site_enabled_languages = models.JSONField(
         default=list, blank=True,
         help_text=_t("Какие языки показывать на сайте (переключатель, hreflang). "
-                    "Если пусто — будет только основной язык.")
+                     "Если пусто — будет только основной язык.")
     )
 
     class Meta:

@@ -2,10 +2,12 @@ from __future__ import annotations
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
+from django.utils.safestring import mark_safe
+
 from .forms import AccountForm
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _t, get_language
 import re
-from django.http import HttpResponse, HttpResponseRedirect, Http404
+from django.http import HttpResponse, Http404
 from django.contrib.sites.models import Site
 from django.conf import settings
 from django.views.decorators.http import require_POST
@@ -20,12 +22,9 @@ from django.urls import reverse
 from .models import SiteSetup
 from .models_monitoring import Monitoring
 from django.db.models import Case, When, Value, IntegerField
-from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.decorators.vary import vary_on_headers
-from django.utils.translation import get_language
-
-from .models_documents import Document
+from app_main.models_documents import Document
 
 _OUTLINK_SALT = "outlinks.v1"
 _ALLOWED_SCHEMES = {"http", "https", "mailto", "tg", "tel"}
@@ -82,9 +81,9 @@ def account_settings(request):
         form = AccountForm(request.POST, instance=user)
         if form.is_valid():
             form.save()
-            messages.success(request, _("Настройки сохранены."))
+            messages.success(request, _t("Настройки сохранены."))
             return redirect("account_settings")
-        messages.error(request, _("Проверьте форму — есть ошибки."))
+        messages.error(request, _t("Проверьте форму — есть ошибки."))
     else:
         form = AccountForm(instance=user)
 
@@ -100,7 +99,7 @@ def account_delete(request):
     user = request.user
 
     if user.is_superuser:
-        messages.error(request, _("Удаление суперпользователя запрещено из интерфейса. Используйте админку."))
+        messages.error(request, _t("Удаление суперпользователя запрещено из интерфейса. Используйте админку."))
         return redirect("account_settings")
 
     if request.method == "POST":
@@ -109,17 +108,17 @@ def account_delete(request):
         confirm = (request.POST.get("confirm_text", "") or "").strip()
 
         if confirm.upper() != required_word:
-            messages.error(request, _("Подтверждение не совпало. Введите слово DELETE."))
+            messages.error(request, _t("Подтверждение не совпало. Введите слово DELETE."))
             return redirect("account_delete")
 
         if not user.check_password(password):
-            messages.error(request, _("Неверный пароль."))
+            messages.error(request, _t("Неверный пароль."))
             return redirect("account_delete")
 
         email = user.email
         logout(request)
         user.delete()
-        messages.success(request, _("Аккаунт удалён."))
+        messages.success(request, _t("Аккаунт удалён."))
         return redirect("home")
 
     return render(request, "account/account_delete.html")
@@ -208,7 +207,7 @@ def account_email_resend(request):
             except EmailAddress.DoesNotExist:
                 eaddr = None
             if eaddr and eaddr.verified:
-                messages.info(request, _("Ваш e-mail уже подтверждён."))
+                messages.info(request, _t("Ваш e-mail уже подтверждён."))
                 try:
                     return redirect("account_settings")
                 except NoReverseMatch:
@@ -220,7 +219,7 @@ def account_email_resend(request):
     cache_key = f"email_confirm_resend:{user.pk}"
     # cache.add вернёт False, если ключ уже есть (то есть недавно жали кнопку)
     if not cache.add(cache_key, "1", timeout=60):
-        messages.warning(request, _("Слишком часто. Попробуйте ещё раз через минуту."))
+        messages.warning(request, _t("Слишком часто. Попробуйте ещё раз через минуту."))
         return redirect("account_email_verification_sent")
 
     # Отправляем письмо
@@ -229,10 +228,10 @@ def account_email_resend(request):
     if getattr(user, "email", None):
         messages.success(
             request,
-            _("Ссылка для подтверждения отправлена на %(email)s.") % {"email": user.email},
+            _t("Ссылка для подтверждения отправлена на %(email)s.") % {"email": user.email},
         )
     else:
-        messages.success(request, _("Ссылка для подтверждения отправлена."))
+        messages.success(request, _t("Ссылка для подтверждения отправлена."))
 
     return redirect("account_email_verification_sent")
 
@@ -253,7 +252,7 @@ class SignupOrLoginRedirectView(SignupView):
             if User._default_manager.filter(email__iexact=email).exists():
                 messages.info(
                     request,
-                    _("Этот e-mail уже зарегистрирован. Войдите в аккаунт, используя его.")
+                    _t("Этот e-mail уже зарегистрирован. Войдите в аккаунт, используя его.")
                 )
                 login_url = reverse("account_login")
                 query = urlencode({"email": email})
@@ -366,27 +365,34 @@ def monitoring_go(request, pk: int):
 
 
 @require_GET
-@vary_on_headers("Accept-Language")
-def documents_list(request):
-    # Показываем только опубликованные; без «дыр» по переводам:
-    docs = []
-    for d in Document.objects.filter(is_published=True).order_by("order", "id"):
-        title = d.safe_translation_getter("title", default=None, any_language=False)
-        if title:
-            docs.append(d)
+def document_view(request, slug: str):
+    cur = (get_language() or settings.LANGUAGE_CODE).split("-")[0]
+    # подобрать «русский» для фолбэка
+    ru_like = "ru"
+    for code, _name in getattr(settings, "LANGUAGES", (("ru", "Russian"),)):
+        if code.lower().split("-")[0] == "ru":
+            ru_like = code
+            break
 
-    ctx = {"docs": docs}
-    return render(request, "docs/list.html", ctx)
+    doc = (Document.objects.language(cur)
+           .filter(show_in_site=True, translations__slug=slug)
+           .first())
+    if not doc:
+        doc = (Document.objects.language(ru_like)
+               .filter(show_in_site=True, translations__slug=slug)
+               .first())
+    if not doc:
+        raise Http404("Document not found")
 
+    # привести текущий язык объекта для корректных геттеров
+    try:
+        doc.set_current_language(cur if doc.has_translation(cur) else ru_like)
+    except Exception:
+        pass
 
-@require_GET
-@vary_on_headers("Accept-Language")
-def document_detail(request, pk: int):
-    doc = get_object_or_404(Document, pk=pk, is_published=True)
-    # если нет перевода для текущего языка — 404 (поведение как у других частей сайта)
-    title = doc.safe_translation_getter("title", default=None, any_language=False)
-    if not title:
-        # можно сделать редирект на /docs/ или 404; выберем 404
-        raise Http404("Document has no translation for current language")
-    ctx = {"doc": doc}
-    return render(request, "docs/detail.html", ctx)
+    ctx = {
+        "doc": doc,
+        "title": doc.safe_translation_getter("title", any_language=True) or "",
+        "body_html": mark_safe(doc.render_body() or ""),  # уже очищено
+    }
+    return render(request, "document.html", ctx)
