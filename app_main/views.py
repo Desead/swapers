@@ -1,6 +1,6 @@
 from __future__ import annotations
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from .forms import AccountForm
 from django.utils.translation import gettext_lazy as _
@@ -175,7 +175,6 @@ def robots_txt(request):
     return HttpResponse(body, content_type="text/plain; charset=utf-8")
 
 
-# === ДОБАВИТЬ (рядом с вашими вьюхами, до использования)
 def _send_confirmation_email(request, user) -> bool:
     """
     Возвращает True, если попытались отправить письмо.
@@ -186,7 +185,7 @@ def _send_confirmation_email(request, user) -> bool:
         return False
     # add_email создаст/обновит EmailAddress и при confirm=True отправит письмо.
     EmailAddress.objects.add_email(request, user, email, confirm=True)
-    return True
+    return True @ require_GET
 
 
 @login_required
@@ -234,12 +233,14 @@ def account_email_resend(request):
 
     return redirect("account_email_verification_sent")
 
+
 class SignupOrLoginRedirectView(SignupView):
     """
     Если при регистрации указан e-mail существующего пользователя,
     перенаправляем на страницу логина и подставляем этот e-mail.
     Во всех остальных случаях оставляем стандартное поведение allauth.
     """
+
     def post(self, request, *args, **kwargs):
         email = (request.POST.get("email") or "").strip()
 
@@ -257,3 +258,31 @@ class SignupOrLoginRedirectView(SignupView):
 
         # Иначе обычный флоу регистрации allauth
         return super().post(request, *args, **kwargs)
+
+
+@require_GET
+def monitoring_go(request, pk: int):
+    """
+    Редирект на партнёра с учётом включённости и логированием клика.
+    """
+    mon = get_object_or_404(Monitoring, pk=pk, is_active=True)
+    target = (mon.link or "").strip()
+
+    if not target:
+        # если ссылки нет — молча сообщаем, что отдавать нечего
+        return HttpResponse(status=204)
+
+    # гарантируем схему, чтобы не было //example без http(s)
+    if not re.match(r"^https?://", target, re.IGNORECASE):
+        target = "https://" + target
+
+    try:
+        mon.register_click()
+    except Exception:
+        # не мешаем пользователю даже если счётчик не сохранился
+        pass
+
+    # временный редирект (можно будет менять URLы без смены кода)
+    resp = redirect(target)
+    # чуть аккуратнее для SEO/рекламы (но это больше про ссылки в шаблоне)
+    return resp

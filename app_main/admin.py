@@ -924,10 +924,11 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
     list_display = (
         "name", "number", "is_active", "partner_type",
         "percent", "balance_usdt", "total_profit_usdt",
-        "last_payout_at", "api_access",
+        "last_payout_at", "api_access", "clicks_total", "last_click_at",
     )
     autocomplete_fields = ()
-    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt", "last_payout_at", "last_payout_amount_usdt",)
+    readonly_fields = ("banner_dark_preview", "banner_light_preview", "balance_usdt", "total_profit_usdt", "last_payout_at", "last_payout_amount_usdt",
+                       "clicks_total", "last_click_at",)
     list_filter = ("is_active", "partner_type", "api_access")
     search_fields = ("name", "link")
     list_editable = ("is_active", "number",)
@@ -961,7 +962,7 @@ class MonitoringAdmin(DecimalFormatMixin, admin.ModelAdmin):
         }),
         (_t("Прочее"), {
             "classes": ("wide", "collapse"),
-            "fields": ("api_access", "title", "comment"),
+            "fields": ("api_access", ("clicks_total", "last_click_at",), "title", "comment"),
         }),
     )
 

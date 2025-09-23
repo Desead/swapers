@@ -12,36 +12,27 @@
     {% if monitorings %}
         <hr class="mt-6 mb-4">
 
-        {# Небольшие стили с nonce, чтобы не ловить CSP style-src-elem #}
+        {# Небольшие стили с nonce (совместимо с CSP) #}
         <style nonce="{{ request.csp_nonce }}">
-            .partner-badges {
-                margin-top: .5rem;
-            }
-
+            .partner-badges { margin-top:.5rem; }
             .partner-badges-row {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px;
-                align-items: center;
+                display:flex;
+                flex-wrap:wrap;
+                gap:8px;
+                align-items:center;
             }
-
             .partner-badge {
-                display: inline-flex;
-                width: 88px;
-                height: 31px;
-                align-items: center;
-                justify-content: center;
-                box-sizing: content-box;
-                padding: 2px; /* небольшой отступ вокруг */
-                text-decoration: none; /* на случай, если это <a> */
+                display:inline-flex;
+                width:88px; height:31px;
+                align-items:center; justify-content:center;
+                box-sizing:content-box;
+                padding:2px;
+                text-decoration:none;
             }
-
             .partner-badge img {
-                max-width: 100%;
-                max-height: 100%;
-                width: auto;
-                height: auto;
-                display: block;
+                max-width:100%; max-height:100%;
+                width:auto; height:auto;
+                display:block;
             }
         </style>
 
@@ -51,32 +42,30 @@
                     {% with light=mon.banner_light_url dark=mon.banner_dark_url %}
                         {% if light or dark %}
                             {% if mon.link %}
-                                <a class="partner-badge" href="{{ mon.link }}" target="_blank" rel="nofollow noopener"
+                                {% url 'monitoring_go' mon.id as mon_go_url %}
+                                <a class="partner-badge"
+                                   href="{{ mon_go_url }}"
+                                   target="_blank" rel="nofollow noopener"
                                    aria-label="{{ mon.name }}">
                             {% else %}
                                 <span class="partner-badge" aria-label="{{ mon.name }}">
                             {% endif %}
 
-                        {# если есть оба — рисуем ДВЕ картинки с data-theme #}
-                        {% if light and dark %}
-                            <img data-theme="light" src="{{ light }}" alt="{{ mon.name }}"{% if mon.title %}
-                                 title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
-                            <img data-theme="dark" src="{{ dark }}" alt="{{ mon.name }}"{% if mon.title %}
-                                 title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
-                        {% elif light %}
-                            {# один ассет — ОДНА картинка без data-theme (так требуют тесты) #}
-                            <img src="{{ light }}" alt="{{ mon.name }}"{% if mon.title %}
-                                 title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
-                        {% elif dark %}
-                            <img src="{{ dark }}" alt="{{ mon.name }}"{% if mon.title %}
-                                 title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
-                        {% endif %}
+                            {# если есть оба — две картинки (data-theme) #}
+                            {% if light and dark %}
+                                <img data-theme="light" src="{{ light }}" alt="{{ mon.name }}"{% if mon.title %}
+                                     title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
+                                <img data-theme="dark" src="{{ dark }}" alt="{{ mon.name }}"{% if mon.title %}
+                                     title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
+                            {% elif light %}
+                                <img src="{{ light }}" alt="{{ mon.name }}"{% if mon.title %}
+                                     title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
+                            {% elif dark %}
+                                <img src="{{ dark }}" alt="{{ mon.name }}"{% if mon.title %}
+                                     title="{{ mon.title }}"{% endif %} loading="lazy" decoding="async">
+                            {% endif %}
 
-                        {% if mon.link %}
-                            </a>
-                        {% else %}
-                            </span>
-                        {% endif %}
+                            {% if mon.link %}</a>{% else %}</span>{% endif %}
                         {% endif %}
                     {% endwith %}
                 {% endfor %}
