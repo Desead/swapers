@@ -8,8 +8,18 @@ from django.urls import reverse
 from app_main.models_monitoring import Monitoring
 
 
-def _get(url, client, follow=False):
-    return client.get(url, follow=follow)
+def _get(url, client, follow=False, referer="http://testserver/"):
+    """
+    Ходим на /go/… так, как это будет из реального сайта:
+    - передаём same-origin Referer;
+    - даём простой User-Agent, чтобы не триггерить антибот.
+    """
+    headers = {
+        "HTTP_USER_AGENT": "pytest-client",
+    }
+    if referer:
+        headers["HTTP_REFERER"] = referer
+    return client.get(url, follow=follow, **headers)
 
 
 @pytest.mark.django_db

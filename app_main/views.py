@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET
 from django.views.decorators.vary import vary_on_headers
 import re
-from django.http import HttpResponse
+from django.http import HttpResponse,HttpResponseRedirect
 from django.contrib.sites.models import Site
 from django.conf import settings
 from django.views.decorators.http import require_POST
@@ -23,6 +23,7 @@ from django.utils.translation import gettext as _
 from .models import SiteSetup
 from .models_monitoring import Monitoring
 from django.db.models import Case, When, Value, IntegerField
+from django.utils import timezone
 
 _OUTLINK_SALT = "outlinks.v1"
 _ALLOWED_SCHEMES = {"http", "https", "mailto", "tg", "tel"}
@@ -259,30 +260,99 @@ class SignupOrLoginRedirectView(SignupView):
         # Иначе обычный флоу регистрации allauth
         return super().post(request, *args, **kwargs)
 
+# Примитивная сигнатура бота по User-Agent
+_BOT_UA_RE = re.compile(
+    r"(?:bot|crawler|spider|scrapy|httpclient|libwww|curl|wget|"
+    r"python-requests|httpx|java|okhttp|go-http|feed|uptime|monitor|"
+    r"checker|analy|validator|scan|pingdom|datadog|newrelic)",
+    re.I,
+)
+
+def _client_ip(request) -> str:
+    xff = (request.META.get("HTTP_X_FORWARDED_FOR") or "").split(",")[0].strip()
+    return xff or request.META.get("REMOTE_ADDR", "") or ""
+
+def _looks_like_bot(request) -> bool:
+    # В разработке и для тест-клиента не блокируем
+    if settings.DEBUG:
+        return False
+    ua = (request.META.get("HTTP_USER_AGENT") or "").strip()
+    if not ua:
+        return True  # пустой UA — почти всегда бот
+    if ua.lower() == "testclient":
+        return False
+    return bool(_BOT_UA_RE.search(ua))
+
+def _rate_limited(mon_id: int, ip: str) -> bool:
+    """
+    Рейт-лимит по одному мониторингу с одного IP:
+    не более N кликов за окно W секунд.
+    Можно переопределить через settings.MONITORING_GO_GUARD.
+    """
+    conf = getattr(settings, "MONITORING_GO_GUARD", {})
+    per_min = int(conf.get("RATE_LIMIT_PER_MIN", 10))  # по умолчанию 10/мин
+    window = int(conf.get("RATE_LIMIT_WINDOW", 60))    # окно 60 сек
+    if per_min <= 0:
+        return False
+
+    key = f"mon_go:{mon_id}:{ip}"
+    try:
+        fresh = cache.add(key, 1, timeout=window)  # True если ключ новый
+        if fresh:
+            return False
+        cnt = cache.incr(key)
+        return cnt > per_min
+    except Exception:
+        # если кэш недоступен — не лочим клики
+        return False
+
+def _passes_guard(request, mon_id: int) -> bool:
+    conf = getattr(settings, "MONITORING_GO_GUARD", {})
+    if not conf.get("ENABLED", True):
+        return True
+    if settings.DEBUG:
+        return True
+
+    ip = _client_ip(request)
+    if _looks_like_bot(request):
+        return False
+    if _rate_limited(mon_id, ip):
+        return False
+    return True
+
 
 @require_GET
 def monitoring_go(request, pk: int):
     """
-    Редирект на партнёра с учётом включённости и логированием клика.
+    Редирект на партнёра с учётом включённости, защитой от ботов и логированием клика.
     """
     mon = get_object_or_404(Monitoring, pk=pk, is_active=True)
     target = (mon.link or "").strip()
 
+    # Пустая ссылка — тихо 204 (как у тебя было)
     if not target:
-        # если ссылки нет — молча сообщаем, что отдавать нечего
         return HttpResponse(status=204)
 
-    # гарантируем схему, чтобы не было //example без http(s)
+    # Гарантируем https://, если схема не указана
     if not re.match(r"^https?://", target, re.IGNORECASE):
         target = "https://" + target
 
+    # Защита: боты/дудос → молча игнорируем (204)
+    if not _passes_guard(request, mon.id):
+        return HttpResponse(status=204)
+
+    # Логирование клика (твоя логика register_click)
     try:
         mon.register_click()
+        # Если нужно — можно дополнительно логировать IP/UA/Referer/язык:
+        # ip = _client_ip(request)
+        # ua = request.META.get("HTTP_USER_AGENT", "")
+        # ref = request.META.get("HTTP_REFERER", "")
+        # lang = getattr(request, "LANGUAGE_CODE", "")
+        # ts = timezone.now()
     except Exception:
         # не мешаем пользователю даже если счётчик не сохранился
         pass
 
-    # временный редирект (можно будет менять URLы без смены кода)
-    resp = redirect(target)
-    # чуть аккуратнее для SEO/рекламы (но это больше про ссылки в шаблоне)
-    return resp
+    # Временный редирект на партнёрскую ссылку
+    return redirect(target)
