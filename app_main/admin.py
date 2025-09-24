@@ -1112,43 +1112,52 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
         return super().render_change_form(request, context, *args, **kwargs)
 
     def save_model(self, request, obj: Document, form, change):
-        # 1) Язык как у Parler/чипов
+        """
+        1) Сохраняем перевод с учётом активного языка (как и раньше).
+        2) Если выбран шаблон — заголовок берём из get_kind_display(), тело заменяем на body шаблона.
+        3) Если slug пуст — по умолчанию берём его из kind шаблона; если шаблон не выбран — из title.
+           Обеспечиваем уникальность slug в рамках текущего языка.
+        4) Перед сохранением slug — нормализуем через slugify (на случай, если админ руками ввёл «не то»).
+        """
         lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
         if hasattr(obj, "set_current_language"):
             obj.set_current_language(lang)
 
-        # 2) Вставка из шаблона (при создании — всегда; при изменении — по чекбоксу)
-        tpl = None
-        overwrite = False
+        tpl: DocumentTemplate | None = None
+        tpl_id = None
         if form is not None and hasattr(form, "cleaned_data"):
-            tpl = form.cleaned_data.get("template_to_insert")
-            overwrite = bool(form.cleaned_data.get("template_overwrite"))
+            tpl = form.cleaned_data.get("template_to_insert")  # ModelChoiceField -> instance
+            tpl_overwrite = bool(form.cleaned_data.get("template_overwrite"))
+        else:
+            tpl_overwrite = False
 
-        apply_tpl = bool(tpl and (not change or overwrite))
-        if apply_tpl:
-            obj.title = (tpl.title or "").strip()
-            obj.body = (tpl.body or "").strip()
+        # Если выбран шаблон:
+        if tpl:
+            # Заголовок для текущего языка берём из label'а choices (локализованного)
+            obj.title = str(tpl.get_kind_display()).strip()
+            # Текст заменяем полностью (на форме создания — всегда; на форме изменения — если чекбокс отмечен)
+            if (not change) or tpl_overwrite:
+                obj.body = tpl.body or ""
 
-        # 3) Если slug пуст — автогенерим из title этого языка с уникальностью в рамках языка.
-        title_val = (obj.title or "").strip()
-        if not (obj.slug or "").strip():
-            base = slugify(title_val, allow_unicode=True) or "doc"
-            slug = base
-            i = 2
-            while Document.objects.translated(language_code=lang, slug=slug).exclude(pk=obj.pk).exists():
-                slug = f"{base}-{i}"
-                i += 1
-            obj.slug = slug
+        # --- slug: если пуст, строим по умолчанию ---
+        raw_slug = (obj.slug or "").strip()
+
+        if not raw_slug:
+            # приоритет: если есть шаблон — slug из kind; иначе — из title
+            base = tpl.kind if tpl else slugify((obj.title or "").strip()) or "doc"
+        else:
+            # админ мог ввести руками — нормализуем
+            base = slugify(raw_slug) or "doc"
+
+        # Уникальность slug в рамках языка
+        unique_slug = base
+        i = 2
+        while Document.objects.translated(language_code=lang, slug=unique_slug).exclude(pk=obj.pk).exists():
+            unique_slug = f"{base}-{i}"
+            i += 1
+        obj.slug = unique_slug
 
         super().save_model(request, obj, form, change)
-
-        if apply_tpl:
-            messages.info(
-                request,
-                _t('Текст вставлен из шаблона «%(tpl)s» для языка %(lang)s.') % {
-                    "tpl": tpl.title, "lang": (lang or "").upper()
-                }
-            )
 
     def add_view(self, request, form_url="", extra_context=None):
         # На странице создания фиксируем язык формы на LANGUAGE_CODE

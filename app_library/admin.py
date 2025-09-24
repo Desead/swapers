@@ -41,9 +41,8 @@ class BannerAssetAdmin(admin.ModelAdmin):
 @admin.register(DocumentTemplate)
 class DocumentTemplateAdmin(admin.ModelAdmin):
     save_on_top = True
-    list_display = ("kind_label", "title", "updated_at")
-    # list_display_links = ("title",)
-    fields = ("kind", "title", "body", "updated_at")
+    list_display = ("kind_label", "updated_at")
+    fields = ("kind",  "body", "updated_at")
     readonly_fields = ("updated_at",)
 
     @admin.display(description=_t("Тип"))
