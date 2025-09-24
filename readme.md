@@ -38,7 +38,6 @@ python manage.py makemessages -d djangojs -l ru -l de -l fr -l es -l it -l uk `
 # Скомпилировать в .mo
 django-admin compilemessages
 
-Загрузить шаблоны документов:
 
 ```
 
@@ -59,15 +58,9 @@ dst = Path("app_library/fixtures/document_templates_ru_utf8.json")
 dst.write_text(src.read_text(encoding="cp1251"), encoding="utf-8")
 print("Перекодирован:", dst)
 
-# загружаем фикстуру
-python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
-
-
-
-
 # PowerShell (перекодировать в UTF-8)
 # из корня проекта, путь поправьте при необходимости
 Get-Content app_library\fixtures\document_templates_ru.json -Raw -Encoding Default `
 | Set-Content app_library\fixtures\document_templates_ru_utf8.json -NoNewline -Encoding UTF8
 # Загрузить данные из фикстуры
-python manage.py loaddata app_library/fixtures/document_templates_ru_utf9.json
+python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json

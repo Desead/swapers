@@ -11,7 +11,7 @@ class DocumentTemplate(models.Model):
     Переводы тут не нужны: клиент создаёт Document из шаблона и переводит уже сам.
     """
     kind = models.CharField(_t("Тип"), max_length=32, choices=DocumentTemplateType.CHOICES, unique=True)
-    title = models.CharField(_t("Путь (RU+EN)"), max_length=200)
+    title = models.CharField(_t("Заголовок (RU)"), max_length=200)
     body = CKEditor5Field(_t("Текст (RU)"), config_name="default", blank=True, default="")
     updated_at = models.DateTimeField(_t("Обновлён"), auto_now=True)
 

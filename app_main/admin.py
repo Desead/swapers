@@ -995,25 +995,55 @@ class DocumentAdminForm(TranslatableModelForm):
         model = Document
         fields = "__all__"
 
+    def clean_slug(self):
+        """Нормализуем пользовательский slug (оставляем unicode, вычищаем недопустимое)."""
+        raw = (self.cleaned_data.get("slug") or "").strip()
+        if not raw:
+            # пустой допустим — автогенерится в save_model
+            return ""
+        normalized = slugify(raw, allow_unicode=True)
+        return normalized
+
+    def clean(self):
+        """Проверяем уникальность slug в рамках выбранного языка формы."""
+        cleaned = super().clean()
+        slug = (cleaned.get("slug") or "").strip()
+        if not slug:
+            return cleaned  # автогенерация позже
+
+        # язык формы кладётся в скрытое поле language_code (его устанавливает admin.get_form)
+        lang = (cleaned.get("language_code") or "").strip() or getattr(settings, "LANGUAGE_CODE", "ru")
+
+        qs = Document.objects.translated(language_code=lang, slug=slug)
+        if self.instance and self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise forms.ValidationError(
+                {"slug": _t("Этот слаг уже используется для языка %(lang)s. Укажите другой.") % {"lang": lang.upper()}}
+            )
+        return cleaned
+
 
 @djadmin.register(Document)
 class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
     save_on_top = True
-    form = DocumentAdminForm  # <-- подключаем форму с выбором шаблона
+    form = DocumentAdminForm
 
     list_display = ("title_col", "slug_col", "show_in_site", "updated_at")
     list_display_links = ("title_col",)
-    readonly_fields = ("updated_at", "slug_current", "placeholders_help",)
+    # slug_current убираем из readonly, он больше не нужен в форме
+    readonly_fields = ("updated_at", "placeholders_help",)
 
     fieldsets = (
         (_t("Содержимое"), {
             "classes": ("wide",),
             "fields": (
                 ("title", "show_in_site"),
-                "slug_current",
+                "slug",  # <-- редактируемый slug
                 "body",
-                "template_to_insert",  # <-- выбор шаблона
-                "template_overwrite",  # <-- чекбокс (на форме изменения)
+                "template_to_insert",
+                "template_overwrite",
                 "placeholders_help",
             ),
         }),
@@ -1035,11 +1065,10 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
 
         base = getattr(form_class, "base_fields", None)
         if base is not None:
-            from django import forms
             if "language_code" not in base:
                 base["language_code"] = forms.CharField(required=False, widget=forms.HiddenInput)
             base["language_code"].initial = lang
-            # на форме "добавить" скрываем чекбокс перезаписи
+            # На форме "добавить" скрываем чекбокс перезаписи
             if obj is None and "template_overwrite" in base:
                 base["template_overwrite"].widget = forms.HiddenInput()
 
@@ -1077,29 +1106,18 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
     def slug_col(self, obj: Document):
         return obj.safe_translation_getter("slug", any_language=True) or "—"
 
-    @djadmin.display(description="Slug")
-    def slug_current(self, obj: Document):
-        if not obj or not obj.pk:
-            return "—"
-        lang = self.get_form_language(getattr(self, "request", None)) if hasattr(self, "request") else (get_language() or settings.LANGUAGE_CODE)
-        try:
-            obj.set_current_language(lang)
-        except Exception:
-            pass
-        return obj.slug or "—"
-
     def render_change_form(self, request, context, *args, **kwargs):
-        # чтобы slug_current знал активный язык
+        # чтобы form/чипы и Parler брали один язык
         self.request = request
         return super().render_change_form(request, context, *args, **kwargs)
 
     def save_model(self, request, obj: Document, form, change):
-        # 1) Определяем язык формы как у Parler/чипов
+        # 1) Язык как у Parler/чипов
         lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
         if hasattr(obj, "set_current_language"):
             obj.set_current_language(lang)
 
-        # 2) Вставка из шаблона (при создании — всегда; при изменении — если чекбокс включён)
+        # 2) Вставка из шаблона (при создании — всегда; при изменении — по чекбоксу)
         tpl = None
         overwrite = False
         if form is not None and hasattr(form, "cleaned_data"):
@@ -1111,10 +1129,10 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
             obj.title = (tpl.title or "").strip()
             obj.body = (tpl.body or "").strip()
 
-        # 3) Автослаг, если пуст: из заголовка текущего языка, с уникальностью в рамках языка
+        # 3) Если slug пуст — автогенерим из title этого языка с уникальностью в рамках языка.
         title_val = (obj.title or "").strip()
         if not (obj.slug or "").strip():
-            base = slugify(title_val) or "doc"
+            base = slugify(title_val, allow_unicode=True) or "doc"
             slug = base
             i = 2
             while Document.objects.translated(language_code=lang, slug=slug).exclude(pk=obj.pk).exists():
@@ -1133,8 +1151,7 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
             )
 
     def add_view(self, request, form_url="", extra_context=None):
-        # На странице создания фиксируем язык формы на LANGUAGE_CODE (обычно ru),
-        # чтобы первый перевод точно шёл в базовый язык.
+        # На странице создания фиксируем язык формы на LANGUAGE_CODE
         if hasattr(request, "session"):
             request.session["PARLER_CURRENT_LANGUAGE"] = getattr(settings, "LANGUAGE_CODE", "ru")
         return super().add_view(request, form_url, extra_context)

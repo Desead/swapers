@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-09-24 01:20+0300\n"
+"POT-Creation-Date: 2025-09-24 23:45+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -17,12 +17,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n > 1);\n"
-
-msgid "Размер"
-msgstr ""
-
-msgid "Превью"
-msgstr ""
 
 msgid "Библиотека"
 msgstr ""
@@ -192,10 +186,6 @@ msgid "Главная"
 msgstr ""
 
 msgid "Минимальная стартовая страница."
-msgstr ""
-
-#, python-format
-msgid "© %(current_year)s  %(COPYRIGHT_FIELD)s"
 msgstr ""
 
 msgid "Контакты"
