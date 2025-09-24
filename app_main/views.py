@@ -367,6 +367,7 @@ def monitoring_go(request, pk: int):
 @require_GET
 def document_view(request, slug: str):
     cur = (get_language() or settings.LANGUAGE_CODE).split("-")[0]
+
     # подобрать «русский» для фолбэка
     ru_like = "ru"
     for code, _name in getattr(settings, "LANGUAGES", (("ru", "Russian"),)):
@@ -374,17 +375,23 @@ def document_view(request, slug: str):
             ru_like = code
             break
 
-    doc = (Document.objects.language(cur)
-           .filter(show_in_site=True, translations__slug=slug)
-           .first())
+    # Сначала пробуем текущий язык…
+    doc = (
+        Document.objects.language(cur)
+        .filter(show_in_site=True, translations__slug=slug)
+        .first()
+    )
+    # …затем фолбэк на RU-подобный
     if not doc:
-        doc = (Document.objects.language(ru_like)
-               .filter(show_in_site=True, translations__slug=slug)
-               .first())
+        doc = (
+            Document.objects.language(ru_like)
+            .filter(show_in_site=True, translations__slug=slug)
+            .first()
+        )
     if not doc:
         raise Http404("Document not found")
 
-    # привести текущий язык объекта для корректных геттеров
+    # Выставим язык объекта, чтобы геттеры парлера работали ожидаемо
     try:
         doc.set_current_language(cur if doc.has_translation(cur) else ru_like)
     except Exception:
@@ -393,6 +400,7 @@ def document_view(request, slug: str):
     ctx = {
         "doc": doc,
         "title": doc.safe_translation_getter("title", any_language=True) or "",
-        "body_html": mark_safe(doc.render_body() or ""),  # уже очищено
+        # render_body() уже санитизировано на уровне модели — отдаём как обычную строку
+        "body_html": doc.render_body() or "",
     }
     return render(request, "document.html", ctx)

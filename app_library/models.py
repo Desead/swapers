@@ -110,3 +110,5 @@ class BannerAsset(models.Model):
                     self.size_bytes = None
 
         super().save(*args, **kwargs)
+
+from .models_templates import DocumentTemplate

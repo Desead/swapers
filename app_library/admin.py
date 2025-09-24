@@ -2,8 +2,8 @@ from django.contrib import admin
 from django.utils.safestring import mark_safe
 
 from app_library.models import BannerAsset
-from django.utils.translation import gettext_lazy as _
-
+from django.utils.translation import gettext_lazy as _t
+from .models_templates import DocumentTemplate
 
 @admin.register(BannerAsset)
 class BannerAssetAdmin(admin.ModelAdmin):
@@ -22,7 +22,7 @@ class BannerAssetAdmin(admin.ModelAdmin):
             return f"{obj.size_bytes / 1024:.1f} KB"
         return "—"
 
-    size_kb.short_description = _("Размер")
+    size_kb.short_description = _t("Размер")
 
     def preview(self, obj):
         try:
@@ -36,4 +36,16 @@ class BannerAssetAdmin(admin.ModelAdmin):
             pass
         return "—"
 
-    preview.short_description = _("Превью")
+    preview.short_description = _t("Превью")
+
+@admin.register(DocumentTemplate)
+class DocumentTemplateAdmin(admin.ModelAdmin):
+    save_on_top = True
+    list_display = ("kind_label", "title", "updated_at")
+    # list_display_links = ("title",)
+    fields = ("kind", "title", "body", "updated_at")
+    readonly_fields = ("updated_at",)
+
+    @admin.display(description=_t("Тип"))
+    def kind_label(self, obj: DocumentTemplate):
+        return obj.get_kind_display()

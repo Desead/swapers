@@ -3,8 +3,6 @@ from __future__ import annotations
 from django.db import models
 from django.utils.translation import gettext_lazy as _t
 from parler.models import TranslatableModel, TranslatedFields
-
-# CKEditor 5 (django-ckeditor-5)
 from django_ckeditor_5.fields import CKEditor5Field
 
 import bleach

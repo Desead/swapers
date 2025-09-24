@@ -1,4 +1,3 @@
-# admin.py
 from __future__ import annotations
 from django.contrib.sites import admin  # НЕ УДАЛЯТЬ. ЗАГРУЖАЕМ САЙТ ЧТОБЫ СМОГЛИ СНЯТЬ ЕГО РЕГИСТРАЦИЮ В АДМИНКЕ!
 from django.contrib.auth import get_user_model
@@ -25,12 +24,15 @@ from app_main.models_monitoring import Monitoring
 from django.utils import timezone
 from decimal import Decimal
 from django import forms
-from django.contrib import admin as djadmin
+from django.contrib import messages, admin as djadmin
+from django.contrib.admin import helpers
+from django.shortcuts import render
 from django.db import models
 from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from .models_documents import Document
 from django.utils.text import slugify
+from app_library.models import DocumentTemplate
 
 
 # --- UNIFIED PARLER LANGUAGE CHIPS MIXIN -------------------------------------
@@ -976,10 +978,29 @@ class MonitoringAdmin(DecimalFormatMixin, djadmin.ModelAdmin):
 
 
 # ======================= Документы =======================
+class DocumentAdminForm(TranslatableModelForm):
+    template_to_insert = forms.ModelChoiceField(
+        label=_t("Вставить из шаблона"),
+        queryset=DocumentTemplate.objects.all().order_by("id"),
+        required=False,
+        help_text=_t("При сохранении заголовок и содержимое текущего языка будут полностью заменены текстом выбранного шаблона."),
+    )
+    template_overwrite = forms.BooleanField(
+        label=_t("Перезаписать содержимое шаблоном"),
+        required=False,
+        help_text=_t("На форме изменения: если включено и выбран шаблон — текущий текст выбранного языка будет заменён."),
+    )
+
+    class Meta:
+        model = Document
+        fields = "__all__"
+
 
 @djadmin.register(Document)
 class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
     save_on_top = True
+    form = DocumentAdminForm  # <-- подключаем форму с выбором шаблона
+
     list_display = ("title_col", "slug_col", "show_in_site", "updated_at")
     list_display_links = ("title_col",)
     readonly_fields = ("updated_at", "slug_current", "placeholders_help",)
@@ -987,7 +1008,14 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
     fieldsets = (
         (_t("Содержимое"), {
             "classes": ("wide",),
-            "fields": (("title", "show_in_site"), "slug_current", "body", "placeholders_help"),
+            "fields": (
+                ("title", "show_in_site"),
+                "slug_current",
+                "body",
+                "template_to_insert",  # <-- выбор шаблона
+                "template_overwrite",  # <-- чекбокс (на форме изменения)
+                "placeholders_help",
+            ),
         }),
         (_t("Служебное"), {
             "classes": ("wide",),
@@ -995,28 +1023,29 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
         }),
     )
 
-    # --- ВАЖНО: язык формы + скрытое поле language_code ---
+    # ---------- язык формы и скрытое language_code ----------
     def get_form(self, request, obj=None, **kwargs):
         form_class = super().get_form(request, obj, **kwargs)
 
-        # вычисляем язык так же, как его берёт Parler/чипы
         lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
         setattr(form_class, "language_code", lang)
 
         if obj is not None and hasattr(obj, "set_current_language"):
             obj.set_current_language(lang)
 
-        # гарантируем скрытое поле language_code с корректным initial
         base = getattr(form_class, "base_fields", None)
         if base is not None:
             from django import forms
             if "language_code" not in base:
                 base["language_code"] = forms.CharField(required=False, widget=forms.HiddenInput)
             base["language_code"].initial = lang
+            # на форме "добавить" скрываем чекбокс перезаписи
+            if obj is None and "template_overwrite" in base:
+                base["template_overwrite"].widget = forms.HiddenInput()
 
         return form_class
 
-    # --- /ВАЖНО ---
+    # --------------------------------------------------------
 
     @djadmin.display(description=_t("Шаблоны"))
     def placeholders_help(self, obj=None):
@@ -1053,34 +1082,41 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
         if not obj or not obj.pk:
             return "—"
         lang = self.get_form_language(getattr(self, "request", None)) if hasattr(self, "request") else (get_language() or settings.LANGUAGE_CODE)
-        obj.set_current_language(lang)
+        try:
+            obj.set_current_language(lang)
+        except Exception:
+            pass
         return obj.slug or "—"
 
     def render_change_form(self, request, context, *args, **kwargs):
-        # Сохраняем request, чтобы slug_current мог узнать активный язык
+        # чтобы slug_current знал активный язык
         self.request = request
         return super().render_change_form(request, context, *args, **kwargs)
 
     def save_model(self, request, obj: Document, form, change):
-        # Определяем язык формы так же, как его использует Parler
+        # 1) Определяем язык формы как у Parler/чипов
         lang = self.get_form_language(request, obj) or (get_language() or settings.LANGUAGE_CODE)
-
-        # ВАЖНО: ставим язык ДО сохранения, чтобы перевод этого языка точно сохранился
         if hasattr(obj, "set_current_language"):
             obj.set_current_language(lang)
 
-        # Если слаг пуст — сгенерим его в текущем языке (из title в этом же языке)
-        title_val = ""
+        # 2) Вставка из шаблона (при создании — всегда; при изменении — если чекбокс включён)
+        tpl = None
+        overwrite = False
         if form is not None and hasattr(form, "cleaned_data"):
-            title_val = (form.cleaned_data.get("title") or "").strip()
-        if not title_val:
-            title_val = (obj.title or "").strip()
+            tpl = form.cleaned_data.get("template_to_insert")
+            overwrite = bool(form.cleaned_data.get("template_overwrite"))
 
+        apply_tpl = bool(tpl and (not change or overwrite))
+        if apply_tpl:
+            obj.title = (tpl.title or "").strip()
+            obj.body = (tpl.body or "").strip()
+
+        # 3) Автослаг, если пуст: из заголовка текущего языка, с уникальностью в рамках языка
+        title_val = (obj.title or "").strip()
         if not (obj.slug or "").strip():
             base = slugify(title_val) or "doc"
             slug = base
             i = 2
-            # уникальность слага — в рамках текущего языка
             while Document.objects.translated(language_code=lang, slug=slug).exclude(pk=obj.pk).exists():
                 slug = f"{base}-{i}"
                 i += 1
@@ -1088,17 +1124,22 @@ class DocumentAdmin(ParlerLanguageChipsMixin, TranslatableAdmin):
 
         super().save_model(request, obj, form, change)
 
+        if apply_tpl:
+            messages.info(
+                request,
+                _t('Текст вставлен из шаблона «%(tpl)s» для языка %(lang)s.') % {
+                    "tpl": tpl.title, "lang": (lang or "").upper()
+                }
+            )
+
     def add_view(self, request, form_url="", extra_context=None):
-        """
-        На странице создания документа принудительно фиксируем язык формы
-        в settings.LANGUAGE_CODE (чтобы не зависеть от Accept-Language браузера).
-        """
+        # На странице создания фиксируем язык формы на LANGUAGE_CODE (обычно ru),
+        # чтобы первый перевод точно шёл в базовый язык.
         if hasattr(request, "session"):
             request.session["PARLER_CURRENT_LANGUAGE"] = getattr(settings, "LANGUAGE_CODE", "ru")
         return super().add_view(request, form_url, extra_context)
 
 
-# ======================= Сайты: скрыть в админке =======================
 try:
     djadmin.site.unregister(Site)
 except NotRegistered:

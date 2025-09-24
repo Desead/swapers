@@ -26,5 +26,48 @@ python .\manage.py init_roles
 python .\manage.py test
 pytest -q
 python .\manage.py runserver
+
+
+# Создать/обновить каталоги переводов
+python manage.py makemessages -l ru -l de -l fr -l es -l it -l uk `
+  --ignore=.venv/* --ignore=node_modules/* --no-location
+# если есть переводы в JS:
+python manage.py makemessages -d djangojs -l ru -l de -l fr -l es -l it -l uk `
+  --ignore=.venv/* --ignore=node_modules/* --no-location
+
+# Скомпилировать в .mo
+django-admin compilemessages
+
+Загрузить шаблоны документов:
+
 ```
 
+
+# создать фикстуру
+python manage.py dumpdata app_library.DocumentTemplate --indent 2 --output app_library/fixtures/document_templates_ru.json
+
+# Проверить что файл создался в кодировке utf8
+import json, sys
+p="app_library/fixtures/document_templates_ru.json"
+json.load(open(p, encoding="utf-8"))
+print("OK:", p, "UTF-8")
+
+# если он в CP1251 (типичный случай для «ANSI»)
+from pathlib import Path
+src = Path("app_library/fixtures/document_templates_ru.json")
+dst = Path("app_library/fixtures/document_templates_ru_utf8.json")
+dst.write_text(src.read_text(encoding="cp1251"), encoding="utf-8")
+print("Перекодирован:", dst)
+
+# загружаем фикстуру
+python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
+
+
+
+
+# PowerShell (перекодировать в UTF-8)
+# из корня проекта, путь поправьте при необходимости
+Get-Content app_library\fixtures\document_templates_ru.json -Raw -Encoding Default `
+| Set-Content app_library\fixtures\document_templates_ru_utf8.json -NoNewline -Encoding UTF8
+# Загрузить данные из фикстуры
+python manage.py loaddata app_library/fixtures/document_templates_ru_utf9.json
