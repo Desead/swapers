@@ -23,8 +23,8 @@ python .\manage.py makemigrations
 python .\manage.py migrate
 python .\manage.py createsuperuser
 python .\manage.py init_roles
-python .\manage.py test
 pytest -q
+pytest -q app_market/tests
 python .\manage.py runserver
 
 
