@@ -5,27 +5,22 @@ from django.utils.translation import gettext_lazy as _t
 
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
+    save_on_top = True
     list_display = (
-        "name", "is_available",
+        "name", "exchange_kind", "is_available",
         "can_receive", "can_send",
         "stablecoin",
         "spot_taker_fee", "spot_maker_fee",
         "futures_taker_fee", "futures_maker_fee",
         "show_prices_on_home",
     )
-    list_filter = ("is_available", "can_receive", "can_send", "show_prices_on_home")
+    list_filter = ("exchange_kind", "is_available", "can_receive", "can_send", "show_prices_on_home")
     search_fields = ("name", "stablecoin")
-    readonly_fields = ("is_available",)  # статус только для просмотра
+    readonly_fields = ("is_available",)
     fieldsets = (
-        (None, {
-            "fields": ("name", "is_available",),
-        }),
-        (_t("Режимы работы"), {
-            "fields": (("can_receive", "can_send","show_prices_on_home",),),
-        }),
-        (_t("Стейблкоин расчётов"), {
-            "fields": ("stablecoin",),
-        }),
+        (None, {"fields": ("name", "exchange_kind", "is_available")}),
+        (_t("Режимы работы"), {"fields": ("can_receive", "can_send")}),
+        (_t("Стейблкоин расчётов"), {"fields": ("stablecoin",)}),
         (_t("Комиссии"), {
             "fields": (
                 ("spot_taker_fee", "spot_maker_fee"),
@@ -33,6 +28,7 @@ class ExchangeAdmin(admin.ModelAdmin):
             ),
             "description": _t("Значения в процентах, допускаются отрицательные."),
         }),
+        (_t("Отображение"), {"fields": ("show_prices_on_home",)}),
     )
 
 

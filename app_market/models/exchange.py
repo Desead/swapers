@@ -3,11 +3,30 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _t
 
 
+class ExchangeKind(models.TextChoices):
+    CEX = "CEX", _t("Классическая биржа (CEX)")
+    DEX = "DEX", _t("Децентрализованная биржа (DEX)")
+    PSP = "PSP", _t("Платёжная система")
+    MANUAL = "MANUAL", _t("Ручной обмен")
+    # MANUAL = "MANUAL", _t("Ручной обмен") Чеки ?
+    # MANUAL = "MANUAL", _t("Ручной обмен") Коды ?
+
+
 class Exchange(models.Model):
     name = models.CharField(
         max_length=120,
         unique=True,
         verbose_name=_t("Название биржи"),
+        default="Manual",
+    )
+
+    exchange_kind = models.CharField(
+        max_length=10,
+        choices=ExchangeKind.choices,
+        default=ExchangeKind.CEX,
+        db_index=True,
+        verbose_name=_t("Тип биржи"),
+        help_text=_t("CEX / DEX / PSP / MANUAL"),
     )
 
     # 3) Автоматический флаг доступности (редактировать нельзя в форме)
