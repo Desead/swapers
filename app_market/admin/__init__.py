@@ -1,1 +1,1 @@
-from .exchanges import ExchangeAdmin    # noqa: F401
+from .exchanges_admin import ExchangeAdmin    # noqa: F401

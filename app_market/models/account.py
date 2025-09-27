@@ -1,22 +1,27 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _t
 from .exchange import Exchange
+from encrypted_model_fields.fields import EncryptedCharField
 
-# Используем django-encrypted-model-fields (FIELD_ENCRYPTION_KEY в настройках)
-try:
-    from encrypted_model_fields.fields import EncryptedCharField
-except Exception:  # fall back, чтобы не ронять миграции, если пакет ещё не установлен
-    # На этапе разработки можно временно заменить на обычный CharField,
-    # но в проде ОБЯЗАТЕЛЬНО поставить пакет и включить шифрование.
-    EncryptedCharField = models.CharField  # type: ignore
+
+def _mask_for_view(value: str) -> str:
+    """
+    Правила:
+    - len >= 6: первые 3 + 10 звёзд + последние 3
+    - 3 <= len < 6: первые 3 + 10 звёзд
+    - 0 < len < 3: всё, что есть + 10 звёзд
+    - пусто/None -> пусто
+    """
+    if not value:
+        return ""
+    s = str(value)
+    return f"{s[:3]}**********{s[-3:]}"
 
 
 class ExchangeApiKey(models.Model):
     """
-    Набор API-ключей для биржи. Поля опциональны (для чтения котировок иногда не нужны).
-    Делаем отдельной моделью, чтобы:
-      - поддерживать несколько наборов ключей на одну биржу (label/метка),
-      - хранить безопасно и независимо от остальной карточки биржи.
+    API-ключи храним зашифрованными (api_key / api_secret / api_passphrase),
+    а для отображения в админке используем *_view (маскированные дублёры).
     """
     exchange = models.ForeignKey(
         Exchange,
@@ -31,7 +36,7 @@ class ExchangeApiKey(models.Model):
         help_text=_t("Например: main, trading, withdraw-only и т.п."),
     )
 
-    # 4) До трёх полей, все НЕобязательные; шифрованные
+    # Зашифрованные поля (редактируемые, но невидимые по значению в админке)
     api_key = EncryptedCharField(
         max_length=256, blank=True, null=True,
         verbose_name=_t("API Key"),
@@ -43,7 +48,24 @@ class ExchangeApiKey(models.Model):
     api_passphrase = EncryptedCharField(
         max_length=256, blank=True, null=True,
         verbose_name=_t("API Passphrase"),
-        help_text=_t("Иногда требуется (например, на некоторых биржах)."),
+        help_text=_t("Иногда требуется на некоторых биржах."),
+    )
+
+    # Маскированные дублёры (только для просмотра в админке)
+    api_key_view = models.CharField(
+        max_length=272, blank=True, default="",
+        editable=False,
+        verbose_name=_t("API Key (вид)"),
+    )
+    api_secret_view = models.CharField(
+        max_length=272, blank=True, default="",
+        editable=False,
+        verbose_name=_t("API Secret (вид)"),
+    )
+    api_passphrase_view = models.CharField(
+        max_length=272, blank=True, default="",
+        editable=False,
+        verbose_name=_t("API Passphrase (вид)"),
     )
 
     is_enabled = models.BooleanField(
@@ -63,3 +85,10 @@ class ExchangeApiKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.exchange.name} · {self.label}"
+
+    def save(self, *args, **kwargs):
+        # Пересчитываем маски перед сохранением
+        self.api_key_view = _mask_for_view(self.api_key or "")
+        self.api_secret_view = _mask_for_view(self.api_secret or "")
+        self.api_passphrase_view = _mask_for_view(self.api_passphrase or "")
+        super().save(*args, **kwargs)

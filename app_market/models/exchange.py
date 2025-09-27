@@ -63,7 +63,7 @@ class Exchange(models.Model):
     show_prices_on_home = models.BooleanField(
         default=False,
         db_index=True,
-        verbose_name=_t("Показывать цены на главной"),
+        verbose_name=_t("Цены на главную"),
     )
 
     class Meta:
