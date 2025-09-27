@@ -5,17 +5,15 @@ from encrypted_model_fields.fields import EncryptedCharField
 
 
 def _mask_for_view(value: str) -> str:
-    """
-    Правила:
-    - len >= 6: первые 3 + 10 звёзд + последние 3
-    - 3 <= len < 6: первые 3 + 10 звёзд
-    - 0 < len < 3: всё, что есть + 10 звёзд
-    - пусто/None -> пусто
-    """
     if not value:
         return ""
     s = str(value)
-    return f"{s[:3]}**********{s[-3:]}"
+    n = len(s)
+    if n >= 6:
+        return f"{s[:3]}**********{s[-3:]}"
+    if n >= 3:
+        return f"{s[:3]}**********"
+    return "**********"  # для очень коротких не показываем исходные символы
 
 
 class ExchangeApiKey(models.Model):
