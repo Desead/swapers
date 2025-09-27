@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from django.utils.translation import gettext_lazy as _
+from django.utils.translation import gettext_lazy as _t
 from csp.constants import SELF  # опционально, если используешь константы
 from datetime import timedelta
 
@@ -20,13 +20,13 @@ USE_TZ = True
 
 # Языки интерфейса (только 'ru' и 'en')
 LANGUAGES = [
-    ("ru", _("Russian")),
-    ("en", _("English")),
-    ("de", _("German")),
-    ("fr", _("French")),
-    ("es", _("Spanish")),
-    ("it", _("Italian")),
-    ("uk", _("Ukrainian")),
+    ("ru", _t("Russian")),
+    ("en", _t("English")),
+    ("de", _t("German")),
+    ("fr", _t("French")),
+    ("es", _t("Spanish")),
+    ("it", _t("Italian")),
+    ("uk", _t("Ukrainian")),
 ]
 
 PARLER_DEFAULT_LANGUAGE_CODE = LANGUAGE_CODE
@@ -58,6 +58,7 @@ INSTALLED_APPS = [
 
     "app_library.apps.AppLibraryConfig",
     "app_main.apps.AxesRusConfig",  # rate-limit/lockout
+    "app_market.apps.AppMarketConfig",
     "app_main.apps.AppMainConfig",  # <= чтобы сработал ready()
 
     "django.contrib.sites",
@@ -240,3 +241,29 @@ CKEDITOR_5_CONFIGS = {
         'language': 'ru',
     },
 }
+
+SECRETS_DIR = BASE_DIR / ".secrets"
+SECRETS_DIR.mkdir(exist_ok=True)
+FIELD_KEY_FILE = SECRETS_DIR / "field_encryption.key"
+
+def _read_or_create_field_key(path: Path) -> str:
+    """
+    Храним один Fernet-ключ в файле. Если файла нет — создаём.
+    Формат: urlsafe base64, длина строки ~44 символа.
+    """
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+
+    # Генерируем новый ключ
+    try:
+        from cryptography.fernet import Fernet
+    except Exception as e:
+        raise RuntimeError(
+            "Пакет 'cryptography' не установлен. Установи: pip install cryptography"
+        ) from e
+
+    key = Fernet.generate_key().decode("utf-8")
+    path.write_text(key, encoding="utf-8")
+    return key
+
+FIELD_ENCRYPTION_KEY = _read_or_create_field_key(FIELD_KEY_FILE)
