@@ -7,7 +7,7 @@ from django.utils.translation import gettext_lazy as _t
 class ExchangeAdmin(admin.ModelAdmin):
     save_on_top = True
     list_display = (
-        "name", "exchange_kind", "is_available",
+        "name", "is_available",
         "can_receive", "can_send",
         "stablecoin",
         "spot_taker_fee", "spot_maker_fee",
