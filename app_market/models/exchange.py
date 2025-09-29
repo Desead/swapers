@@ -6,10 +6,10 @@ from django.utils.translation import gettext_lazy as _t
 
 
 class ExchangeKind(models.TextChoices):
-    CEX = "CEX", _t("CEX")
-    DEX = "DEX", _t("DEX")
-    PSP = "PSP", _t("PSP")
-    MANUAL = "MANUAL", _t("Ручной обмен")
+    CEX = "CEX", _t("Классическая биржа (CEX)")
+    DEX = "DEX", _t("Децентрализованная биржа (DEX)")
+    PSP = "PSP", _t("Платёжный провайдер (PSP)")
+    MANUAL = "MANUAL", _t("Ручной обмен (возможно в офисе)")
 
 
 class LiquidityProvider(models.TextChoices):
@@ -29,8 +29,7 @@ class Exchange(models.Model):
         choices=LiquidityProvider.choices,
         unique=True,
         db_index=True,
-        verbose_name=_t("Поставщик"),
-        help_text=_t("Выберите из списка: биржи, ручной обмен, платёжные системы."),
+        verbose_name=_t("Название"),
     )
 
     # Тип провайдера (авто-подставляется из provider при сохранении)
@@ -40,6 +39,8 @@ class Exchange(models.Model):
         default=ExchangeKind.CEX,
         db_index=True,
         verbose_name=_t("Тип"),
+        editable=False,
+        help_text=_t("Устанавливается автоматически при сохранении"),
     )
 
     # Авто-статус доступности (обновляется health-check’ом)
@@ -144,8 +145,6 @@ class Exchange(models.Model):
 
     # Валидации/нормализации
     def _auto_kind_from_provider(self) -> str:
-        if self.provider in {LiquidityProvider.KUCOIN, LiquidityProvider.WHITEBIT, LiquidityProvider.RAPIRA, LiquidityProvider.MEXC}:
-            return ExchangeKind.CEX
         if self.provider in {LiquidityProvider.PAYPAL, LiquidityProvider.ADVCASH}:
             return ExchangeKind.PSP
         if self.provider == LiquidityProvider.MANUAL:

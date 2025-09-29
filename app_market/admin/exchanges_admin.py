@@ -3,26 +3,27 @@ from django import forms
 from django.utils.translation import gettext_lazy as _t
 from app_market.models import Exchange, ExchangeApiKey
 
+
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
     save_on_top = True
 
     list_display = (
-        "provider", "exchange_kind", "is_available",
-        "can_receive", "can_send","stablecoin",
+        "provider", "is_available",
+        "can_receive", "can_send", "stablecoin",
         "spot_taker_fee", "spot_maker_fee",
         "futures_taker_fee", "futures_maker_fee",
         "show_prices_on_home",
     )
     list_filter = (
-        "provider",  "is_available","exchange_kind",
+        "provider", "is_available", "exchange_kind",
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
-    readonly_fields = ("is_available",)
+    readonly_fields = ("is_available", 'exchange_kind')
 
     fieldsets = (
-        (_t("Общее"), {"fields": ("provider", "is_available","webhook_endpoint")}),
+        (_t("Общее"), {"fields": (("provider", "exchange_kind",), "is_available", "webhook_endpoint", )}),
         (_t("Режимы работы"), {"fields": (("can_receive", "can_send"),)}),
         (_t("Стейблкоин расчётов"), {"fields": ("stablecoin",)}),
 
