@@ -82,7 +82,8 @@ class ExchangeApiKey(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.exchange.name} · {self.label}"
+        return f"{self.exchange.get_provider_display()} · {self.label}"
+
 
     def save(self, *args, **kwargs):
         # Пересчитываем маски перед сохранением
