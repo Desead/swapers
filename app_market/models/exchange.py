@@ -164,7 +164,7 @@ class Exchange(models.Model):
 
     # Режимы работы
     can_receive = models.BooleanField(default=True, verbose_name=_t("Приём средств"))
-    can_send = models.BooleanField(default=True, verbose_name=_t("Отдача средств"))
+    can_send = models.BooleanField(default=True, verbose_name=_t("Вывод средств"))
 
     # Базовый стейблкоин
     stablecoin = models.CharField(
