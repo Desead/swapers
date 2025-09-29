@@ -134,7 +134,7 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
 class Exchange(models.Model):
     # Фиксированный список провайдеров (одна запись на провайдера)
     provider = models.CharField(
-        max_length=20,
+        max_length=32,
         choices=LiquidityProvider.choices,
         default=LiquidityProvider.MANUAL,
         unique=True,
@@ -260,12 +260,53 @@ class Exchange(models.Model):
 
     # Валидации/нормализации
     def _auto_kind_from_provider(self) -> str:
-        if self.provider in {LiquidityProvider.PAYPAL, LiquidityProvider.ADVCASH}:
+        # PSP
+        if self.provider in {
+            LiquidityProvider.PAYPAL, LiquidityProvider.ADVCASH,
+            LiquidityProvider.FIREKASSA, LiquidityProvider.APIRONE
+        }:
             return ExchangeKind.PSP
+
+        # DEX
         if self.provider in {LiquidityProvider.UNISWAP, LiquidityProvider.PANCAKESWAP}:
             return ExchangeKind.DEX
+
+        # EXCHANGER
+        if self.provider in {
+            LiquidityProvider.CHANGENOW, LiquidityProvider.CHANGELLY,
+            LiquidityProvider.FIXEDFLOAT, LiquidityProvider.QUICKEX,
+            LiquidityProvider.ALFABIT
+        }:
+            return ExchangeKind.EXCHANGER
+
+        # WALLET
+        if self.provider in {
+            LiquidityProvider.WESTWALLET, LiquidityProvider.TRUSTWALLET,
+            LiquidityProvider.TRONWALLET, LiquidityProvider.ANTARCTICWALLET,
+            LiquidityProvider.TELEGRAM_WALLET
+        }:
+            return ExchangeKind.WALLET
+
+        # NODE
+        if self.provider in {
+            LiquidityProvider.BTC_NODE, LiquidityProvider.XMR_NODE,
+            LiquidityProvider.USDT_NODE, LiquidityProvider.USDC_NODE,
+            LiquidityProvider.DASH_NODE
+        }:
+            return ExchangeKind.NODE
+
+        # BANK
+        if self.provider in {
+            LiquidityProvider.SBERBANK, LiquidityProvider.TBANK,
+            LiquidityProvider.ALFABANK, LiquidityProvider.VTB
+        }:
+            return ExchangeKind.BANK
+
+        # MANUAL
         if self.provider == LiquidityProvider.MANUAL:
             return ExchangeKind.MANUAL
+
+        # Иначе — оставляем как есть (обычно CEX)
         return self.exchange_kind
 
     def clean(self):

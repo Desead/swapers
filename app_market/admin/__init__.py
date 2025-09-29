@@ -1,1 +1,2 @@
-from .exchanges_admin import ExchangeAdmin  # noqa: F401
+from .exchanges_admin import ExchangeAdmin, ExchangeApiKeyAdmin
+from .availability_admin import ExchangeAvailabilityLogAdmin

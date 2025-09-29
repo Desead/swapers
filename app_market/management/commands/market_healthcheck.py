@@ -1,8 +1,7 @@
 # app_market/management/commands/market_healthcheck.py
 from __future__ import annotations
-
+from app_market.services.health import prune_availability_logs
 from typing import Iterable, Optional
-
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import Q
 
@@ -47,6 +46,19 @@ class Command(BaseCommand):
             dest="verbose",
             help="Подробный вывод по каждому провайдеру.",
         )
+        parser.add_argument(
+            "--prune",
+            action="store_true",
+            dest="prune",
+            help="После проверки удалить историю старше retention-days (по умолчанию 7).",
+        )
+        parser.add_argument(
+            "--retention-days",
+            type=int,
+            default=7,
+            dest="retention_days",
+            help="Сколько дней хранить историю доступности (по умолчанию 7).",
+        )
 
     def handle(self, *args, **opts):
         providers: Optional[Iterable[str]] = opts.get("providers")
@@ -70,6 +82,10 @@ class Command(BaseCommand):
                 qs = qs.filter(provider__in=prov_values)
             else:
                 self.stdout.write(self.style.WARNING("Фильтр provider задан, но ни одного валидного значения — выборка пуста."))
+            if opts.get("prune"):
+                days = int(opts.get("retention_days") or 7)
+                removed = prune_availability_logs(days)
+                self.stdout.write(self.style.SUCCESS(f"[PRUNE] retention_days={days} removed={removed}"))
 
         if kinds:
             kind_values = set()

@@ -25,7 +25,7 @@ class ExchangeApiKey(models.Model):
         Exchange,
         on_delete=models.CASCADE,
         related_name="api_keys",
-        verbose_name=_t("Биржа"),
+        verbose_name=_t("Поставщик"),
     )
     label = models.CharField(
         max_length=64,
@@ -68,12 +68,14 @@ class ExchangeApiKey(models.Model):
 
     is_enabled = models.BooleanField(
         default=True,
+        db_index=True,
         verbose_name=_t("Включён"),
     )
 
     class Meta:
         verbose_name = _t("API ключи биржи")
         verbose_name_plural = _t("API ключи бирж")
+        ordering = ["exchange", "label"]
         constraints = [
             models.UniqueConstraint(
                 fields=["exchange", "label"],
@@ -83,7 +85,6 @@ class ExchangeApiKey(models.Model):
 
     def __str__(self) -> str:
         return f"{self.exchange.get_provider_display()} · {self.label}"
-
 
     def save(self, *args, **kwargs):
         # Пересчитываем маски перед сохранением

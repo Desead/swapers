@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django import forms
-from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _t
 from app_market.models import Exchange, ExchangeApiKey
+from django.utils.html import format_html
 
 
 @admin.register(Exchange)
@@ -21,10 +21,12 @@ class ExchangeAdmin(admin.ModelAdmin):
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
-    readonly_fields = ("is_available", 'exchange_kind',"partner_link")
+    readonly_fields = ("is_available", "exchange_kind", "partner_link",)
 
     fieldsets = (
-        (_t("Общее"), {"fields": (("provider", "is_available",), "exchange_kind", "webhook_endpoint","partner_link",)}),
+        (_t("Общее"), {
+            "fields": (("provider", "is_available",), "exchange_kind", "webhook_endpoint", "partner_link",)
+        }),
         (_t("Режимы работы"), {"fields": (("can_receive", "can_send"),)}),
         (_t("Стейблкоин расчётов"), {"fields": ("stablecoin",)}),
 
@@ -49,8 +51,12 @@ class ExchangeAdmin(admin.ModelAdmin):
         }),
 
         (_t("Отображение"), {
-            "description": _t("Цены с этого поставщика ликвидности будут отображаться на главной странице. Можно одновременно выбирать несколько разных поставщиков, например биржу+банк и т.д."),
-            "fields": ("show_prices_on_home",)}),
+            "description": _t(
+                "Цены с этого поставщика ликвидности будут отображаться на главной странице. "
+                "Можно одновременно выбирать несколько разных поставщиков, например биржу+банк и т.д."
+            ),
+            "fields": ("show_prices_on_home",)
+        }),
     )
 
     def partner_link(self, obj):
@@ -58,7 +64,6 @@ class ExchangeAdmin(admin.ModelAdmin):
         if not url:
             return "—"
         label = _t("Перейти на сайт {name}").format(name=obj.get_provider_display())
-        # target=_blank + rel=noopener для безопасности
         return format_html('<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>', url, label)
 
     partner_link.short_description = _t("URL")
@@ -163,8 +168,9 @@ class ExchangeApiKeyAdmin(admin.ModelAdmin):
 
     list_display = ("exchange", "label", "api_key_view", "api_secret_view", "api_passphrase_view", "is_enabled")
     list_filter = ("exchange", "is_enabled")
-    search_fields = ("exchange__provider", "label")  # ← раньше было exchange__name
+    search_fields = ("exchange__provider", "label")
     readonly_fields = ("api_key_view", "api_secret_view", "api_passphrase_view")
+    list_select_related = ("exchange",)
 
     fieldsets = (
         (None, {"fields": ("exchange", "label", "is_enabled")}),

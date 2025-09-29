@@ -1,5 +1,9 @@
 from __future__ import annotations
+import logging
+from datetime import timedelta
+from django.utils import timezone
 
+logger = logging.getLogger(__name__)
 import json
 import time
 import typing as t
@@ -53,6 +57,7 @@ def check_exchange(exchange: Exchange, persist: bool = True) -> HealthResult:
         res = HealthResult(exchange.provider, exchange.id, True, HealthCode.SKIPPED_MANUAL, "Manual provider; forced True.", 0)
         if persist:
             _set_availability(exchange, True)
+        log_health_result(exchange, res)
         return res
 
     # PSP — пока считаем доступным; сюда потом вкрутим реальную проверку
@@ -60,18 +65,21 @@ def check_exchange(exchange: Exchange, persist: bool = True) -> HealthResult:
         res = HealthResult(exchange.provider, exchange.id, True, HealthCode.SKIPPED_PSP, "PSP check TBD; forced True.", 0)
         if persist:
             _set_availability(exchange, True)
+        log_health_result(exchange, res)
         return res
 
     if exchange.exchange_kind in {ExchangeKind.WALLET, ExchangeKind.NODE, ExchangeKind.BANK}:
         res = HealthResult(exchange.provider, exchange.id, True, HealthCode.SKIPPED_PSP, "Wallet/Node check TBD; forced True.", 0)
         if persist:
             _set_availability(exchange, True)
+        log_health_result(exchange, res)
         return res
 
     # CEX/DEX и прочие
     res = _check_cex_like(exchange)
     if persist:
         _set_availability(exchange, res.available)
+    log_health_result(exchange, res)
     return res
 
 
@@ -84,6 +92,31 @@ def effective_modes(exchange: Exchange) -> dict[str, bool]:
         "can_receive_effective": bool(exchange.is_available and exchange.can_receive),
         "can_send_effective": bool(exchange.is_available and exchange.can_send),
     }
+
+
+def log_health_result(exchange: Exchange, res: "HealthResult") -> None:
+    """Сохраняем результат проверки в историю (безопасно, без падений)."""
+    try:
+        from app_market.models import ExchangeAvailabilityLog
+        detail = (res.detail or "")[:512]
+        ExchangeAvailabilityLog.objects.create(
+            exchange=exchange,
+            available=res.available,
+            code=res.code,
+            detail=detail,
+            latency_ms=res.latency_ms or 0,
+        )
+    except Exception:  # не мешаем основной логике даже при ошибке логирования
+        logger.exception("Failed to persist availability log for %s", exchange)
+
+
+def prune_availability_logs(retention_days: int = 7) -> int:
+    """Удаляем историю старше retention_days. Возвращаем число удалённых записей."""
+    from app_market.models import ExchangeAvailabilityLog
+    cutoff = timezone.now() - timedelta(days=retention_days)
+    qs = ExchangeAvailabilityLog.objects.filter(created_at__lt=cutoff)
+    deleted, _ = qs.delete()
+    return deleted
 
 
 # ---- Реализация проверок ----
