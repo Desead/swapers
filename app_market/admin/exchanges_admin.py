@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django import forms
+from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _t
 from app_market.models import Exchange, ExchangeApiKey
 
@@ -20,10 +21,10 @@ class ExchangeAdmin(admin.ModelAdmin):
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
-    readonly_fields = ("is_available", 'exchange_kind')
+    readonly_fields = ("is_available", 'exchange_kind',"partner_link")
 
     fieldsets = (
-        (_t("Общее"), {"fields": (("provider", "exchange_kind",), "is_available", "webhook_endpoint", )}),
+        (_t("Общее"), {"fields": (("provider", "is_available",), "exchange_kind", "webhook_endpoint","partner_link",)}),
         (_t("Режимы работы"), {"fields": (("can_receive", "can_send"),)}),
         (_t("Стейблкоин расчётов"), {"fields": ("stablecoin",)}),
 
@@ -47,8 +48,98 @@ class ExchangeAdmin(admin.ModelAdmin):
             )
         }),
 
-        (_t("Отображение"), {"fields": ("show_prices_on_home",)}),
+        (_t("Отображение"), {
+            "description": _t("Цены с этого поставщика ликвидности будут отображаться на главной странице. Можно одновременно выбирать несколько разных поставщиков, например биржу+банк и т.д."),
+            "fields": ("show_prices_on_home",)}),
     )
+
+    def partner_link(self, obj):
+        url = getattr(obj, "partner_url", "") or ""
+        if not url:
+            return "—"
+        label = _t("Перейти на сайт {name}").format(name=obj.get_provider_display())
+        # target=_blank + rel=noopener для безопасности
+        return format_html('<a href="{}" target="_blank" rel="noopener noreferrer">{}</a>', url, label)
+
+    partner_link.short_description = _t("URL")
+
+    def formfield_for_choice_field(self, db_field, request, **kwargs):
+        """
+        Группируем выпадающий список provider в админке.
+        """
+        if db_field.name != "provider":
+            return super().formfield_for_choice_field(db_field, request, **kwargs)
+
+        field = super().formfield_for_choice_field(db_field, request, **kwargs)
+        from app_market.models.exchange import LiquidityProvider
+        labels = dict(LiquidityProvider.choices)
+
+        def pick(values):
+            return [(v, labels[v]) for v in values if v in labels]
+
+        groups = [
+            (_t("Ручной режим"), pick([
+                LiquidityProvider.MANUAL,
+            ])),
+            (_t("Централизованные биржи (CEX)"), pick([
+                LiquidityProvider.KUCOIN,
+                LiquidityProvider.WHITEBIT,
+                LiquidityProvider.BYBIT,
+                LiquidityProvider.RAPIRA,
+                LiquidityProvider.MEXC,
+                LiquidityProvider.BINANCE,
+                LiquidityProvider.COINBASE_EXCHANGE,
+                LiquidityProvider.UPBIT,
+                LiquidityProvider.BITSTAMP,
+                LiquidityProvider.BINGX,
+                LiquidityProvider.BITFINEX,
+                LiquidityProvider.HTX,
+                LiquidityProvider.GATEIO,
+                LiquidityProvider.BITGET,
+                LiquidityProvider.OKX,
+                LiquidityProvider.GEMINI,
+                LiquidityProvider.LBANK,
+            ])),
+            (_t("Децентрализованные (DEX)"), pick([
+                LiquidityProvider.UNISWAP,
+                LiquidityProvider.PANCAKESWAP,
+            ])),
+            (_t("Обменники (EXCHANGER)"), pick([
+                LiquidityProvider.CHANGENOW,
+                LiquidityProvider.CHANGELLY,
+                LiquidityProvider.FIXEDFLOAT,
+                LiquidityProvider.QUICKEX,
+            ])),
+            (_t("Кошельки (WALLET)"), pick([
+                LiquidityProvider.WESTWALLET,
+                LiquidityProvider.TRUSTWALLET,
+                LiquidityProvider.TRONWALLET,
+                LiquidityProvider.ANTARCTICWALLET,
+                LiquidityProvider.TELEGRAM_WALLET,
+            ])),
+            (_t("Банки (BANK)"), pick([
+                LiquidityProvider.SBERBANK,
+                LiquidityProvider.ALFABANK,
+                LiquidityProvider.VTB,
+                LiquidityProvider.TBANK,
+            ])),
+            (_t("Ноды (NODE)"), pick([
+                LiquidityProvider.BTC_NODE,
+                LiquidityProvider.XMR_NODE,
+                LiquidityProvider.USDT_NODE,
+                LiquidityProvider.USDC_NODE,
+                LiquidityProvider.DASH_NODE,
+            ])),
+            (_t("Платёжные системы (PSP)"), pick([
+                LiquidityProvider.PAYPAL,
+                LiquidityProvider.ADVCASH,
+                LiquidityProvider.FIREKASSA,
+                LiquidityProvider.APIRONE,
+            ])),
+        ]
+
+        field.choices = [g for g in groups if g[1]]
+        return field
 
 
 class ExchangeApiKeyAdminForm(forms.ModelForm):
