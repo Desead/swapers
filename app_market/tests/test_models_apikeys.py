@@ -1,12 +1,13 @@
 import pytest
 from django.db import IntegrityError, transaction
 from app_market.models import Exchange, ExchangeApiKey
+from app_market.models.exchange import LiquidityProvider
 
 pytestmark = pytest.mark.django_db
 
 
-def _create_exchange(name="Bybit"):
-    return Exchange.objects.create(name=name)
+def _create_exchange(provider=LiquidityProvider.KUCOIN):
+    return Exchange.objects.create(provider=provider)
 
 
 @pytest.mark.parametrize(
@@ -44,7 +45,6 @@ def test_mask_updates_on_change_only():
     mask1 = obj.api_key_view
     assert mask1 == "abc**********def"
 
-    # Меняем ключ — маска должна обновиться
     obj.api_key = "xyz123456"
     obj.save()
     obj.refresh_from_db()
@@ -56,11 +56,9 @@ def test_unique_label_per_exchange():
     ex = _create_exchange()
     ExchangeApiKey.objects.create(exchange=ex, label="prod")
 
-    # Ловим конкретно IntegrityError, чтобы не «ломать» транзакцию
     with transaction.atomic():
         with pytest.raises(IntegrityError):
             ExchangeApiKey.objects.create(exchange=ex, label="prod")  # тот же exchange+label
 
-    # После отката всё работает
-    ex2 = _create_exchange("Kraken")
+    ex2 = _create_exchange(LiquidityProvider.WHITEBIT)
     ExchangeApiKey.objects.create(exchange=ex2, label="prod")  # ок

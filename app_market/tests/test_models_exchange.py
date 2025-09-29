@@ -1,12 +1,12 @@
 import pytest
 from decimal import Decimal
-from app_market.models.exchange import ExchangeKind, Exchange
+from app_market.models.exchange import ExchangeKind, Exchange, LiquidityProvider
 
 pytestmark = pytest.mark.django_db
 
 
 def test_exchange_defaults_and_stablecoin_normalization():
-    ex = Exchange.objects.create(name="Binance", stablecoin="usdt")
+    ex = Exchange.objects.create(provider=LiquidityProvider.KUCOIN, stablecoin="usdt")
     ex.refresh_from_db()
 
     assert ex.exchange_kind == ExchangeKind.CEX  # дефолт
@@ -21,11 +21,12 @@ def test_exchange_defaults_and_stablecoin_normalization():
     assert ex.show_prices_on_home is False
 
 
-def test_exchange_unique_name():
-    Exchange.objects.create(name="OKX")
+def test_exchange_unique_provider():
+    Exchange.objects.create(provider=LiquidityProvider.MEXC)
     with pytest.raises(Exception):
-        Exchange.objects.create(name="OKX")
+        Exchange.objects.create(provider=LiquidityProvider.MEXC)
+
 
 def test_exchange_can_be_manual_kind():
-    ex = Exchange.objects.create(name="ManualOffice", exchange_kind=ExchangeKind.MANUAL)
+    ex = Exchange.objects.create(provider=LiquidityProvider.MANUAL, exchange_kind=ExchangeKind.MANUAL)
     assert ex.exchange_kind == ExchangeKind.MANUAL
