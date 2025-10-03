@@ -318,7 +318,7 @@ class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableA
     fieldsets = (
         (_t("Главная страница"), {
             "classes": ("wide",),
-            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode", "copyright_field"),
+            "fields": ("main_h1", "main_subtitle", ("domain", "domain_view"), "maintenance_mode", "copyright_field", "fee_percent",),
         }),
         (_t("Перевод на различные языки"), {
             "classes": ("wide", "collapse"),
@@ -328,9 +328,9 @@ class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableA
             "classes": ("wide", "collapse"),
             "fields": (("logo", "favicon"),),
         }),
-        (_t("Комиссии и списки стейблкоинов"), {
+        (_t("Списки стейблкоинов и memo/tag"), {
             "classes": ("wide", "collapse"),
-            "fields": (("stablecoins", "fee_percent",),),
+            "fields": (("stablecoins", "memo_required_chains",),),
         }),
         (_t("Интеграции: XML, <head>, Telegram"), {
             "classes": ("wide", "collapse"),

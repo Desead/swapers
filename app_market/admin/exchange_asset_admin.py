@@ -1,9 +1,9 @@
-# app_market/admin/exchange_asset_admin.py
 from decimal import Decimal
-from django import forms
-from django.contrib import admin, messages
+from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _t
+from django import forms
+from django.db import models
 
 from app_market.models import ExchangeAsset
 
@@ -80,6 +80,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "withdraw_open",
         "is_stablecoin",
         "reserve_current",
+        "requires_memo",
         "last_synced_at",
     )
     list_display_links = ("exchange", "asset_code", "chain_code")
@@ -87,6 +88,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "exchange",
         "asset_kind",
         "is_stablecoin",
+        "requires_memo",
         DepositOpenFilter,
         WithdrawOpenFilter,
     )
@@ -150,12 +152,21 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         }),
         (_t("Номинал, точность и резервы"), {
             "classes": ("wide", "collapse"),
-            "fields": ("nominal", "amount_precision", ("reserve_current", "reserve_min", "reserve_max")),
+            "fields": (("nominal", "amount_precision", "amount_precision_display"), ("reserve_current", "reserve_min", "reserve_max")),
         }),
         (_t("Иконка"), {"classes": ("collapse",), "fields": ("icon_file", "icon_url", "icon_preview")}),
         (_t("Служебное"), {"classes": ("wide", "collapse"), "fields": ("provider_symbol", "provider_chain", "status_note", "raw_metadata", "last_synced_at")}),
         (_t("Аудит"), {"classes": ("collapse",), "fields": ("created_at", "updated_at")}),
     )
+
+    formfield_overrides = {
+        models.DecimalField: {
+            "widget": forms.NumberInput(attrs={"style": "min-width: 8.5em"})
+        },
+        models.IntegerField: {
+            "widget": forms.NumberInput(attrs={"style": "min-width: 8.5em"})
+        },
+    }
 
     # --- helpers / рендеринг ---
     def icon_preview(self, obj: ExchangeAsset):

@@ -142,6 +142,9 @@ class ExchangeAsset(models.Model):
     amount_precision = models.PositiveSmallIntegerField(
         default=8, verbose_name=_t("Точность актива")
     )
+    amount_precision_display = models.PositiveSmallIntegerField(
+        default=5, verbose_name=_t("Точность на экране")
+    )
     nominal = models.PositiveIntegerField(
         default=1, verbose_name=_t("Номинал"),
     )

@@ -1,4 +1,3 @@
-# app_market/management/commands/market_sync_assets.py
 from __future__ import annotations
 
 import base64
@@ -18,7 +17,6 @@ from django.utils import timezone
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-# Важно: TextChoices импортируем напрямую
 from app_market.models.exchange import Exchange, LiquidityProvider
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 from app_market.models.account import ExchangeApiKey
@@ -33,7 +31,7 @@ PRIV_FEE_URL = f"{WB_BASE}{PRIV_FEE_PATH}"
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 
 
-# ----------------------- утилиты -----------------------
+# ----------------------- utils -----------------------
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = Request(url, headers={"User-Agent": UA})
@@ -82,7 +80,8 @@ def _B(x: Any) -> bool:
     return False
 
 def _stable_set_from_sitesetup() -> Set[str]:
-    raw = SiteSetup.get_solo().stablecoins
+    ss = SiteSetup.get_solo()
+    raw = ss.stablecoins
     items: list[str] = []
     if isinstance(raw, str):
         items = [p for p in re.split(r"[\s,;]+", raw) if p]
@@ -90,10 +89,20 @@ def _stable_set_from_sitesetup() -> Set[str]:
         items = [str(p) for p in raw if p]
     return {p.strip().upper() for p in items}
 
+def _memo_required_set() -> Set[str]:
+    # Используем новый метод из SiteSetup (ты уже добавил его)
+    ss = SiteSetup.get_solo()
+    try:
+        return ss.get_memo_required_chains_set()
+    except Exception:
+        # если по какой-то причине метода нет — gracefully degrade
+        raw = (getattr(ss, "memo_required_chains", "") or "").strip()
+        if not raw:
+            return set()
+        return {p.strip().upper() for p in re.split(r"[\s,;]+", raw) if p.strip()}
+
 def _json_sanitize(v: Any) -> Any:
-    """Превращаем любые Decimal в строки; обходим рекурсивно dict/list/tuple."""
     if isinstance(v, Decimal):
-        # Строкой сохраняем точность (в отличие от float)
         s = format(v, "f")
         if "." in s:
             s = s.rstrip("0").rstrip(".")
@@ -105,7 +114,7 @@ def _json_sanitize(v: Any) -> Any:
     return v
 
 
-# -------------------- парсинг WhiteBIT --------------------
+# -------------------- WhiteBIT parsing --------------------
 
 @dataclass
 class FeeSide:
@@ -120,21 +129,15 @@ class FeePack:
     withdraw: FeeSide
 
 def _flex_percent(v: Any) -> Decimal:
-    # flex может быть dict {"percent": "...", "minFee": "...", "maxFee": "..."} или числом
     if isinstance(v, dict):
         return _D(v.get("percent"))
     return _D(v)
 
 def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
-    """
-    Ключи могут быть 'USDT (TRC20)' или просто 'XMR'.
-    row.deposit/withdraw: {fixed, flex{percent,...}, min_amount, max_amount}
-    """
     out: Dict[Tuple[str, Optional[str]], FeePack] = {}
     for key, row in obj.items():
         if not isinstance(row, dict):
             continue
-        # Разобрать "TICKER (NETWORK)"
         m = re.match(r"^\s*([A-Za-z0-9]+)\s*(?:\(\s*([^)]+)\s*\))?\s*$", str(key))
         ticker = (m.group(1) if m else str(key)).strip().upper()
         network = (m.group(2).strip().upper() if (m and m.group(2)) else None)
@@ -159,13 +162,6 @@ def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
     return out
 
 def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
-    """
-    Собираем карту (ticker, network|None) -> мета:
-      - asset_name, amount_precision, requires_memo
-      - can_deposit / can_withdraw (учитывая сети)
-      - confirmations (по сети)
-      - лимиты deposit/withdraw (по сети)
-    """
     result: Dict[Tuple[str, Optional[str]], dict] = {}
     for ticker, payload in obj.items():
         if not isinstance(payload, dict):
@@ -176,6 +172,9 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
         requires_memo = _B(payload.get("is_memo"))
         can_dep_global = _B(payload.get("can_deposit"))
         can_wd_global = _B(payload.get("can_withdraw"))
+
+        is_fiat = isinstance(payload.get("providers"), dict)
+        asset_kind = AssetKind.FIAT if is_fiat else AssetKind.CRYPTO
 
         networks = payload.get("networks") or {}
         nets_dep = set(networks.get("deposits") or [])
@@ -188,12 +187,12 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
 
         nets_all = sorted(set(nets_dep) | set(nets_wd) | set(confirms.keys()) | set(lim_dep.keys()) | set(lim_wd.keys()))
         if not nets_all:
-            # одно-сетевой актив
             key = (t, None)
             result[key] = {
                 "asset_name": name,
                 "amount_precision": precision,
                 "requires_memo": requires_memo,
+                "asset_kind": asset_kind,
                 "can_deposit": can_dep_global,
                 "can_withdraw": can_wd_global,
                 "confirmations": int(payload.get("confirmations") or 0),
@@ -209,7 +208,8 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
             result[key] = {
                 "asset_name": name,
                 "amount_precision": precision,
-                "requires_memo": requires_memo,
+                "requires_memo": requires_memo,  # у WB нет надёжного пер-сетевого флага — передаём как «общий»
+                "asset_kind": asset_kind,
                 "can_deposit": dep_ok,
                 "can_withdraw": wd_ok,
                 "confirmations": int((confirms or {}).get(net) or 0),
@@ -225,7 +225,6 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
     return result
 
 def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict[str, dict]:
-    """Возвращает словарь TICKER -> row (percentFlex/fixed/min/max)."""
     body = {"request": PRIV_FEE_PATH, "nonce": int(time.time() * 1000)}
     data = _http_post_signed_json(PRIV_FEE_URL, body, api_key, api_secret, timeout=timeout)
     out: Dict[str, dict] = {}
@@ -258,7 +257,7 @@ def _fee_from_private(ticker: str, priv: Dict[str, dict]) -> Optional[FeePack]:
     )
 
 
-# -------------------- основной апсертер --------------------
+# -------------------- upsert --------------------
 
 @dataclass
 class Stats:
@@ -272,7 +271,6 @@ def _merge_fee(pub_fee: Dict[Tuple[str, Optional[str]], FeePack],
                priv_fee: Dict[str, dict],
                ticker: str,
                network: Optional[str]) -> FeePack:
-    # приоритет: приватные (по тикеру) > публичные (по ТИКЕР(СЕТЬ)) > публичные (по тикеру) > нули
     f_priv = _fee_from_private(ticker, priv_fee) if priv_fee else None
     f_pub_net = pub_fee.get((ticker, network))
     f_pub_tic = pub_fee.get((ticker, None))
@@ -308,8 +306,8 @@ def _fee_to_dict(f: FeePack) -> dict:
 def _upsert_whitebit(exchange: Exchange, timeout: int, limit: int, reconcile: bool, verbose: bool) -> Stats:
     stats = Stats()
     stable_set = _stable_set_from_sitesetup()
+    memo_set = _memo_required_set()
 
-    # 1) fetch
     try:
         assets_json = _http_get_json(ASSETS_URL, timeout=timeout)
         fee_json = _http_get_json(FEE_URL, timeout=timeout)
@@ -330,66 +328,67 @@ def _upsert_whitebit(exchange: Exchange, timeout: int, limit: int, reconcile: bo
 
     processed_keys: Set[Tuple[str, str]] = set()
 
-    # 2) upsert по всем (ticker, network)
     for i, ((ticker, network), meta) in enumerate(assets_map.items(), start=1):
         if limit and i > limit:
             break
         stats.processed += 1
 
-        # нормализуем chain_code: если одно-сетевой актив → «родная сеть» = сам тикер
         chain_code = (network or ticker)
+        chain_norm = (chain_code or "").strip().upper()
         processed_keys.add((ticker, chain_code))
 
-        # доступность
+        kind: str = meta.get("asset_kind") or AssetKind.CRYPTO
+
         AD = _B(meta.get("can_deposit"))
         AW = _B(meta.get("can_withdraw"))
 
-        # подтверждения
         dep_conf = int(meta.get("confirmations") or 0)
-        if dep_conf < 1:
-            dep_conf = 1  # крипта: минимум 1
-        wdr_conf = dep_conf  # нет отдельного источника — не меньше депозита
+        if kind == AssetKind.CRYPTO and dep_conf < 1:
+            dep_conf = 1
+        wdr_conf = dep_conf
 
-        # лимиты из assets (по сети)
         dep_lim = meta.get("deposit_limits") or {}
         wd_lim = meta.get("withdraw_limits") or {}
 
-        # комиссии с приоритетом private → public
         fees = _merge_fee(pub_fee_map, priv_fee_map, ticker, network)
 
-        # raw_metadata — только JSON-совместимые типы
+        # --- NEW: requires_memo вычисляем с учётом SiteSetup
+        provider_memo = bool(meta.get("requires_memo") or False)
+        site_enforces_memo = (kind == AssetKind.CRYPTO) and (chain_norm in memo_set)
+        requires_memo = (kind == AssetKind.CRYPTO) and (site_enforces_memo or provider_memo)
+
+        memo_source = "site_setup" if site_enforces_memo else ("provider" if provider_memo else "none")
+
         raw_meta = {
             "assets": _json_sanitize(meta),
             "fees": _fee_to_dict(fees),
+            "memo": {"effective": requires_memo, "source": memo_source, "chain": chain_norm},
             "source": "whitebit",
             "synced_at": timezone.now().isoformat(),
         }
 
         defaults = dict(
-            # идентификация/мета
             asset_name=(meta.get("asset_name") or ""),
             amount_precision=int(meta.get("amount_precision") or 8),
-            requires_memo=bool(meta.get("requires_memo") or False),
-            asset_kind=AssetKind.CRYPTO,  # WhiteBIT — по умолчанию крипта
+            requires_memo=requires_memo,
+            asset_kind=kind,
             provider_symbol=ticker,
             provider_chain=(network or ""),
-            # авто-флаги
-            AD=AD,
-            AW=AW,
-            # подтверждения
+            AD=AD, AW=AW,
             confirmations_deposit=dep_conf,
             confirmations_withdraw=max(dep_conf, wdr_conf),
-            # лимиты
             deposit_min=_D(dep_lim.get("min")),
             deposit_max=_D(dep_lim.get("max")),
             withdraw_min=_D(wd_lim.get("min")),
             withdraw_max=_D(wd_lim.get("max")),
-            # комиссии
             deposit_fee_fixed=fees.deposit.fixed,
             deposit_fee_percent=fees.deposit.percent,
             withdraw_fee_fixed=fees.withdraw.fixed,
             withdraw_fee_percent=fees.withdraw.percent,
-            # служебное
+            # стейбл — ТОЛЬКО из SiteSetup
+            is_stablecoin=(kind == AssetKind.CRYPTO) and (
+                ticker.upper() in stable_set or (meta.get("asset_name") or "").strip().upper() in stable_set
+            ),
             raw_metadata=raw_meta,
             last_synced_at=timezone.now(),
         )
@@ -409,19 +408,13 @@ def _upsert_whitebit(exchange: Exchange, timeout: int, limit: int, reconcile: bo
                 if getattr(obj, field) != val:
                     setattr(obj, field, val)
                     changed = True
-            # стейблкоин (если не установлен) — по нашему списку
-            if obj.asset_kind == AssetKind.CRYPTO and not obj.is_stablecoin:
-                if (obj.asset_code or "").upper() in stable_set or (obj.asset_name or "").upper() in stable_set:
-                    obj.is_stablecoin = True
-                    changed = True
             if changed:
                 obj.updated_at = timezone.now()
-                obj.save(update_fields=list(defaults.keys()) + ["is_stablecoin", "updated_at"])
+                obj.save(update_fields=list(defaults.keys()) + ["updated_at"])
                 stats.updated += 1
             else:
                 stats.skipped += 1
 
-    # 3) reconcile: у нас есть актив, но его нет в свежей выдаче — гасим AD/AW
     if reconcile:
         for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
             key = (obj.asset_code, obj.chain_code)
@@ -458,8 +451,6 @@ def _get_any_enabled_keys(exchange: Exchange) -> tuple[Optional[str], Optional[s
     return ((key.api_key or None), (key.api_secret or None)) if key else (None, None)
 
 
-# ----------------------- management command -----------------------
-
 class Command(BaseCommand):
     help = (
         "Синхронизация активов (монета+сеть) для WhiteBIT.\n"
@@ -469,7 +460,7 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--provider", default="WHITEBIT", help="Код провайдера (по умолчанию WHITEBIT)")
-        parser.add_argument("--exchange-id", type=int, help="ID Exchange (если несколько WhiteBIT)")
+        parser.add_argument("--exchange-id", type=int, help="ID Exchange (если несколько WHITEBIT)")
         parser.add_argument("--timeout", type=int, default=20, help="HTTP таймаут, сек")
         parser.add_argument("--limit", type=int, default=0, help="Ограничить кол-во записей для отладки")
         parser.add_argument("--no-reconcile", action="store_true", help="Не гасить AD/AW у отсутствующих у провайдера")
@@ -487,7 +478,6 @@ class Command(BaseCommand):
             raise CommandError("Сейчас команда поддерживает только WHITEBIT.")
 
         ex = _select_exchange(provider, exchange_id)
-
         stats = _upsert_whitebit(ex, timeout=timeout, limit=limit, reconcile=reconcile, verbose=verbose)
 
         msg = (

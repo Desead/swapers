@@ -1,3 +1,4 @@
+import re
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.utils import timezone
@@ -412,8 +413,15 @@ class SiteSetup(TranslatableModel):
     stablecoins = models.TextField(
         verbose_name=_t("Список стейблкоинов"),
         blank=True,
-        default="USDT, USDC, DAI, TUSD, FDUSD, PYUSD, USDP, GUSD, EURT, EURC, FRAX",
-        help_text=_t("Через запятую, тикеры в верхнем регистре (например: USDT, USDC, DAI)."),
+        default="USDT, USDC, DAI, TUSD, FDUSD, PYUSD, USDP, GUSD, EURT, EURC, FRAX, EURR, EURI, USAT, USDS, USDE",
+        help_text=_t("Через запятую, тикеры в ВЕРХНЕМ регистре (например: USDT, USDC, DAI)."),
+    )
+    # --- [5.1] Сети, где требуется MEMO/TAG (XRP/XLM/TON и т.п.) ---
+    memo_required_chains = models.TextField(
+        verbose_name=_t("Сети, где требуется MEMO/TAG"),
+        blank=True,
+        default="XRP, XLM, EOS, TON, ATOM, OSMO, KAVA, LUNC, LUNA, BNB, XEM, HBAR",
+        help_text=_t("Через запятую. Коды сетей в ВЕРХНЕМ регистре (например: XRP, TON, BNB)."),
     )
 
     # --- [6] Путь для будущей XML-выгрузки курсов ---
@@ -668,3 +676,14 @@ class SiteSetup(TranslatableModel):
                 out.append(c)
                 seen.add(c)
         return out
+
+    def get_memo_required_chains_set(self):
+        """
+        Возвращает множество кодов сетей (UPPERCASE), для которых требуется MEMO/TAG,
+        разобранных из memo_required_chains (CSV/пробелы/точки с запятыми).
+        """
+        raw = (self.memo_required_chains or "").strip()
+        if not raw:
+            return set()
+        parts = re.split(r"[\s,;]+", raw)
+        return {p.strip().upper() for p in parts if p.strip()}
