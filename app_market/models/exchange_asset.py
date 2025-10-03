@@ -208,14 +208,13 @@ class ExchangeAsset(models.Model):
 
     @property
     def deposit_open(self) -> bool:
-        # Эффективный доступ на ввод: ручной AND авто AND доступность ПЛ
-        ex_avail = getattr(self.exchange, "is_available", True)
-        return bool(self.D and self.AD and ex_avail)
+        ex = self.exchange
+        return bool(self.D and self.AD and getattr(ex, "is_available", True) and getattr(ex, "can_receive", True))
 
     @property
     def withdraw_open(self) -> bool:
-        ex_avail = getattr(self.exchange, "is_available", True)
-        return bool(self.W and self.AW and ex_avail)
+        ex = self.exchange
+        return bool(self.W and self.AW and getattr(ex, "is_available", True) and getattr(ex, "can_send", True))
 
     def clean(self):
         # Нормализация кодов

@@ -42,9 +42,9 @@ class DepositOpenFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         val = self.value()
         if val == "yes":
-            return queryset.filter(D=True, AD=True, exchange__is_available=True)
+            return queryset.filter(D=True, AD=True, exchange__is_available=True, exchange__can_receive=True)
         if val == "no":
-            return queryset.exclude(D=True, AD=True, exchange__is_available=True)
+            return queryset.exclude(D=True, AD=True, exchange__is_available=True, exchange__can_receive=True)
         return queryset
 
 
@@ -58,9 +58,9 @@ class WithdrawOpenFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         val = self.value()
         if val == "yes":
-            return queryset.filter(W=True, AW=True, exchange__is_available=True)
+            return queryset.filter(W=True, AW=True, exchange__is_available=True, exchange__can_send=True)
         if val == "no":
-            return queryset.exclude(W=True, AW=True, exchange__is_available=True)
+            return queryset.exclude(W=True, AW=True, exchange__is_available=True, exchange__can_send=True)
         return queryset
 
 
