@@ -55,6 +55,7 @@ class CurrencyMap(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_t("Создано"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_t("Обновлено"))
 
+
     class Meta:
         verbose_name = _t("Маппинг обозначений валют")
         verbose_name_plural = _t("Маппинги обозначений валют")

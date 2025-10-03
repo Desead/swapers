@@ -65,9 +65,6 @@ class CurrencyMapAdmin(admin.ModelAdmin):
 
     actions = ["action_activate", "action_deactivate", "action_priority_up", "action_priority_down"]
 
-    class Media:
-        js = ("admin/js/collapse.js",)
-
     @admin.action(description=_t("Активировать выбранные"))
     def action_activate(self, request, queryset):
         updated = queryset.update(is_active=True)

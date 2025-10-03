@@ -24,12 +24,9 @@ from app_main.models_monitoring import Monitoring
 from django.utils import timezone
 from decimal import Decimal
 from django import forms
-from django.contrib import messages, admin as djadmin
-from django.contrib.admin import helpers
-from django.shortcuts import render
+from django.contrib import admin as djadmin
 from django.db import models
 from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
-from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from .models_documents import Document
 from django.utils.text import slugify
 from app_library.models import DocumentTemplate
