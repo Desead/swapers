@@ -167,7 +167,7 @@ class ExchangeAsset(models.Model):
     )
 
     # Доп. атрибуты
-    requires_memo = models.BooleanField(default=False, verbose_name=_t("Требуется MEMO/TAG"))
+    requires_memo = models.BooleanField(default=False, verbose_name=_t("MEMO"))
     is_stablecoin = models.BooleanField(default=False, verbose_name=_t("Стейблкоин"))
 
     # Иконки (либо файл, либо URL)

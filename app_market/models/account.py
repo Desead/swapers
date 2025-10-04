@@ -46,7 +46,7 @@ class ExchangeApiKey(models.Model):
     api_passphrase = EncryptedCharField(
         max_length=256, blank=True, null=True,
         verbose_name=_t("API Passphrase"),
-        help_text=_t("Иногда требуется на некоторых биржах."),
+        help_text=_t("Требуется не всегда"),
     )
 
     # Маскированные дублёры (только для просмотра в админке)

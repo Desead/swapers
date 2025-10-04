@@ -195,10 +195,10 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         return obj.deposit_open
 
     deposit_open.boolean = True
-    deposit_open.short_description = _t("Ввод открыт")
+    deposit_open.short_description = _t("Ввод")
 
     def withdraw_open(self, obj: ExchangeAsset) -> bool:
         return obj.withdraw_open
 
     withdraw_open.boolean = True
-    withdraw_open.short_description = _t("Вывод открыт")
+    withdraw_open.short_description = _t("Вывод")
