@@ -73,8 +73,8 @@ class ExchangeApiKey(models.Model):
     )
 
     class Meta:
-        verbose_name = _t("API ключи биржи")
-        verbose_name_plural = _t("API ключи бирж")
+        verbose_name = _t("API ключи ПЛ")
+        verbose_name_plural = _t("API ключи ПЛ")
         ordering = ["exchange", "label"]
         constraints = [
             models.UniqueConstraint(

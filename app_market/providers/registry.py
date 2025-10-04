@@ -4,11 +4,13 @@ from typing import Dict, Type, Optional
 from app_market.models.exchange import LiquidityProvider
 from .base import ProviderAdapter
 from .whitebit import WhitebitAdapter
-
+from .kucoin import KucoinAdapter
+from .bybit import BybitAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
-    # Здесь в будущем регистрируем KuCoinAdapter, BybitAdapter и т.д.
+    LiquidityProvider.KUCOIN: KucoinAdapter,
+    LiquidityProvider.BYBIT: BybitAdapter,
 }
 
 
