@@ -6,11 +6,13 @@ from .base import ProviderAdapter
 from .whitebit import WhitebitAdapter
 from .kucoin import KucoinAdapter
 from .bybit import BybitAdapter
+from .htx import HtxAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
     LiquidityProvider.KUCOIN: KucoinAdapter,
     LiquidityProvider.BYBIT: BybitAdapter,
+    LiquidityProvider.HTX: HtxAdapter,
 }
 
 
