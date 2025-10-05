@@ -109,15 +109,19 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "updated_at",
         "last_synced_at",
         "icon_preview",
+        "asset_code",
+        "chain_code",
+        "asset_name",
+        "chain_display",
     )
 
     fieldsets = (
         (_t("Идентификация"), {
             "fields": (
-                "exchange",
-                ("asset_code", "asset_name"),
-                ("chain_code", "chain_display"),
-                "asset_kind", "is_stablecoin", "requires_memo",
+                "exchange", "asset_kind",
+                "asset_code", "asset_name",
+                "chain_code", "chain_display",
+                "is_stablecoin", "requires_memo",
             )
         }),
         (_t("Доступность"), {

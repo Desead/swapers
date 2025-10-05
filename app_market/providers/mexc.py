@@ -1,4 +1,3 @@
-# app_market/providers/mexc.py
 from __future__ import annotations
 
 import hashlib
@@ -26,6 +25,7 @@ BASE = "https://api.mexc.com"
 _BIGNUM = Decimal("1e20")
 _ZERO = Decimal("0")
 
+
 def _dec_ok(v: Any) -> bool:
     if v is None:
         return False
@@ -38,6 +38,7 @@ def _dec_ok(v: Any) -> bool:
     if up in ("NAN", "INF", "+INF", "-INF", "INFINITY", "+INFINITY", "-INFINITY"):
         return False
     return True
+
 
 def _q_amt(v: Any, places: int = 10) -> Decimal:
     try:
@@ -55,9 +56,11 @@ def _q_amt(v: Any, places: int = 10) -> Decimal:
     except InvalidOperation:
         return _ZERO
 
+
 def _q_pct(v: Any, places: int = 5) -> Decimal:
     d = _q_amt(v, places=places)
     return Decimal("100") if d > Decimal("100") else d
+
 
 def _to_bool(*vals: Any) -> bool:
     for v in vals:
@@ -70,11 +73,13 @@ def _to_bool(*vals: Any) -> bool:
             return False
     return False
 
+
 def _pick(*vals: Any, default: Any = None) -> Any:
     for v in vals:
         if v is not None:
             return v
     return default
+
 
 # ------------------------- DNS preflight probe ------------------------------
 def _probe_dns(host: str = "api.mexc.com", attempts: int = 2, pause: float = 0.25) -> tuple[bool, str]:
@@ -91,9 +96,11 @@ def _probe_dns(host: str = "api.mexc.com", attempts: int = 2, pause: float = 0.2
             time.sleep(pause)
     return False, last
 
+
 # ----------------------------- Signing/HTTP --------------------------------
 def _mexc_sign(secret: str, query: str) -> str:
     return hmac.new(secret.encode(), query.encode(), hashlib.sha256).hexdigest()
+
 
 def _get_api_key_pair(exchange: Exchange) -> tuple[str, str]:
     key = (
@@ -104,6 +111,7 @@ def _get_api_key_pair(exchange: Exchange) -> tuple[str, str]:
     if not key or not key.api_key or not key.api_secret:
         raise RuntimeError("MEXC: не найдены активные API-ключи для этого провайдера")
     return key.api_key.strip(), key.api_secret.strip()
+
 
 def _http_get_json_signed(path: str, api_key: str, secret: str, timeout: int = 15) -> Any:
     ts = int(time.time() * 1000)
@@ -144,6 +152,7 @@ def _http_get_json_signed(path: str, api_key: str, secret: str, timeout: int = 1
             time.sleep(0.4)
     raise RuntimeError(f"MEXC: ошибка запросов: {last_err or 'unknown'}")
 
+
 # ----------------------------- Payload parse --------------------------------
 def _iter_network_rows(payload: Any) -> Iterable[Dict[str, Any]]:
     if not isinstance(payload, list):
@@ -180,6 +189,28 @@ def _iter_network_rows(payload: Any) -> Iterable[Dict[str, Any]]:
                 "special_tips": str(net.get("specialTips") or ""),
                 "raw": net,
             }
+
+
+# ------------------------- kind inference (FIAT/CRYPTO) ---------------------
+def _infer_asset_kind(asset_code: str, chain_code: str, chain_display: str) -> AssetKind:
+    """
+    Простая эвристика:
+    - FIAT, если сеть/отображаемое имя указывает на банковские/фиатные рельсы
+      (FIAT/BANK/WIRE/SEPA/SWIFT/CARD/PAY/PAYMENT/FUNDING),
+      или сам тикер — очевидная фиатная валюта.
+    - Иначе CRYPTO.
+    """
+    ac = (asset_code or "").upper()
+    cc = (chain_code or "").upper()
+    disp = (chain_display or "").upper()
+
+    FIAT_TOKENS = {"USD", "EUR", "RUB", "UAH", "BRL", "TRY", "GBP", "KZT", "AUD", "CHF", "CAD", "JPY"}
+    FIAT_HINTS = {"FIAT", "BANK", "WIRE", "SEPA", "SWIFT", "CARD", "FUNDING", "PAY", "PAYMENT"}
+
+    if cc in FIAT_HINTS or any(h in disp for h in FIAT_HINTS) or ac in FIAT_TOKENS:
+        return AssetKind.FIAT
+    return AssetKind.CRYPTO
+
 
 # -------------------------------- Adapter -----------------------------------
 class MexcAdapter(ProviderAdapter):
@@ -220,7 +251,11 @@ class MexcAdapter(ProviderAdapter):
 
             asset_code = row["asset_code"]
             chain_code = row["chain_code"]
+            chain_display = row["chain_display"]
             seen_pairs.add((asset_code, chain_code))
+
+            # kind (FIAT/CRYPTO)
+            asset_kind = _infer_asset_kind(asset_code, chain_code, chain_display)
 
             # memo: сеть/текст/список из SiteSetup
             requires_memo = bool(row["need_tag"])
@@ -231,14 +266,17 @@ class MexcAdapter(ProviderAdapter):
             if not requires_memo and chain_code in memo_chains:
                 requires_memo = True
 
-            asset_kind = AssetKind.CRYPTO
-            conf_dep = max(1 if asset_kind == AssetKind.CRYPTO else 0, int(row["confirm_deposit"]))
-            conf_dep = max(1, int(row["confirm_deposit"]))
-            conf_wdr = max(conf_dep, int(row["confirm_deposit"]))
+            # подтверждения
+            if asset_kind == AssetKind.CRYPTO:
+                conf_dep = max(1, int(row["confirm_deposit"]))
+                conf_wdr = max(conf_dep, int(row["confirm_deposit"]))  # у MEXC обычно одно число; вывод не меньше
+            else:
+                conf_dep = 0
+                conf_wdr = 0
 
             defaults: Dict[str, Any] = {
                 "asset_name": row["asset_name"],
-                "chain_display": row["chain_display"],
+                "chain_display": chain_display,
                 "AD": bool(row["deposit_enable"]),
                 "AW": bool(row["withdraw_enable"]),
                 "confirmations_deposit": conf_dep,
@@ -256,7 +294,7 @@ class MexcAdapter(ProviderAdapter):
                 "amount_precision_display": 5,
                 "nominal": 1,
                 "requires_memo": requires_memo,
-                "is_stablecoin": (asset_code in stable_set),
+                "is_stablecoin": (asset_code.upper() in stable_set),
                 "provider_symbol": asset_code,
                 "provider_chain": chain_code,
             }

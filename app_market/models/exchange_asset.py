@@ -33,23 +33,27 @@ class ExchangeAsset(models.Model):
         max_length=32,
         db_index=True,
         verbose_name=_t("Тикет"),
+        editable=False,
     )
     asset_name = models.CharField(
         max_length=128,
         blank=True,
         default="",
         verbose_name=_t("Название"),
+        editable=False,
     )
     chain_code = models.CharField(  # стандартное короткое имя сети/канала
         max_length=64,
         db_index=True,
         verbose_name=_t("Сеть"),
+        editable=False,
     )
     chain_display = models.CharField(  # как показывать сеть пользователю (опционально)
         max_length=128,
         blank=True,
         default="",
         verbose_name=_t("Сеть экран"),
+        editable=False,
     )
 
     # Ручные флаги (включение/выключение руками оператора)
@@ -91,7 +95,7 @@ class ExchangeAsset(models.Model):
     )
     # В USDT-эквиваленте (для массовых политик)
     deposit_min_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=28, decimal_places=10, default=Decimal("5"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. ввод (в USDT)"),
     )
@@ -124,7 +128,7 @@ class ExchangeAsset(models.Model):
     )
     # В USDT-эквиваленте
     withdraw_min_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=28, decimal_places=10, default=Decimal("5"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. вывод (в USDTт)"),
     )
