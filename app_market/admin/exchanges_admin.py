@@ -6,6 +6,8 @@ from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
 from app_market.providers import get_adapter, has_adapter
+from swapers.settings import DEBUG
+
 
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
@@ -20,7 +22,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         "show_prices_on_home",
     )
     list_filter = (
-       "exchange_kind", "is_available",
+        "exchange_kind", "is_available",
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
@@ -66,8 +68,9 @@ class ExchangeAdmin(admin.ModelAdmin):
         "action_enable_send",
         "action_disable_send",
         "action_healthcheck_now",
-        "sync_assets_now",
     ]
+    if DEBUG:
+        actions += ["sync_assets_now", ]
 
     # — helpers —
 
@@ -200,7 +203,6 @@ class ExchangeAdmin(admin.ModelAdmin):
         """
         total_processed = total_created = total_updated = total_skipped = total_disabled = 0
         errors = 0
-
         # Берём только нужные поля; поля 'name' у модели нет.
         for ex in queryset.only("id", "provider"):
             code = ex.provider
@@ -280,7 +282,7 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
             "exchange", "label", "is_enabled",
             # readonly views рендерятся из Admin, в форму их не включаем
             "api_key", "api_secret", "api_passphrase",
-            "clear_api_key", "clear_api_secret", "clear_api_passphrase","clear_api_broker",
+            "clear_api_key", "clear_api_secret", "clear_api_passphrase", "clear_api_broker",
         )
         widgets = {
             "api_key": forms.PasswordInput(render_value=False),
@@ -317,15 +319,15 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
 class ExchangeApiKeyAdmin(admin.ModelAdmin):
     form = ExchangeApiKeyAdminForm
 
-    list_display = ("exchange", "is_enabled",  "label", "api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view",)
+    list_display = ("exchange", "is_enabled", "label", "api_key_view", "api_secret_view", "api_passphrase_view", "api_broker_view",)
     list_filter = ("exchange", "is_enabled")
     search_fields = ("exchange__provider", "label")
-    readonly_fields = ("api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view")
+    readonly_fields = ("api_key_view", "api_secret_view", "api_passphrase_view", "api_broker_view")
     list_select_related = ("exchange",)
 
     fieldsets = (
         (_t("Общее"), {"fields": (("exchange", "label"), "is_enabled")}),
-        (_t("Текущие API ключи"), {"fields": ("api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view")}),
+        (_t("Текущие API ключи"), {"fields": ("api_key_view", "api_secret_view", "api_passphrase_view", "api_broker_view")}),
         (_t("Обновить API ключи"), {
             "classes": ("wide", "collapse"),
             "fields": (
