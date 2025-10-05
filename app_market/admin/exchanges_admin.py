@@ -209,6 +209,7 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
     clear_api_key = forms.BooleanField(required=False, label=_t("Очистить API Key"))
     clear_api_secret = forms.BooleanField(required=False, label=_t("Очистить API Secret"))
     clear_api_passphrase = forms.BooleanField(required=False, label=_t("Очистить Passphrase"))
+    clear_api_broker = forms.BooleanField(required=False, label=_t("Очистить Broker Key"))
 
     class Meta:
         model = ExchangeApiKey
@@ -216,12 +217,13 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
             "exchange", "label", "is_enabled",
             # readonly views рендерятся из Admin, в форму их не включаем
             "api_key", "api_secret", "api_passphrase",
-            "clear_api_key", "clear_api_secret", "clear_api_passphrase",
+            "clear_api_key", "clear_api_secret", "clear_api_passphrase","clear_api_broker",
         )
         widgets = {
             "api_key": forms.PasswordInput(render_value=False),
             "api_secret": forms.PasswordInput(render_value=False),
             "api_passphrase": forms.PasswordInput(render_value=False),
+            "api_broker": forms.PasswordInput(render_value=False),
         }
 
     def clean(self):
@@ -233,6 +235,7 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
                 ("api_key", "clear_api_key"),
                 ("api_secret", "clear_api_secret"),
                 ("api_passphrase", "clear_api_passphrase"),
+                ("api_broker", "clear_api_broker"),
         ):
             want_clear = cd.get(clear_field)
             new_val = cd.get(field)
@@ -251,21 +254,22 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
 class ExchangeApiKeyAdmin(admin.ModelAdmin):
     form = ExchangeApiKeyAdminForm
 
-    list_display = ("exchange", "label", "api_key_view", "api_secret_view", "api_passphrase_view", "is_enabled")
+    list_display = ("exchange", "is_enabled",  "label", "api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view",)
     list_filter = ("exchange", "is_enabled")
     search_fields = ("exchange__provider", "label")
-    readonly_fields = ("api_key_view", "api_secret_view", "api_passphrase_view")
+    readonly_fields = ("api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view")
     list_select_related = ("exchange",)
 
     fieldsets = (
         (_t("Общее"), {"fields": (("exchange", "label"), "is_enabled")}),
-        (_t("Текущие API ключи"), {"fields": ("api_key_view", "api_secret_view", "api_passphrase_view")}),
+        (_t("Текущие API ключи"), {"fields": ("api_key_view", "api_secret_view", "api_passphrase_view","api_broker_view")}),
         (_t("Обновить API ключи"), {
             "classes": ("wide", "collapse"),
             "fields": (
                 ("api_key", "clear_api_key"),
                 ("api_secret", "clear_api_secret"),
                 ("api_passphrase", "clear_api_passphrase"),
+                ("api_broker", "clear_api_broker"),
             ),
             "description": _t("Оставьте поля пустыми, чтобы не менять ключи. "
                               "Поставьте галочку «Очистить», чтобы удалить значение."),

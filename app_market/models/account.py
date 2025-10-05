@@ -48,6 +48,11 @@ class ExchangeApiKey(models.Model):
         verbose_name=_t("API Passphrase"),
         help_text=_t("Требуется не всегда"),
     )
+    api_broker = EncryptedCharField(
+        max_length=256, blank=True, null=True,
+        verbose_name=_t("Broker key"),
+        help_text=_t("Требуется не всегда"),
+    )
 
     # Маскированные дублёры (только для просмотра в админке)
     api_key_view = models.CharField(
@@ -64,6 +69,11 @@ class ExchangeApiKey(models.Model):
         max_length=272, blank=True, default="",
         editable=False,
         verbose_name=_t("API Passphrase (вид)"),
+    )
+    api_broker_view = models.CharField(
+        max_length=272, blank=True, default="",
+        editable=False,
+        verbose_name=_t("Broker key (вид)"),
     )
 
     is_enabled = models.BooleanField(
@@ -91,4 +101,5 @@ class ExchangeApiKey(models.Model):
         self.api_key_view = _mask_for_view(self.api_key or "")
         self.api_secret_view = _mask_for_view(self.api_secret or "")
         self.api_passphrase_view = _mask_for_view(self.api_passphrase or "")
+        self.api_broker_view = _mask_for_view(self.api_broker or "")
         super().save(*args, **kwargs)

@@ -7,7 +7,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
 from typing import Any, Dict, Optional, Set, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -21,7 +21,6 @@ from app_market.models.account import ExchangeApiKey
 from app_main.models import SiteSetup
 from .base import ProviderAdapter, AssetSyncStats
 
-
 WB_BASE = "https://whitebit.com"
 ASSETS_URL = f"{WB_BASE}/api/v4/public/assets"
 FEE_URL = f"{WB_BASE}/api/v4/public/fee"
@@ -29,45 +28,81 @@ PRIV_FEE_PATH = "/api/v4/main-account/fee"
 PRIV_FEE_URL = f"{WB_BASE}{PRIV_FEE_PATH}"
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 
+# === Helpers: HTTP с ретраями ===
 
-def _http_get_json(url: str, timeout: int = 20) -> Any:
-    req = Request(url, headers={"User-Agent": UA})
-    with urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-    return json.loads(raw.decode("utf-8"))
+def _http_get_json(url: str, timeout: int = 20, retries: int = 3) -> Any:
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = Request(url, headers={"User-Agent": UA})
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError) as e:
+            last_exc = e
+            if attempt < retries - 1:
+                # экспоненциальный backoff 0.5, 1.0, 2.0
+                time.sleep(0.5 * (2 ** attempt))
+            else:
+                break
+    raise RuntimeError(f"WhiteBIT: ошибка запросов: {last_exc}")
 
-
-def _http_post_signed_json(url: str, body: dict, api_key: str, api_secret: str, timeout: int = 30) -> Any:
+def _http_post_signed_json(url: str, body: dict, api_key: str, api_secret: str, timeout: int = 30, retries: int = 3) -> Any:
     payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     b64 = base64.b64encode(payload)
     sign = hmac.new(api_secret.encode("utf-8"), b64, hashlib.sha512).hexdigest()
-    req = Request(
-        url,
-        data=payload,
-        headers={
-            "User-Agent": UA,
-            "Content-Type": "application/json",
-            "X-TXC-APIKEY": api_key,
-            "X-TXC-PAYLOAD": b64.decode("ascii"),
-            "X-TXC-SIGNATURE": sign,
-        },
-        method="POST",
-    )
-    with urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-    return json.loads(raw.decode("utf-8"))
 
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = Request(
+                url,
+                data=payload,
+                headers={
+                    "User-Agent": UA,
+                    "Content-Type": "application/json",
+                    "X-TXC-APIKEY": api_key,
+                    "X-TXC-PAYLOAD": b64.decode("ascii"),
+                    "X-TXC-SIGNATURE": sign,
+                },
+                method="POST",
+            )
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except (URLError, HTTPError, TimeoutError, json.JSONDecodeError) as e:
+            last_exc = e
+            if attempt < retries - 1:
+                time.sleep(0.5 * (2 ** attempt))
+            else:
+                break
+    raise RuntimeError(f"WhiteBIT: ошибка запросов: {last_exc}")
+
+# === Helpers: безопасные Decimal и квантизация ===
+
+_MAX_ABS = Decimal("1e20")  # здравый кап на суммы/лимиты/фикс.комиссии
 
 def _D(x: Any) -> Decimal:
-    if isinstance(x, Decimal):
-        return x
-    if x in (None, "", "0E-10"):
-        return Decimal("0")
+    """Мягкое превращение в Decimal без NaN/Inf."""
     try:
-        return Decimal(str(x))
+        if isinstance(x, Decimal):
+            d = x
+        elif x in (None, "", "0E-10"):
+            d = Decimal("0")
+        else:
+            d = Decimal(str(x))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 
+    # NaN / Inf → 0
+    if not d.is_finite():
+        return Decimal("0")
+    # кап значений
+    if d > _MAX_ABS:
+        return _MAX_ABS
+    if d < -_MAX_ABS:
+        return -_MAX_ABS
+    return d
 
 def _B(x: Any) -> bool:
     if isinstance(x, bool):
@@ -76,9 +111,60 @@ def _B(x: Any) -> bool:
         return bool(x)
     if isinstance(x, str):
         v = x.strip().lower()
-        return v in {"1", "true", "yes", "y", "on"}
+        return v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}
     return False
 
+def _upper(s: Optional[str]) -> str:
+    return (s or "").strip().upper()
+
+def _disp(s: Optional[str]) -> str:
+    return (s or "").strip()
+
+def _json_safe(o: Any) -> Any:
+    if isinstance(o, Decimal):
+        return str(o)
+    if isinstance(o, dict):
+        return {k: _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    return o
+
+def _q_amount(value: Any, prec: int) -> Decimal:
+    """Квантизация сумм/лимитов/фиксов по точности актива (ROUND_DOWN)."""
+    d = _D(value)
+    if d == 0:
+        return d
+    if prec < 0:
+        prec = 0
+    if prec > 18:
+        prec = 18
+    q = Decimal(1).scaleb(-prec)  # 10^-prec
+    # отрицательных лимитов/комиссий по фикс-сумме не допускаем
+    if d < 0:
+        d = Decimal("0")
+    try:
+        return d.quantize(q, rounding=ROUND_DOWN)
+    except InvalidOperation:
+        # в крайнем случае обрежем строкой
+        s = f"{d:f}"
+        if "." in s:
+            head, tail = s.split(".", 1)
+            return _D(f"{head}.{tail[:prec]}")
+        return _D(s)
+
+def _q_percent(value: Any) -> Decimal:
+    """Проценты → [0..100], 5 знаков, ROUND_HALF_UP."""
+    d = _D(value)
+    if d < 0:
+        d = Decimal("0")
+    if d > Decimal("100"):
+        d = Decimal("100")
+    try:
+        return d.quantize(Decimal("0.00001"), rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return Decimal("0")
+
+# === SiteSetup helpers ===
 
 def _stable_set_from_sitesetup() -> Set[str]:
     ss = SiteSetup.get_solo()
@@ -90,7 +176,6 @@ def _stable_set_from_sitesetup() -> Set[str]:
         items = [str(p) for p in raw if p]
     return {p.strip().upper() for p in items}
 
-
 def _memo_required_set() -> Set[str]:
     ss = SiteSetup.get_solo()
     try:
@@ -101,21 +186,7 @@ def _memo_required_set() -> Set[str]:
             return set()
         return {p.strip().upper() for p in re.split(r"[\s,;]+", raw) if p.strip()}
 
-
-def _json_safe(o: Any) -> Any:
-    """
-    Рекурсивно делает объект JSON-сериализуемым:
-    - Decimal -> str
-    - dict/list -> обходит внутренности
-    """
-    if isinstance(o, Decimal):
-        return str(o)
-    if isinstance(o, dict):
-        return {k: _json_safe(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)):
-        return [_json_safe(v) for v in o]
-    return o
-
+# === Парсинг публичных структур ===
 
 @dataclass
 class FeeSide:
@@ -124,18 +195,15 @@ class FeeSide:
     fixed: Decimal = Decimal("0")
     percent: Decimal = Decimal("0")
 
-
 @dataclass
 class FeePack:
     deposit: FeeSide
     withdraw: FeeSide
 
-
 def _flex_percent(v: Any) -> Decimal:
     if isinstance(v, dict):
         return _D(v.get("percent"))
     return _D(v)
-
 
 def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
     out: Dict[Tuple[str, Optional[str]], FeePack] = {}
@@ -165,19 +233,13 @@ def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
         )
     return out
 
-
 def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
-    """
-    Возвращает карту (ticker, network_or_None) -> meta
-    ВНИМАНИЕ: внутри meta есть Decimal — их нельзя напрямую класть в JSONField!
-    Поэтому при сохранении raw_metadata всегда используем _json_safe(meta).
-    """
     result: Dict[Tuple[str, Optional[str]], dict] = {}
     for ticker, payload in obj.items():
         if not isinstance(payload, dict):
             continue
-        t = str(ticker).strip().upper()
-        name = (payload.get("name") or "").strip()
+        t = _upper(ticker)
+        name = _disp(payload.get("name")) or t
         precision = int(payload.get("currency_precision") or 8)
         requires_memo = _B(payload.get("is_memo"))
         can_dep_global = _B(payload.get("can_deposit"))
@@ -234,79 +296,7 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
             }
     return result
 
-
-def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict[str, dict]:
-    body = {"request": PRIV_FEE_PATH, "nonce": int(time.time() * 1000)}
-    data = _http_post_signed_json(PRIV_FEE_URL, body, api_key, api_secret, timeout=timeout)
-    out: Dict[str, dict] = {}
-    if isinstance(data, list):
-        for row in data:
-            t = str(row.get("ticker") or "").strip().upper()
-            if t:
-                out[t] = row
-    return out
-
-
-def _fee_from_private(ticker: str, priv: Dict[str, dict]) -> Optional[FeePack]:
-    row = priv.get(ticker)
-    if not row:
-        return None
-    dep = row.get("deposit") or {}
-    wd = row.get("withdraw") or {}
-    return FeePack(
-        deposit=FeeSide(
-            min_amount=_D(dep.get("minAmount")),
-            max_amount=_D(dep.get("maxAmount")),
-            fixed=_D(dep.get("fixed")),
-            percent=_D(dep.get("percentFlex")),
-        ),
-        withdraw=FeeSide(
-            min_amount=_D(wd.get("minAmount")),
-            max_amount=_D(wd.get("maxAmount")),
-            fixed=_D(wd.get("fixed")),
-            percent=_D(wd.get("percentFlex")),
-        ),
-    )
-
-
-def _merge_fee(pub_fee: Dict[Tuple[str, Optional[str]], FeePack],
-               priv_fee: Dict[str, dict],
-               ticker: str,
-               network: Optional[str]) -> FeePack:
-    f_priv = _fee_from_private(ticker, priv_fee) if priv_fee else None
-    f_pub_net = pub_fee.get((ticker, network))
-    f_pub_tic = pub_fee.get((ticker, None))
-
-    def pick(getter):
-        if f_priv:
-            return getter(f_priv)
-        if f_pub_net:
-            return getter(f_pub_net)
-        if f_pub_tic:
-            return getter(f_pub_tic)
-        return FeeSide()
-
-    dep = pick(lambda p: p.deposit)
-    wd = pick(lambda p: p.withdraw)
-    return FeePack(deposit=dep, withdraw=wd)
-
-
-def _fee_to_dict(f: FeePack) -> dict:
-    return {
-        "deposit": {
-            "min_amount": str(f.deposit.min_amount),
-            "max_amount": str(f.deposit.max_amount),
-            "fixed": str(f.deposit.fixed),
-            "percent": str(f.deposit.percent),
-        },
-        "withdraw": {
-            "min_amount": str(f.withdraw.min_amount),
-            "max_amount": str(f.withdraw.max_amount),
-            "fixed": str(f.withdraw.fixed),
-            "percent": str(f.withdraw.percent),
-        },
-    }
-
+# === Ключи ===
 
 def _get_any_enabled_keys(exchange: Exchange) -> tuple[Optional[str], Optional[str]]:
     key = (
@@ -317,8 +307,45 @@ def _get_any_enabled_keys(exchange: Exchange) -> tuple[Optional[str], Optional[s
     )
     return ((key.api_key or None), (key.api_secret or None)) if key else (None, None)
 
+def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict[str, dict]:
+    body = {"request": PRIV_FEE_PATH, "nonce": int(time.time() * 1000)}
+    data = _http_post_signed_json(PRIV_FEE_URL, body, api_key, api_secret, timeout=timeout)
+    out: Dict[str, dict] = {}
+    if isinstance(data, list):
+        for row in data:
+            t = _upper(row.get("ticker"))
+            if t:
+                out[t] = row
+    return out
 
-class WhitebitAdapter:
+# === Внутренние строки для UPSERT ===
+
+@dataclass
+class _Row:
+    ticker: str
+    chain: Optional[str]
+    name: str
+    kind: str
+    AD: bool
+    AW: bool
+    conf_dep: int
+    conf_wd: int
+    dep_min: Decimal
+    dep_max: Decimal
+    wd_min: Decimal
+    wd_max: Decimal
+    dep_fee_pct: Decimal
+    dep_fee_fix: Decimal
+    wd_fee_pct: Decimal
+    wd_fee_fix: Decimal
+    requires_memo: bool
+    amount_precision: int
+    raw_meta: dict
+    is_stable: bool
+
+# === Адаптер ===
+
+class WhitebitAdapter(ProviderAdapter):
     code = "WHITEBIT"
 
     @transaction.atomic
@@ -335,120 +362,156 @@ class WhitebitAdapter:
         stable_set = _stable_set_from_sitesetup()
         memo_set = _memo_required_set()
 
-        try:
-            assets_json = _http_get_json(ASSETS_URL, timeout=timeout)
-            fee_json = _http_get_json(FEE_URL, timeout=timeout)
-        except (URLError, HTTPError, json.JSONDecodeError) as e:
-            raise RuntimeError(f"WhiteBIT: ошибка запросов: {e}")
+        # публичные структуры
+        assets_json = _http_get_json(ASSETS_URL, timeout=timeout)
+        fee_json = _http_get_json(FEE_URL, timeout=timeout)
 
         assets_map = _parse_public_assets(assets_json)
         pub_fee_map = _parse_public_fee(fee_json)
 
+        # приватные комиссии (приоритетнее)
         api_key, api_secret = _get_any_enabled_keys(exchange)
         priv_fee_map: Dict[str, dict] = {}
         if api_key and api_secret:
             try:
                 priv_fee_map = _fetch_private_fee(api_key, api_secret, timeout=timeout)
             except Exception:
-                if verbose:
-                    print("[WhiteBIT] приватные комиссии не получены, работаем по публичным")
+                # приватный фид опционален — продолжаем с публичными
+                priv_fee_map = {}
 
-        processed_keys: Set[Tuple[str, str]] = set()
+        def merge_fee(t: str, n: Optional[str]) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+            """Возвращает (dep_pct, dep_fix, wd_pct, wd_fix) с приоритетом приватных значений."""
+            priv = priv_fee_map.get(t) or {}
+            if priv:
+                d = priv.get("deposit") or {}
+                w = priv.get("withdraw") or {}
+                return (
+                    _D(d.get("percentFlex")), _D(d.get("fixed")),
+                    _D(w.get("percentFlex")), _D(w.get("fixed")),
+                )
+            pack = pub_fee_map.get((t, n)) or pub_fee_map.get((t, None))
+            if pack:
+                return (
+                    pack.deposit.percent, pack.deposit.fixed,
+                    pack.withdraw.percent, pack.withdraw.fixed,
+                )
+            return (Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"))
 
-        for i, ((ticker, network), meta) in enumerate(assets_map.items(), start=1):
-            if limit and i > limit:
+        # готовим строки
+        rows: list[_Row] = []
+        for (ticker, network), meta in assets_map.items():
+            if limit and len(rows) >= limit:
                 break
-            stats.processed += 1
-
-            chain_code = (network or ticker)
-            chain_norm = (chain_code or "").strip().upper()
-            processed_keys.add((ticker, chain_code))
-
-            kind: str = meta.get("asset_kind") or AssetKind.CRYPTO
-
-            AD = _B(meta.get("can_deposit"))
-            AW = _B(meta.get("can_withdraw"))
+            kind = meta.get("asset_kind") or AssetKind.CRYPTO
 
             dep_conf = int(meta.get("confirmations") or 0)
             if kind == AssetKind.CRYPTO and dep_conf < 1:
                 dep_conf = 1
-            wdr_conf = dep_conf
+            wd_conf = dep_conf  # отдельного не даёт публичка — берём минимум как dep_conf
 
             dep_lim = meta.get("deposit_limits") or {}
             wd_lim = meta.get("withdraw_limits") or {}
 
-            fees = _merge_fee(pub_fee_map, priv_fee_map, ticker, network)
+            dep_pct, dep_fix, wd_pct, wd_fix = merge_fee(ticker, network)
 
-            # requires_memo: приоритет SiteSetup для крипты; иначе — провайдер; фиат — False
             provider_memo = bool(meta.get("requires_memo") or False)
-            site_enforces_memo = (kind == AssetKind.CRYPTO) and (chain_norm in memo_set)
-            requires_memo = (kind == AssetKind.CRYPTO) and (site_enforces_memo or provider_memo)
-            memo_source = "site_setup" if site_enforces_memo else ("provider" if provider_memo else "none")
+            chain_norm = _upper(network or ticker)
+            requires_memo = (kind == AssetKind.CRYPTO) and (provider_memo or (chain_norm in memo_set))
 
-            raw_meta = {
-                "assets": _json_safe(meta),     # ВАЖНО: убираем Decimal из meta
-                "fees": _fee_to_dict(fees),     # Decimal -> str
-                "memo": {"effective": requires_memo, "source": memo_source, "chain": chain_norm},
-                "source": "whitebit",
-                "synced_at": timezone.now().isoformat(),
-            }
-
-            defaults = dict(
-                asset_name=(meta.get("asset_name") or ""),
-                amount_precision=int(meta.get("amount_precision") or 8),
+            rows.append(_Row(
+                ticker=ticker,
+                chain=network,
+                name=_disp(meta.get("asset_name")) or ticker,
+                kind=kind,
+                AD=_B(meta.get("can_deposit")),
+                AW=_B(meta.get("can_withdraw")),
+                conf_dep=dep_conf,
+                conf_wd=wd_conf,
+                dep_min=_D(dep_lim.get("min")),
+                dep_max=_D(dep_lim.get("max")),
+                wd_min=_D(wd_lim.get("min")),
+                wd_max=_D(wd_lim.get("max")),
+                dep_fee_pct=dep_pct,
+                dep_fee_fix=dep_fix,
+                wd_fee_pct=wd_pct,
+                wd_fee_fix=wd_fix,
                 requires_memo=requires_memo,
-                asset_kind=kind,
-                provider_symbol=ticker,
-                provider_chain=(network or ""),
-                AD=AD, AW=AW,
-                confirmations_deposit=dep_conf,
-                confirmations_withdraw=max(dep_conf, wdr_conf),
-                deposit_min=_D(dep_lim.get("min")),
-                deposit_max=_D(dep_lim.get("max")),
-                withdraw_min=_D(wd_lim.get("min")),
-                withdraw_max=_D(wd_lim.get("max")),
-                deposit_fee_fixed=fees.deposit.fixed,
-                deposit_fee_percent=fees.deposit.percent,
-                withdraw_fee_fixed=fees.withdraw.fixed,
-                withdraw_fee_percent=fees.withdraw.percent,
-                is_stablecoin=(kind == AssetKind.CRYPTO) and (
-                    ticker.upper() in stable_set or (meta.get("asset_name") or "").strip().upper() in stable_set
-                ),
-                raw_metadata=raw_meta,
-                last_synced_at=timezone.now(),
+                amount_precision=int(meta.get("amount_precision") or 8),
+                raw_meta={"assets": _json_safe(meta)},
+                is_stable=(kind == AssetKind.CRYPTO) and (ticker in stable_set),
+            ))
+
+        # UPSERT + reconcile
+        seen: Set[Tuple[str, str]] = set()
+
+        for r in rows:
+            stats.processed += 1
+            chain_code = (r.chain or r.ticker)
+            seen.add((r.ticker, chain_code))
+
+            # нормализуем значения перед сохранением
+            prec = int(r.amount_precision or 8)
+            new_vals = dict(
+                asset_name=r.name,
+                AD=bool(r.AD),
+                AW=bool(r.AW),
+                confirmations_deposit=int(r.conf_dep),
+                confirmations_withdraw=int(max(r.conf_dep, r.conf_wd)),
+                deposit_min=_q_amount(r.dep_min, prec),
+                deposit_max=_q_amount(r.dep_max, prec),
+                withdraw_min=_q_amount(r.wd_min, prec),
+                withdraw_max=_q_amount(r.wd_max, prec),
+                deposit_fee_percent=_q_percent(r.dep_fee_pct),
+                deposit_fee_fixed=_q_amount(r.dep_fee_fix, prec),
+                withdraw_fee_percent=_q_percent(r.wd_fee_pct),
+                withdraw_fee_fixed=_q_amount(r.wd_fee_fix, prec),
+                requires_memo=bool(r.requires_memo),
+                is_stablecoin=bool(r.is_stable),
+                amount_precision=prec,
+                asset_kind=r.kind,
+                provider_symbol=r.ticker,
+                provider_chain=(r.chain or ""),
             )
 
             obj, created = ExchangeAsset.objects.get_or_create(
                 exchange=exchange,
-                asset_code=ticker,
+                asset_code=r.ticker,
                 chain_code=chain_code,
-                defaults=defaults,
+                defaults={**new_vals, "raw_metadata": _json_safe(r.raw_meta), "chain_display": chain_code},
             )
 
             if created:
                 stats.created += 1
             else:
-                changed = False
-                for field, val in defaults.items():
-                    if getattr(obj, field) != val:
-                        setattr(obj, field, val)
-                        changed = True
+                changed: list[str] = []
+                for f, v in new_vals.items():
+                    if getattr(obj, f) != v:
+                        setattr(obj, f, v)
+                        changed.append(f)
+
                 if changed:
-                    obj.updated_at = timezone.now()
-                    obj.save(update_fields=list(defaults.keys()) + ["updated_at"])
+                    # raw_metadata обновляем ТОЛЬКО при реальном изменении деловых полей
+                    obj.raw_metadata = _json_safe(r.raw_meta)
+                    obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
                     stats.updated += 1
                 else:
                     stats.skipped += 1
 
         if reconcile:
+            to_disable = []
             for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
                 key = (obj.asset_code, obj.chain_code)
-                if key not in processed_keys and (obj.AD or obj.AW):
-                    ExchangeAsset.objects.filter(pk=obj.pk).update(
-                        AD=False, AW=False,
-                        status_note="Отключено: отсутствует в текущей выдаче провайдера",
-                        updated_at=timezone.now(),
-                    )
-                    stats.disabled += 1
+                if key not in seen and (obj.AD or obj.AW):
+                    to_disable.append(obj.id)
+            if to_disable:
+                ExchangeAsset.objects.filter(id__in=to_disable).update(
+                    AD=False, AW=False,
+                    status_note="Отключено: отсутствует в выдаче WhiteBIT",
+                    updated_at=timezone.now(),
+                )
+                stats.disabled = len(to_disable)
+
+        if verbose:
+            print(f"[WhiteBIT] processed={stats.processed} created={stats.created} updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled}")
 
         return stats

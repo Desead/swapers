@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
-from typing import Any, Dict, Optional, Set, Tuple
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, localcontext
+from typing import Any, Optional, Set, Tuple, Dict
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from collections import Counter
 
 from django.db import transaction
 from django.utils import timezone
@@ -16,30 +18,65 @@ from app_main.models import SiteSetup
 from .base import ProviderAdapter, AssetSyncStats
 
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
-# KuCoin public
-KUC_BASE = "https://api.kucoin.com"
-CURRENCIES_URL = f"{KUC_BASE}/api/v3/currencies"
+KU_BASE = "https://api.kucoin.com"
+CURRENCY_URL = f"{KU_BASE}/api/v3/currencies"
 
+PCT_MAX_DIGITS, PCT_PLACES = 12, 5
+AMOUNT_MAX_DIGITS, AMOUNT_PLACES = 20, 8
 
-# --- helpers --------------------------------------------------------------
-
-def _http_get_json(url: str, timeout: int = 20) -> Any:
-    req = Request(url, headers={"User-Agent": UA})
-    with urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-    return json.loads(raw.decode("utf-8"))
-
+def _http_get_json(url: str, timeout: int = 20, retries: int = 3) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = Request(url, headers={"User-Agent": UA})
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except (URLError, HTTPError, json.JSONDecodeError) as e:
+            last_err = e
+            time.sleep(0.3 * (3 ** attempt))
+    assert last_err is not None
+    raise last_err
 
 def _D(x: Any) -> Decimal:
     if isinstance(x, Decimal):
-        return x
-    if x in (None, "", "0E-10"):
-        return Decimal("0")
-    try:
-        return Decimal(str(x))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
+        d = x
+    else:
+        if x in (None, "", "0E-10"):
+            return Decimal("0")
+        s = str(x).strip()
+        if s.lower() in {"nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+            return Decimal("0")
+        try:
+            d = Decimal(s)
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+    return d if d.is_finite() else Decimal("0")
 
+def _cap_and_quantize(d: Decimal, *, max_digits: int, places: int) -> Decimal:
+    if not d.is_finite():
+        return Decimal("0")
+    if d == 0:
+        return Decimal("0").quantize(Decimal(1).scaleb(-places))
+    exp = Decimal(1).scaleb(-places)
+    max_int = max_digits - places
+    limit = (Decimal(10) ** max_int) - exp
+    if d > limit:
+        d = limit
+    elif d < -limit:
+        d = -limit
+    with localcontext() as ctx:
+        ctx.rounding = ROUND_DOWN
+        try:
+            return d.quantize(exp)
+        except InvalidOperation:
+            return Decimal("0").quantize(exp)
+
+def _q_pct(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=PCT_MAX_DIGITS, places=PCT_PLACES)
+
+def _q_amt(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=AMOUNT_MAX_DIGITS, places=AMOUNT_PLACES)
 
 def _B(x: Any) -> bool:
     if isinstance(x, bool):
@@ -48,20 +85,16 @@ def _B(x: Any) -> bool:
         return bool(x)
     if isinstance(x, str):
         v = x.strip().lower()
-        return v in {"1", "true", "yes", "y", "on"}
+        return v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}
     return False
 
-
-def _upper(s: Optional[str]) -> str:
+def _U(s: Optional[str]) -> str:
     return (s or "").strip().upper()
-
 
 def _disp(s: Optional[str]) -> str:
     return (s or "").strip()
 
-
 def _json_safe(o: Any) -> Any:
-    """Decimal → str; dict/list → рекурсивно."""
     if isinstance(o, Decimal):
         return str(o)
     if isinstance(o, dict):
@@ -70,35 +103,26 @@ def _json_safe(o: Any) -> Any:
         return [_json_safe(v) for v in o]
     return o
 
-
 def _stable_set_from_sitesetup() -> Set[str]:
     ss = SiteSetup.get_solo()
     raw = ss.stablecoins or ""
     parts = [p.strip() for p in str(raw).replace(";", ",").split(",") if p.strip()]
     return {p.upper() for p in parts}
 
-
 def _memo_required_chains_from_site() -> Set[str]:
     ss = SiteSetup.get_solo()
-    # у тебя уже есть метод-хелпер; если его нет — fallback на текстовое поле
-    if hasattr(ss, "get_memo_required_chains_set"):
-        try:
-            return set(ss.get_memo_required_chains_set())  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    txt = (getattr(ss, "memo_required_chains", "") or "").strip()
-    if not txt:
-        return set()
-    return {p.strip().upper() for p in txt.replace(";", ",").split(",") if p.strip()}
-
+    try:
+        return set(ss.get_memo_required_chains_set())  # type: ignore[attr-defined]
+    except Exception:
+        txt = (getattr(ss, "memo_required_chains", "") or "").strip()
+        if not txt:
+            return set()
+        return {p.strip().upper() for p in txt.replace(";", ",").split(",") if p.strip()}
 
 def _ensure_wd_conf_ge_dep(dep_conf: int, wd_conf: int) -> tuple[int, int]:
     if wd_conf < dep_conf:
         wd_conf = dep_conf
     return dep_conf, wd_conf
-
-
-# --- adapter --------------------------------------------------------------
 
 @dataclass
 class _Row:
@@ -123,218 +147,152 @@ class _Row:
     amount_precision: int
     raw_meta: dict
 
-
-class KucoinAdapter:
+class KucoinAdapter(ProviderAdapter):
     code = "KUCOIN"
 
     def _fetch_public(self, *, timeout: int) -> list[dict]:
-        """
-        GET /api/v3/currencies
-        Ответ: {"code":"200000","data":[{currency,name,precision,isDepositEnabled,isWithdrawEnabled,chains:[...]},...]}
-        """
-        data = _http_get_json(CURRENCIES_URL, timeout=timeout)
-        if isinstance(data, dict):
-            return list(data.get("data") or [])
-        return []
+        data = _http_get_json(CURRENCY_URL, timeout=timeout, retries=3)
+        if not isinstance(data, dict) or data.get("code") != "200000":
+            return []
+        return list(data.get("data") or [])
 
     def _rows_from_public(self, payload: list[dict]) -> list[_Row]:
         stables = _stable_set_from_sitesetup()
         memo_chains = _memo_required_chains_from_site()
-
         rows: list[_Row] = []
 
         for item in payload:
-            sym = _upper(item.get("currency"))
+            sym = _U(item.get("currency"))
             if not sym:
                 continue
-            asset_name = _disp(item.get("name")) or sym
+            asset_name = _disp(item.get("fullName")) or sym
+
+            # фиат (на KuCoin fiat list пуст по этому эндпоинту, но на всякий случай)
             chains = item.get("chains") or []
-
-            # Без chains трактуем как FIAT (виртуальная сеть FIAT)
             if not chains:
-                AD = _B(item.get("isDepositEnabled"))
-                AW = _B(item.get("isWithdrawEnabled"))
-                conf_dep = int(item.get("depositConfirmations") or item.get("confirms") or 0)
-                conf_wd = int(item.get("withdrawConfirmations") or conf_dep)
-                conf_dep, conf_wd = _ensure_wd_conf_ge_dep(conf_dep, conf_wd)
-                # для крипты — минимум 1 подтверждение; FIAT — можно 0, но мы ставим 0
-                # здесь считаем как FIAT
-                amount_precision = int(item.get("precision") or 8)
-
-                rows.append(
-                    _Row(
-                        asset_code=sym,
-                        asset_name=asset_name,
-                        chain_code="FIAT",
-                        chain_display="FIAT",
-                        AD=AD,
-                        AW=AW,
-                        conf_dep=conf_dep,
-                        conf_wd=conf_wd,
-                        dep_min=_D(item.get("depositMinSize")),
-                        dep_max=_D(item.get("depositMaxSize")),
-                        wd_min=_D(item.get("withdrawMinSize")),
-                        wd_max=_D(item.get("withdrawMaxSize")),
-                        dep_fee_pct=_D(0),
-                        dep_fee_fix=_D(0),
-                        wd_fee_pct=_D(0),
-                        wd_fee_fix=_D(item.get("withdrawalMinFee") or item.get("withdrawFee") or 0),
-                        is_stable=(sym in stables) or (_upper(asset_name) in stables),
-                        requires_memo=False,
-                        amount_precision=amount_precision,
-                        raw_meta=_json_safe(item),
-                    )
-                )
+                rows.append(_Row(
+                    asset_code=sym, asset_name=asset_name,
+                    chain_code="FIAT", chain_display="FIAT",
+                    AD=False, AW=False,
+                    conf_dep=0, conf_wd=0,
+                    dep_min=_D(0), dep_max=_D(0),
+                    wd_min=_D(0), wd_max=_D(0),
+                    dep_fee_pct=_D(0), dep_fee_fix=_D(0),
+                    wd_fee_pct=_D(0), wd_fee_fix=_D(0),
+                    is_stable=(sym in stables) or (_U(asset_name) in stables),
+                    requires_memo=False,
+                    amount_precision=int(item.get("precision") or 8),
+                    raw_meta=_json_safe(item),
+                ))
                 continue
 
-            # По цепочкам
             for ch in chains:
-                chain_name = ch.get("chainName") or ch.get("name") or ""
-                chain_code = _upper(chain_name) or "NATIVE"
-                chain_disp = chain_name or chain_code
+                chain_code = _U(ch.get("chainName") or ch.get("chain")) or "NATIVE"
+                chain_disp = _disp(ch.get("chainName")) or chain_code
+                can_dep = _B(ch.get("enableDeposit"))
+                can_wd = _B(ch.get("enableWithdraw"))
 
-                can_dep = _B(ch.get("isDepositEnabled"))
-                can_wd = _B(ch.get("isWithdrawEnabled"))
-                conf_dep = int(ch.get("confirmations") or ch.get("confirms") or 0)
-                conf_wd = int(ch.get("withdrawConfirmations") or conf_dep)
-                conf_dep, conf_wd = _ensure_wd_conf_ge_dep(conf_dep, conf_wd)
+                dep_conf = int(ch.get("confirms") or 0)
+                wd_conf = int(ch.get("safeConfirms") or dep_conf)
+                dep_conf, wd_conf = _ensure_wd_conf_ge_dep(dep_conf, wd_conf)
+                if dep_conf < 1:
+                    dep_conf = 1
+                    wd_conf = max(wd_conf, dep_conf)
 
-                # Для крипто-активов подтверждения депозита не могут быть 0
-                if conf_dep < 1:
-                    conf_dep = 1
-                    if conf_wd < conf_dep:
-                        conf_wd = conf_dep
+                dep_min = _D(ch.get("depositMin") or 0)
+                wd_min = _D(ch.get("withdrawMin") or 0)
+                wd_max = _D(ch.get("withdrawMax") or 0)
+                dep_max = _D(0)
 
-                wd_fee_fix = _D(ch.get("withdrawalMinFee") or ch.get("withdrawFee") or 0)
-                wd_min = _D(ch.get("withdrawMinSize") or 0)
-                wd_max = _D(ch.get("withdrawMaxSize") or 0)
-                dep_min = _D(ch.get("depositMinSize") or 0)
-                dep_max = _D(ch.get("depositMaxSize") or 0)
+                wd_fee_fix = _D(ch.get("withdrawalMinFee") or ch.get("withdrawalFee") or 0)
+                wd_fee_pct = _D(0)
+                dep_fee_fix = _D(0)
+                dep_fee_pct = _D(0)
 
-                requires_memo = _B(ch.get("isMemoRequired") or ch.get("needTag")) or (chain_code in memo_chains) or (_upper(chain_disp) in memo_chains)
+                requires_memo = _B(ch.get("needTag")) or (chain_code in memo_chains) or (_U(chain_disp) in memo_chains)
+                amount_precision = int(item.get("precision") or 8)
 
-                amount_precision = int(ch.get("precision") or item.get("precision") or 8)
-
-                rows.append(
-                    _Row(
-                        asset_code=sym,
-                        asset_name=asset_name,
-                        chain_code=chain_code,
-                        chain_display=chain_disp,
-                        AD=can_dep,
-                        AW=can_wd,
-                        conf_dep=conf_dep,
-                        conf_wd=conf_wd,
-                        dep_min=dep_min,
-                        dep_max=dep_max,
-                        wd_min=wd_min,
-                        wd_max=wd_max,
-                        dep_fee_pct=_D(0),
-                        dep_fee_fix=_D(0),
-                        wd_fee_pct=_D(0),
-                        wd_fee_fix=wd_fee_fix,
-                        is_stable=(sym in stables) or (_upper(asset_name) in stables),
-                        requires_memo=requires_memo,
-                        amount_precision=amount_precision,
-                        raw_meta=_json_safe({"asset": item, "chain": ch}),
-                    )
-                )
-
+                rows.append(_Row(
+                    asset_code=sym, asset_name=asset_name,
+                    chain_code=chain_code, chain_display=chain_disp,
+                    AD=can_dep, AW=can_wd,
+                    conf_dep=dep_conf, conf_wd=wd_conf,
+                    dep_min=dep_min, dep_max=dep_max,
+                    wd_min=wd_min, wd_max=wd_max,
+                    dep_fee_pct=dep_fee_pct, dep_fee_fix=dep_fee_fix,
+                    wd_fee_pct=wd_fee_pct, wd_fee_fix=wd_fee_fix,
+                    is_stable=(sym in stables) or (_U(asset_name) in stables),
+                    requires_memo=requires_memo,
+                    amount_precision=amount_precision,
+                    raw_meta=_json_safe({"asset": item, "chain": ch}),
+                ))
         return rows
 
     @transaction.atomic
-    def sync_assets(
-        self,
-        exchange: Exchange,
-        *,
-        timeout: int = 20,
-        limit: int = 0,
-        reconcile: bool = True,
-        verbose: bool = False,
-    ) -> AssetSyncStats:
-        """
-        Публичный синк активов KuCoin. Приватные уточнения комиссий можно добавить позже
-        (приоритет приватных над публичными), но публичные данные уже содержат minFee, min/max и статусы.
-        """
+    def sync_assets(self, exchange: Exchange, *, timeout: int = 20, limit: int = 0, reconcile: bool = True, verbose: bool = False) -> AssetSyncStats:
         stats = AssetSyncStats()
+        change_counter = Counter()
 
-        # 1) загрузить публичные currencies
         try:
             payload = self._fetch_public(timeout=timeout)
         except (URLError, HTTPError, json.JSONDecodeError) as e:
             raise RuntimeError(f"KuCoin: ошибка запросов: {e}")
 
-        # 2) разложить в uniform rows
         rows = self._rows_from_public(payload)
         if limit and limit > 0:
             rows = rows[:limit]
 
-        # 3) upsert в БД (аналогично whitebit)
         seen: Set[Tuple[str, str]] = set()
-
         for r in rows:
             stats.processed += 1
             seen.add((r.asset_code, r.chain_code))
 
-            defaults = dict(
+            new_vals = dict(
                 asset_name=r.asset_name,
-                chain_display=r.chain_display,
                 AD=bool(r.AD),
                 AW=bool(r.AW),
-                confirmations_deposit=int(r.conf_dep),
-                confirmations_withdraw=int(max(r.conf_dep, r.conf_wd)),
-                deposit_fee_percent=_D(r.dep_fee_pct),
-                deposit_fee_fixed=_D(r.dep_fee_fix),
-                deposit_min=_D(r.dep_min),
-                deposit_max=_D(r.dep_max),
-                deposit_min_usdt=_D(0),
-                deposit_max_usdt=_D(0),
-                withdraw_fee_percent=_D(r.wd_fee_pct),
-                withdraw_fee_fixed=_D(r.wd_fee_fix),
-                withdraw_min=_D(r.wd_min),
-                withdraw_max=_D(r.wd_max),
-                withdraw_min_usdt=_D(0),
-                withdraw_max_usdt=_D(0),
+                confirmations_deposit=int(r.conf_dep if r.conf_dep > 0 else 1),
+                confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
+                deposit_fee_percent=_q_pct(r.dep_fee_pct),
+                deposit_fee_fixed=_q_amt(r.dep_fee_fix),
+                deposit_min=_q_amt(r.dep_min),
+                deposit_max=_q_amt(r.dep_max),
+                deposit_min_usdt=_q_amt(0),
+                deposit_max_usdt=_q_amt(0),
+                withdraw_fee_percent=_q_pct(r.wd_fee_pct),
+                withdraw_fee_fixed=_q_amt(r.wd_fee_fix),
+                withdraw_min=_q_amt(r.wd_min),
+                withdraw_max=_q_amt(r.wd_max),
+                withdraw_min_usdt=_q_amt(0),
+                withdraw_max_usdt=_q_amt(0),
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),
                 amount_precision=int(r.amount_precision or 8),
-                status_note="",
+                asset_kind=AssetKind.CRYPTO if r.chain_code != "FIAT" else AssetKind.FIAT,
                 provider_symbol=r.asset_code,
                 provider_chain=r.chain_code,
-                raw_metadata=_json_safe(r.raw_meta),
-                last_synced_at=timezone.now(),
-                asset_kind=AssetKind.CRYPTO if r.chain_code != "FIAT" else AssetKind.FIAT,
             )
-
             obj, created = ExchangeAsset.objects.get_or_create(
-                exchange=exchange,
-                asset_code=r.asset_code,
-                chain_code=r.chain_code,
-                defaults=defaults,
+                exchange=exchange, asset_code=r.asset_code, chain_code=r.chain_code,
+                defaults={**new_vals, "raw_metadata": _json_safe(r.raw_meta), "chain_display": r.chain_display, "asset_name": r.asset_name},
             )
-
-            # крипта: минимум 1 подтверждение депозита
-            if obj.asset_kind == AssetKind.CRYPTO and obj.confirmations_deposit == 0:
-                obj.confirmations_deposit = 1
-                if obj.confirmations_withdraw < obj.confirmations_deposit:
-                    obj.confirmations_withdraw = obj.confirmations_deposit
-
             if created:
                 stats.created += 1
             else:
-                changed = False
-                for fld, val in defaults.items():
-                    if getattr(obj, fld) != val:
-                        setattr(obj, fld, val)
-                        changed = True
+                changed: list[str] = []
+                for f, v in new_vals.items():
+                    if getattr(obj, f) != v:
+                        setattr(obj, f, v)
+                        changed.append(f)
                 if changed:
-                    obj.updated_at = timezone.now()
-                    obj.save()
+                    for f in changed:
+                        change_counter[f] += 1
+                    obj.raw_metadata = _json_safe(r.raw_meta)
+                    obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
                     stats.updated += 1
                 else:
                     stats.skipped += 1
 
-        # 4) reconcile: те, кого нет в seen — отключаем AD/AW (ручные D/W не трогаем)
         if reconcile:
             to_disable = []
             for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
@@ -349,5 +307,7 @@ class KucoinAdapter:
 
         if verbose:
             print(f"[KuCoin] processed={stats.processed} created={stats.created} updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled}")
-
+            if change_counter:
+                top = ", ".join(f"{k}={v}" for k, v in change_counter.most_common(10))
+                print(f"[KUCOIN] field changes breakdown: {top}")
         return stats

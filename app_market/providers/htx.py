@@ -1,424 +1,311 @@
 from __future__ import annotations
 
-import base64
-import datetime as dt
-import hashlib
-import hmac
-from decimal import Decimal
-from typing import Any, Dict, Iterable, Optional, Tuple
+import json
+import time
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, localcontext
+from typing import Any, Optional, Set, Tuple, Dict
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+from collections import Counter
 
-import requests
-from django.apps import apps
 from django.db import transaction
 from django.utils import timezone
 
-from .base import ProviderAdapter  # тот же базовый класс, что и у Whitebit/Kucoin/Bybit
-from app_market.models.exchange import LiquidityProvider
-
-# Модели
-Exchange = apps.get_model("app_market", "Exchange")
-ExchangeAsset = apps.get_model("app_market", "ExchangeAsset")
-ExchangeApiKey = apps.get_model("app_market", "ExchangeApiKey")
-try:
-    CurrencyMap = apps.get_model("app_market", "CurrencyMap")
-except Exception:
-    CurrencyMap = None  # если маппинга пока нет — пропустим
-
-# SiteSetup (singleton со списками стейблов и сетей с memo)
-SiteSetup = apps.get_model("app_main", "SiteSetup")
+from app_market.models.exchange import Exchange
+from app_market.models.exchange_asset import ExchangeAsset, AssetKind
+from app_main.models import SiteSetup
+from .base import ProviderAdapter, AssetSyncStats
 
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
-_HTX_HOST = "api.huobi.pro"
+HTX_BASES = ["https://api.htx.com", "https://api.huobi.pro", "https://api.huobi.com"]
+CURRENCIES_PATH = "/v2/reference/currencies"
 
+# precision config
+PCT_MAX_DIGITS, PCT_PLACES = 12, 5
+AMOUNT_MAX_DIGITS, AMOUNT_PLACES = 20, 8
 
-# ---------- утилиты ----------
+def _http_get_json(url: str, timeout: int = 20, retries: int = 3) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = Request(url, headers={"User-Agent": UA})
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except (URLError, HTTPError, json.JSONDecodeError) as e:
+            last_err = e
+            time.sleep(0.3 * (3 ** attempt))
+    assert last_err is not None
+    raise last_err
 
-def _now_utc_iso() -> str:
-    # Формат, который HTX использует для подписи (UTC без микросекунд)
-    return dt.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+def _D(x: Any) -> Decimal:
+    if isinstance(x, Decimal):
+        d = x
+    else:
+        if x in (None, "", "0E-10"):
+            return Decimal("0")
+        s = str(x).strip()
+        if s.lower() in {"nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+            return Decimal("0")
+        try:
+            d = Decimal(s)
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+    return d if d.is_finite() else Decimal("0")
 
+def _cap_and_quantize(d: Decimal, *, max_digits: int, places: int) -> Decimal:
+    if not d.is_finite():
+        return Decimal("0")
+    if d == 0:
+        return Decimal("0").quantize(Decimal(1).scaleb(-places))
+    exp = Decimal(1).scaleb(-places)
+    max_int = max_digits - places
+    limit = (Decimal(10) ** max_int) - exp
+    if d > limit:
+        d = limit
+    elif d < -limit:
+        d = -limit
+    with localcontext() as ctx:
+        ctx.rounding = ROUND_DOWN
+        try:
+            return d.quantize(exp)
+        except InvalidOperation:
+            return Decimal("0").quantize(exp)
 
-def _as_dec(x: Any, default: Decimal = Decimal("0")) -> Decimal:
-    if x is None or x == "":
-        return default
-    try:
-        return Decimal(str(x))
-    except Exception:
-        return default
+def _q_pct(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=PCT_MAX_DIGITS, places=PCT_PLACES)
 
+def _q_amt(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=AMOUNT_MAX_DIGITS, places=AMOUNT_PLACES)
 
-def _as_int(x: Any, default: int = 0) -> int:
-    try:
-        return int(x)
-    except Exception:
-        return default
-
-
-def _bool(x: Any, default: bool = False) -> bool:
+def _B(x: Any) -> bool:
     if isinstance(x, bool):
         return x
-    if x is None:
-        return default
-    s = str(x).strip().lower()
-    if s in {"1", "true", "yes", "y", "enabled", "enable", "on", "allowed"}:
-        return True
-    if s in {"0", "false", "no", "n", "disabled", "off", "forbidden"}:
-        return False
-    return default
+    if isinstance(x, (int, float)):
+        return bool(x)
+    if isinstance(x, str):
+        v = x.strip().lower()
+        return v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}
+    return False
 
+def _U(s: Optional[str]) -> str:
+    return (s or "").strip().upper()
 
-def _upper_clean(s: Any) -> str:
-    return (str(s or "")).strip().upper()
+def _disp(s: Optional[str]) -> str:
+    return (s or "").strip()
 
+def _json_safe(o: Any) -> Any:
+    if isinstance(o, Decimal):
+        return str(o)
+    if isinstance(o, dict):
+        return {k: _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    return o
 
-def _norm_chain(s: Any) -> str:
-    # Упрощённая нормализация кода сети
-    return _upper_clean(s).replace(" ", "").replace("-", "").replace("_", "")
+def _stable_set_from_sitesetup() -> Set[str]:
+    ss = SiteSetup.get_solo()
+    raw = ss.stablecoins or ""
+    parts = [p.strip() for p in str(raw).replace(";", ",").split(",") if p.strip()]
+    return {p.upper() for p in parts}
 
-
-def _json_safe(obj: Any) -> Any:
-    # Приводим Decimal к строкам внутри dict/list, чтобы JSONField не падал
-    if isinstance(obj, Decimal):
-        return str(obj)
-    if isinstance(obj, dict):
-        return {k: _json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_json_safe(v) for v in obj]
-    return obj
-
-
-def _site_sets() -> tuple[set[str], set[str]]:
-    ss: SiteSetup = SiteSetup.get_solo()
-    # стейблы — регистронезависимо (casefold())
-    stables = {p.strip().casefold() for p in (ss.stablecoins or "").replace(";", ",").split(",") if p.strip()}
-    # сети с MEMO — метод настроек отдаёт уже нормализованные коды (обычно UPPER)
-    memo_chains = set(ss.get_memo_required_chains_set())
-    return stables, memo_chains
-
-
-def _currency_map_for_exchange(exchange_id: int) -> dict[tuple[str, str], tuple[str, str]]:
-    """
-    (provider_symbol, provider_chain) -> (asset_code, chain_code)
-    Ключ — в UPPER; если нет CurrencyMap, возвращаем пусто.
-    """
-    out: dict[tuple[str, str], tuple[str, str]] = {}
-    if not CurrencyMap:
-        return out
+def _memo_required_chains_from_site() -> Set[str]:
+    ss = SiteSetup.get_solo()
     try:
-        for row in CurrencyMap.objects.filter(exchange_id=exchange_id).values(
-            "external_symbol", "external_chain", "asset_code", "chain_code"
-        ):
-            ext_sym = _upper_clean(row["external_symbol"])
-            ext_chain = _upper_clean(row["external_chain"])
-            asset = _upper_clean(row["asset_code"])
-            chain = _upper_clean(row["chain_code"])
-            out[(ext_sym, ext_chain)] = (asset, chain or "NATIVE")
+        return set(ss.get_memo_required_chains_set())  # type: ignore[attr-defined]
     except Exception:
-        pass
-    return out
+        txt = (getattr(ss, "memo_required_chains", "") or "").strip()
+        if not txt:
+            return set()
+        return {p.strip().upper() for p in txt.replace(";", ",").split(",") if p.strip()}
 
+def _ensure_wd_conf_ge_dep(dep_conf: int, wd_conf: int) -> tuple[int, int]:
+    if wd_conf < dep_conf:
+        wd_conf = dep_conf
+    return dep_conf, wd_conf
 
-def _map_codes(mapping: dict, provider_symbol: str, provider_chain: str) -> tuple[str, str]:
-    key = (_upper_clean(provider_symbol), _upper_clean(provider_chain))
-    return mapping.get(key, (key[0], (key[1] or "NATIVE")))
-
-
-def _ensure_withdraw_conf_ge_deposit(conf_d: int, conf_w: int) -> tuple[int, int]:
-    # для крипты на вход минимум 1 (твое правило), вывод не меньше входа
-    conf_d = max(int(conf_d or 0), 1)
-    conf_w = max(int(conf_w or 0), conf_d)
-    return conf_d, conf_w
-
-
-# ---------- HTTP к HTX ----------
-
-def _htx_get(path: str, params: Optional[Dict[str, Any]] = None, timeout: int = 20) -> Dict[str, Any]:
-    url = f"https://{_HTX_HOST}{path}"
-    r = requests.get(url, params=params or {}, headers={"User-Agent": UA}, timeout=timeout)
-    r.raise_for_status()
-    return r.json() or {}
-
-
-def _htx_sign_params(method: str, host: str, path: str, params: Dict[str, Any], secret_key: str) -> str:
-    """
-    Подпись Huobi/HTX: SignatureVersion=2, HmacSHA256, Base64
-    StringToSign = "{METHOD}\n{host}\n{path}\n{CanonicalQueryString}"
-    CanonicalQueryString — параметры отсортированы по ключу и urlencoded.
-    """
-    from urllib.parse import urlencode, quote
-
-    qs = urlencode(sorted(params.items()), safe="~", quote_via=quote)
-    payload = "\n".join([method.upper(), host, path, qs])
-    digest = hmac.new(secret_key.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).digest()
-    return base64.b64encode(digest).decode("utf-8")
-
-
-def _htx_private_get(path: str, api_key: str, api_secret: str, extra_params: Optional[Dict[str, Any]] = None, timeout: int = 20) -> Dict[str, Any]:
-    from urllib.parse import urlencode
-
-    params: Dict[str, Any] = {
-        "AccessKeyId": api_key,
-        "SignatureMethod": "HmacSHA256",
-        "SignatureVersion": "2",
-        "Timestamp": _now_utc_iso(),
-    }
-    if extra_params:
-        params.update(extra_params)
-    params["Signature"] = _htx_sign_params("GET", _HTX_HOST, path, params, api_secret)
-
-    url = f"https://{_HTX_HOST}{path}?{urlencode(params)}"
-    r = requests.get(url, headers={"User-Agent": UA}, timeout=timeout)
-    r.raise_for_status()
-    return r.json() or {}
-
-
-# ---------- Адаптер ----------
+@dataclass
+class _Row:
+    asset_code: str
+    asset_name: str
+    chain_code: str
+    chain_display: str
+    AD: bool
+    AW: bool
+    conf_dep: int
+    conf_wd: int
+    dep_min: Decimal
+    dep_max: Decimal
+    wd_min: Decimal
+    wd_max: Decimal
+    dep_fee_pct: Decimal
+    dep_fee_fix: Decimal
+    wd_fee_pct: Decimal
+    wd_fee_fix: Decimal
+    is_stable: bool
+    requires_memo: bool
+    amount_precision: int
+    raw_meta: dict
 
 class HtxAdapter(ProviderAdapter):
-    """
-    Адаптер HTX (Huobi) к нашему ExchangeAsset.
-    Публичные источники:
-      - /v2/reference/currencies  — валюты/цепи, статусы D/W, типы комиссий (fixed|ratio), maxWithdrawAmt
-      - /v1/settings/common/currencys — fc/sc (подтверждения), dma/wma (минимумы), cawt (addr-tag), sp (precision)
-    Приватные (если заданы ключи в ExchangeApiKey):
-      - /v2/account/withdraw/quota — уточнение maxWithdrawAmt (приоритетнее публичного)
-    """
+    code = "HTX"
 
-    code = LiquidityProvider.HTX
+    def _fetch_public(self, *, timeout: int) -> list[dict]:
+        last_err: Optional[Exception] = None
+        for base in HTX_BASES:
+            try:
+                data = _http_get_json(base + CURRENCIES_PATH, timeout=timeout, retries=3)
+                if isinstance(data, dict) and data.get("data"):
+                    return list(data.get("data") or [])
+            except (URLError, HTTPError, json.JSONDecodeError) as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        return []
 
-    def sync(
-        self,
-        exchange: Exchange,
-        *,
-        timeout: int = 20,
-        limit: Optional[int] = None,
-        reconcile: bool = True,
-        verbose: bool = False,
-    ) -> dict:
-        stats = {"created": 0, "updated": 0, "disabled": 0, "total_seen": 0}
-        stable_set, memo_chain_set = _site_sets()
-        cur_map = _currency_map_for_exchange(exchange.id)
+    def _rows_from_public(self, payload: list[dict]) -> list[_Row]:
+        stables = _stable_set_from_sitesetup()
+        memo_chains = _memo_required_chains_from_site()
+        rows: list[_Row] = []
 
-        # 1) Публичные настройки валют (fc/sc, sp, cawt...)
-        settings_map: dict[str, dict] = {}
+        for item in payload:
+            sym = _U(item.get("currency"))
+            if not sym:
+                continue
+            asset_name = _disp(item.get("currency")) or sym
+            chains = item.get("chains") or []
+            if not isinstance(chains, list):
+                continue
+
+            for ch in chains:
+                chain_code = _U(ch.get("chain")) or _U(ch.get("baseChain")) or "NATIVE"
+                chain_display = _disp(ch.get("displayName")) or chain_code
+
+                can_dep = _B(ch.get("depositEnable") or ch.get("depositStatus"))
+                can_wd = _B(ch.get("withdrawEnable") or ch.get("withdrawStatus"))
+
+                dep_conf = int(ch.get("numOfConfirmations") or 0)
+                wd_conf = int(ch.get("numOfFastConfirmations") or dep_conf)
+                dep_conf, wd_conf = _ensure_wd_conf_ge_dep(dep_conf, wd_conf)
+                if dep_conf < 1:
+                    dep_conf = 1
+                    wd_conf = max(wd_conf, dep_conf)
+
+                dep_min = _D(ch.get("depositMinAmount") or ch.get("minDepositAmt") or 0)
+                dep_max = _D(ch.get("depositMaxAmount") or ch.get("maxDepositAmt") or 0)
+                wd_min = _D(ch.get("withdrawMinAmount") or ch.get("minWithdrawAmt") or 0)
+                wd_max = _D(ch.get("withdrawMaxAmount") or ch.get("maxWithdrawAmt") or 0)
+
+                wd_fee_fix = _D(ch.get("transactFeeWithdraw") or ch.get("txFee") or 0)
+                wd_fee_pct = _D(0)
+                dep_fee_fix = _D(0)
+                dep_fee_pct = _D(0)
+
+                desc = " ".join([
+                    _disp(ch.get("depositDesc")), _disp(ch.get("withdrawDesc")), _disp(ch.get("tips")),
+                ]).lower()
+                requires_memo = ("memo" in desc) or ("tag" in desc) or (chain_code in memo_chains) or (_U(chain_display) in memo_chains)
+
+                amount_precision = int(ch.get("withdrawPrecision") or ch.get("txTransferPrecision") or 8)
+
+                rows.append(_Row(
+                    asset_code=sym, asset_name=asset_name,
+                    chain_code=chain_code, chain_display=chain_display,
+                    AD=can_dep, AW=can_wd,
+                    conf_dep=dep_conf, conf_wd=wd_conf,
+                    dep_min=dep_min, dep_max=dep_max,
+                    wd_min=wd_min, wd_max=wd_max,
+                    dep_fee_pct=dep_fee_pct, dep_fee_fix=dep_fee_fix,
+                    wd_fee_pct=wd_fee_pct, wd_fee_fix=wd_fee_fix,
+                    is_stable=(sym in stables) or (_U(asset_name) in stables),
+                    requires_memo=requires_memo,
+                    amount_precision=amount_precision,
+                    raw_meta=_json_safe({"asset": item, "chain": ch}),
+                ))
+        return rows
+
+    @transaction.atomic
+    def sync_assets(self, exchange: Exchange, *, timeout: int = 20, limit: int = 0, reconcile: bool = True, verbose: bool = False) -> AssetSyncStats:
+        stats = AssetSyncStats()
+        change_counter = Counter()
+
         try:
-            s = _htx_get("/v1/settings/common/currencys", timeout=timeout)
-            if s.get("status") == "ok":
-                for row in s.get("data") or []:
-                    sym = _upper_clean(row.get("dn") or row.get("name"))
-                    if sym:
-                        settings_map[sym] = row
-        except Exception:
-            if verbose:
-                print("[HTX] warn: /v1/settings/common/currencys unavailable, continue with /v2/reference/currencies only")
+            payload = self._fetch_public(timeout=timeout)
+        except (URLError, HTTPError, json.JSONDecodeError) as e:
+            raise RuntimeError(f"HTX: ошибка запросов: {e}")
 
-        # 2) Публичный справочник валют/цепей
-        ref = _htx_get("/v2/reference/currencies", timeout=timeout)
-        items: Iterable[dict] = ref.get("data") or []
+        rows = self._rows_from_public(payload)
+        if limit and limit > 0:
+            rows = rows[:limit]
 
-        # 3) Опционально приватные квоты вывода
-        ak = ExchangeApiKey.objects.filter(exchange=exchange, is_enabled=True).order_by("id").first()
-        api_key = (ak.api_key or "") if ak else ""
-        api_sec = (ak.api_secret or "") if ak else ""
-        have_private = bool(api_key and api_sec)
+        seen: Set[Tuple[str, str]] = set()
+        for r in rows:
+            stats.processed += 1
+            seen.add((r.asset_code, r.chain_code))
 
-        seen: set[tuple[str, str]] = set()
+            new_vals = dict(
+                asset_name=r.asset_name,
+                AD=bool(r.AD),
+                AW=bool(r.AW),
+                confirmations_deposit=int(r.conf_dep if r.conf_dep > 0 else 1),
+                confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
+                deposit_fee_percent=_q_pct(r.dep_fee_pct),
+                deposit_fee_fixed=_q_amt(r.dep_fee_fix),
+                deposit_min=_q_amt(r.dep_min),
+                deposit_max=_q_amt(r.dep_max),
+                deposit_min_usdt=_q_amt(0),
+                deposit_max_usdt=_q_amt(0),
+                withdraw_fee_percent=_q_pct(r.wd_fee_pct),
+                withdraw_fee_fixed=_q_amt(r.wd_fee_fix),
+                withdraw_min=_q_amt(r.wd_min),
+                withdraw_max=_q_amt(r.wd_max),
+                withdraw_min_usdt=_q_amt(0),
+                withdraw_max_usdt=_q_amt(0),
+                requires_memo=bool(r.requires_memo),
+                is_stablecoin=bool(r.is_stable),
+                amount_precision=int(r.amount_precision or 8),
+                asset_kind=AssetKind.CRYPTO,
+                provider_symbol=r.asset_code,
+                provider_chain=r.chain_code,
+            )
+            obj, created = ExchangeAsset.objects.get_or_create(
+                exchange=exchange, asset_code=r.asset_code, chain_code=r.chain_code,
+                defaults={**new_vals, "raw_metadata": _json_safe(r.raw_meta), "chain_display": r.chain_display, "asset_name": r.asset_name},
+            )
+            if created:
+                stats.created += 1
+            else:
+                changed: list[str] = []
+                for f, v in new_vals.items():
+                    if getattr(obj, f) != v:
+                        setattr(obj, f, v)
+                        changed.append(f)
+                if changed:
+                    for f in changed:
+                        change_counter[f] += 1
+                    obj.raw_metadata = _json_safe(r.raw_meta)
+                    obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
+                    stats.updated += 1
+                else:
+                    stats.skipped += 1
 
-        with transaction.atomic():
-            total = 0
-            for it in items:
-                sym = _upper_clean(it.get("currency"))
-                chains: Iterable[dict] = it.get("chains") or []
-
-                # нет цепей → трактуем как фиат (виртуальная цепь FIAT)
-                if not chains:
-                    asset_code, chain_code = _map_codes(cur_map, sym, "FIAT")
-                    seen.add((asset_code, chain_code))
-                    total += 1
-
-                    is_stable = (sym.casefold() in stable_set)
-                    srow = settings_map.get(sym, {})
-                    amount_precision_display = _as_int(srow.get("sp"), 8)
-
-                    defaults = dict(
-                        asset_name=srow.get("fn") or sym,
-                        chain_name="FIAT",
-                        asset_kind="FIAT",
-                        AD=True, AW=True,  # автофлаги включены; ручные D/W не трогаем
-                        confirmations_deposit=1,
-                        confirmations_withdraw=1,
-                        requires_memo=False,
-                        is_stablecoin=is_stable,
-                        amount_precision=amount_precision_display or 8,
-                        amount_precision_display=amount_precision_display or 8,
-                        deposit_fee_percent=Decimal("0"),
-                        deposit_fee_fixed=Decimal("0"),
-                        withdraw_fee_percent=Decimal("0"),
-                        withdraw_fee_fixed=Decimal("0"),
-                        deposit_min=Decimal("0"),
-                        deposit_max=Decimal("0"),
-                        withdraw_min=Decimal("0"),
-                        withdraw_max=Decimal("0"),
-                        provider_symbol=sym,
-                        provider_chain="FIAT",
-                        raw_metadata=_json_safe(it),
-                        last_synced_at=timezone.now(),
-                    )
-
-                    obj, created = ExchangeAsset.objects.get_or_create(
-                        exchange=exchange, asset_code=asset_code, chain_code=chain_code, defaults=defaults
-                    )
-                    if created:
-                        stats["created"] += 1
-                    else:
-                        changed = False
-                        for f, v in defaults.items():
-                            if getattr(obj, f) != v:
-                                setattr(obj, f, v)
-                                changed = True
-                        if changed:
-                            obj.save(update_fields=list(defaults.keys()))
-                            stats["updated"] += 1
-                    if limit and total >= limit:
-                        break
-                    continue
-
-                # есть цепи — крипта
-                for ch in chains:
-                    base_chain = _norm_chain(ch.get("baseChain") or "")
-                    proto = _norm_chain(ch.get("baseChainProtocol") or "")
-                    declared_chain = _norm_chain(ch.get("chain") or "")
-                    chain_code_src = proto or base_chain or declared_chain or "CHAIN"
-                    chain_name = ch.get("displayName") or (proto or base_chain) or chain_code_src
-
-                    asset_code, chain_code = _map_codes(cur_map, sym, chain_code_src)
-                    seen.add((asset_code, chain_code))
-                    total += 1
-
-                    # автофлаги на уровне цепи
-                    ad = _bool(ch.get("depositStatus"), default=True)
-                    aw = _bool(ch.get("withdrawStatus"), default=True)
-
-                    # подтверждения из settings (fc/sc), иначе 1/1
-                    srow = settings_map.get(sym, {})
-                    conf_d, conf_w = _ensure_withdraw_conf_ge_deposit(
-                        _as_int(srow.get("fc") or ch.get("confirmations") or 1, 1),
-                        _as_int(srow.get("sc") or 0, 0),
-                    )
-
-                    # лимиты из settings (dma/wma), если есть; плюс возможные max из reference
-                    dmin = _as_dec(srow.get("dma"))
-                    wmin = _as_dec(srow.get("wma"))
-                    wmax = _as_dec(ch.get("maxWithdrawAmt"))
-
-                    # комиссии вывода: fixed / ratio
-                    withdraw_fee_fixed = Decimal("0")
-                    withdraw_fee_percent = Decimal("0")
-                    fee_type = str(ch.get("withdrawFeeType") or "").lower()
-                    if fee_type == "fixed":
-                        withdraw_fee_fixed = _as_dec(ch.get("transactFeeWithdraw"))
-                    elif fee_type == "ratio":
-                        rate = _as_dec(ch.get("transactFeeRateWithdraw"))
-                        withdraw_fee_percent = rate * Decimal("100")
-                    else:
-                        if ch.get("transactFeeWithdraw") is not None:
-                            withdraw_fee_fixed = _as_dec(ch.get("transactFeeWithdraw"))
-                        if ch.get("transactFeeRateWithdraw") is not None:
-                            withdraw_fee_percent = _as_dec(ch.get("transactFeeRateWithdraw")) * Decimal("100")
-
-                    # депозиты у HTX обычно без комиссии
-                    deposit_fee_fixed = Decimal("0")
-                    deposit_fee_percent = Decimal("0")
-
-                    # memo: по списку из SiteSetup либо по флагу cawt (addr-tag) из settings
-                    requires_memo = (chain_code in memo_chain_set) or _bool(srow.get("cawt"), False)
-
-                    # стейбл только по SiteSetup (HTX явного флага не даёт)
-                    is_stable = (sym.casefold() in stable_set)
-
-                    amount_precision_display = _as_int(srow.get("sp"), 8)
-                    amount_precision = int(ch.get("displayPrecision") or amount_precision_display or 8)
-
-                    defaults = dict(
-                        asset_name=srow.get("fn") or sym,
-                        chain_name=chain_name,
-                        asset_kind="CRYPTO",
-                        AD=ad, AW=aw,
-                        confirmations_deposit=conf_d,
-                        confirmations_withdraw=conf_w,
-                        deposit_fee_percent=deposit_fee_percent,
-                        deposit_fee_fixed=deposit_fee_fixed,
-                        withdraw_fee_percent=withdraw_fee_percent,
-                        withdraw_fee_fixed=withdraw_fee_fixed,
-                        deposit_min=dmin,
-                        deposit_max=_as_dec(srow.get("dmax") or 0),  # если когда-нибудь появится
-                        withdraw_min=wmin,
-                        withdraw_max=wmax,
-                        requires_memo=requires_memo,
-                        is_stablecoin=is_stable,
-                        amount_precision=amount_precision,
-                        amount_precision_display=amount_precision_display,
-                        provider_symbol=sym,
-                        provider_chain=chain_code_src,
-                        raw_metadata=_json_safe({"ref": ch, "settings": srow}),
-                        last_synced_at=timezone.now(),
-                    )
-
-                    obj, created = ExchangeAsset.objects.get_or_create(
-                        exchange=exchange, asset_code=asset_code, chain_code=chain_code, defaults=defaults
-                    )
-                    if created:
-                        stats["created"] += 1
-                    else:
-                        changed = False
-                        for f, v in defaults.items():
-                            if getattr(obj, f) != v:
-                                setattr(obj, f, v)
-                                changed = True
-                        if changed:
-                            obj.save(update_fields=list(defaults.keys()))
-                            stats["updated"] += 1
-
-                    # приватные квоты имеют приоритет — если есть ключи, подтянем maxWithdrawAmt
-                    if have_private:
-                        try:
-                            q = _htx_private_get(
-                                "/v2/account/withdraw/quota",
-                                api_key, api_sec,
-                                {"currency": sym.lower()},
-                                timeout=timeout,
-                            )
-                            data = q.get("data") or {}
-                            chains_q = data.get("chains") or []
-                            if chains_q:
-                                best = None
-                                for row in chains_q:
-                                    mw = _as_dec(row.get("maxWithdrawAmt"))
-                                    if mw and (best is None or mw > best):
-                                        best = mw
-                                if best is not None and best != obj.withdraw_max:
-                                    obj.withdraw_max = best
-                                    obj.save(update_fields=["withdraw_max"])
-                                    stats["updated"] += 1
-                        except Exception:
-                            if verbose:
-                                print(f"[HTX] warn: private quota failed for {sym}")
-
-                    if limit and total >= limit:
-                        break
-
-            stats["total_seen"] = total
-
-            # reconcile: у того же exchange погасим автофлаги там, где (asset_code, chain_code) не пришли
-            if reconcile:
-                for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
-                    if (obj.asset_code, obj.chain_code) not in seen and (obj.AD or obj.AW):
-                        obj.AD = False
-                        obj.AW = False
-                        obj.last_synced_at = timezone.now()
-                        obj.save(update_fields=["AD", "AW", "last_synced_at"])
-                        stats["disabled"] += 1
+        if reconcile:
+            to_disable = []
+            for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
+                key = (obj.asset_code, obj.chain_code)
+                if key not in seen and (obj.AD or obj.AW):
+                    to_disable.append(obj.id)
+            if to_disable:
+                ExchangeAsset.objects.filter(id__in=to_disable).update(
+                    AD=False, AW=False, status_note="Отключено: отсутствует в выдаче HTX", updated_at=timezone.now()
+                )
+                stats.disabled = len(to_disable)
 
         if verbose:
-            print(f"[HTX] {stats}")
+            print(f"[HTX] processed={stats.processed} created={stats.created} updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled}")
+            if change_counter:
+                top = ", ".join(f"{k}={v}" for k, v in change_counter.most_common(10))
+                print(f"[HTX] field changes breakdown: {top}")
         return stats

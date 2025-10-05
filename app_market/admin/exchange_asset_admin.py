@@ -1,10 +1,9 @@
 from decimal import Decimal
-from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _t
 from django import forms
-from django.db import models
-
+from django.db import models, transaction
+from django.contrib import admin, messages
 from app_market.models import ExchangeAsset
 
 
@@ -79,9 +78,8 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "deposit_open",
         "withdraw_open",
         "is_stablecoin",
-        "reserve_current",
         "requires_memo",
-        "last_synced_at",
+        # "last_synced_at",
     )
     list_display_links = ("exchange", "asset_code", "chain_code")
     list_filter = (
@@ -202,3 +200,53 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
 
     withdraw_open.boolean = True
     withdraw_open.short_description = _t("Вывод")
+
+    @admin.action(description=_t("Удалить ВСЕ активы (без подтверждения)"))
+    def action_purge_all_assets(modeladmin, request, queryset):
+        """Удаляет все ExchangeAsset без страницы подтверждения."""
+        if not modeladmin.has_delete_permission(request):
+            modeladmin.message_user(request, _t("Нет прав на удаление."), level=messages.ERROR)
+            return
+        with transaction.atomic():
+            total = ExchangeAsset.objects.count()
+            ExchangeAsset.objects.all().delete()  # один DELETE, без загрузки объектов в память
+        modeladmin.message_user(
+            request,
+            _t("Удалено %(n)s активов ПЛ.") % {"n": total},
+            level=messages.WARNING,
+        )
+
+    @admin.action(description=_t("Удалить активы текущей выборки (по фильтрам)"))
+    def action_purge_filtered_assets(modeladmin, request, queryset):
+        """
+        Удаляет только записи из текущей выборки (учитывает фильтры в списке).
+        Без подтверждения, безопасно для больших выборок:
+        если нажать «Выбрать всё», Django пришлёт select_across=1 и ID не перечисляет.
+        """
+        if not modeladmin.has_delete_permission(request):
+            modeladmin.message_user(request, _t("Нет прав на удаление."), level=messages.ERROR)
+            return
+
+        # Если нажато «Выбрать всё», берём весь текущий queryset из списка, иначе — переданный queryset.
+        select_across = request.POST.get("select_across") == "1"
+        qs = modeladmin.get_queryset(request) if select_across else queryset
+
+        with transaction.atomic():
+            total = qs.count()
+            qs.delete()
+        modeladmin.message_user(
+            request,
+            _t("Удалено %(n)s активов из текущей выборки.") % {"n": total},
+            level=messages.WARNING,
+        )
+
+    actions = [
+        action_purge_all_assets,
+        action_purge_filtered_assets,
+    ]
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        # Удаляем встроенный массовый экшен «Удалить выбранные»
+        actions.pop("delete_selected", None)
+        return actions

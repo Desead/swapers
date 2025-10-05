@@ -23,6 +23,7 @@ python .\manage.py makemigrations
 python .\manage.py migrate
 python .\manage.py createsuperuser
 python .\manage.py init_roles
+python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
 pytest -q
 pytest -q app_market/tests
 python .\manage.py runserver

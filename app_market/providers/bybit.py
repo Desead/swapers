@@ -1,4 +1,3 @@
-# app_market/providers/bybit.py
 from __future__ import annotations
 
 import json
@@ -6,10 +5,11 @@ import time
 import hmac
 import hashlib
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, localcontext
 from typing import Any, Dict, Optional, Set, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from collections import Counter
 
 from django.db import transaction
 from django.utils import timezone
@@ -23,27 +23,71 @@ from .base import ProviderAdapter, AssetSyncStats
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 BYBIT_BASE = "https://api.bybit.com"
 COIN_INFO_URL = f"{BYBIT_BASE}/v5/asset/coin/query-info"
-RECV_WINDOW = "5000"  # ms
+RECV_WINDOW = "5000"
 
+# ---- precision/limits for your model fields ----
+PCT_MAX_DIGITS, PCT_PLACES = 12, 5      # percent fee fields
+AMOUNT_MAX_DIGITS, AMOUNT_PLACES = 20, 8  # amounts & fixed fees
 
 # ---------- helpers ----------
 
-def _http_get_json(url: str, headers: Dict[str, str], timeout: int = 20) -> Any:
-    req = Request(url, headers=headers)
-    with urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-    return json.loads(raw.decode("utf-8"))
+def _http_get_json(url: str, headers: Dict[str, str] | None = None, timeout: int = 20, retries: int = 3) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = Request(url, headers=(headers or {"User-Agent": UA}))
+            with urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            return json.loads(raw.decode("utf-8"))
+        except (URLError, HTTPError, json.JSONDecodeError) as e:
+            last_err = e
+            time.sleep(0.3 * (3 ** attempt))
+    assert last_err is not None
+    raise last_err
 
 
 def _D(x: Any) -> Decimal:
     if isinstance(x, Decimal):
-        return x
-    if x in (None, "", "0E-10"):
+        d = x
+    else:
+        if x in (None, "", "0E-10"):
+            return Decimal("0")
+        s = str(x).strip()
+        if s.lower() in {"nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity"}:
+            return Decimal("0")
+        try:
+            d = Decimal(s)
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
+    return d if d.is_finite() else Decimal("0")
+
+
+def _cap_and_quantize(d: Decimal, *, max_digits: int, places: int) -> Decimal:
+    if not d.is_finite():
         return Decimal("0")
-    try:
-        return Decimal(str(x))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
+    if d == 0:
+        return Decimal("0").quantize(Decimal(1).scaleb(-places))
+    exp = Decimal(1).scaleb(-places)  # 10^-places
+    max_int = max_digits - places
+    limit = (Decimal(10) ** max_int) - exp
+    if d > limit:
+        d = limit
+    elif d < -limit:
+        d = -limit
+    with localcontext() as ctx:
+        ctx.rounding = ROUND_DOWN
+        try:
+            return d.quantize(exp)
+        except InvalidOperation:
+            return Decimal("0").quantize(exp)
+
+
+def _q_pct(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=PCT_MAX_DIGITS, places=PCT_PLACES)
+
+
+def _q_amt(x: Any) -> Decimal:
+    return _cap_and_quantize(_D(x), max_digits=AMOUNT_MAX_DIGITS, places=AMOUNT_PLACES)
 
 
 def _B(x: Any) -> bool:
@@ -53,7 +97,7 @@ def _B(x: Any) -> bool:
         return bool(x)
     if isinstance(x, str):
         v = x.strip().lower()
-        return v in {"1", "true", "yes", "y", "on"}
+        return v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}
     return False
 
 
@@ -66,7 +110,6 @@ def _disp(s: Optional[str]) -> str:
 
 
 def _json_safe(o: Any) -> Any:
-    """Приводим объект к JSON-сериализуемому виду (Decimal->str, рекурсивно)."""
     if isinstance(o, Decimal):
         return str(o)
     if isinstance(o, dict):
@@ -85,15 +128,13 @@ def _stable_set_from_sitesetup() -> Set[str]:
 
 def _memo_required_chains_from_site() -> Set[str]:
     ss = SiteSetup.get_solo()
-    if hasattr(ss, "get_memo_required_chains_set"):
-        try:
-            return set(ss.get_memo_required_chains_set())  # type: ignore[attr-defined]
-        except Exception:
-            pass
-    txt = (getattr(ss, "memo_required_chains", "") or "").strip()
-    if not txt:
-        return set()
-    return {p.strip().upper() for p in txt.replace(";", ",").split(",") if p.strip()}
+    try:
+        return set(ss.get_memo_required_chains_set())  # type: ignore[attr-defined]
+    except Exception:
+        txt = (getattr(ss, "memo_required_chains", "") or "").strip()
+        if not txt:
+            return set()
+        return {p.strip().upper() for p in txt.replace(";", ",").split(",") if p.strip()}
 
 
 def _ensure_wd_conf_ge_dep(dep_conf: int, wd_conf: int) -> tuple[int, int]:
@@ -103,10 +144,7 @@ def _ensure_wd_conf_ge_dep(dep_conf: int, wd_conf: int) -> tuple[int, int]:
 
 
 def _bybit_pct_to_percent(v: Any) -> Decimal:
-    """
-    Bybit отдаёт withdrawPercentageFee как долю (например, 0.022 = 2.2%).
-    В наших полях проценты хранятся "в процентах" (2.2 означает 2.2%).
-    """
+    # у Bybit это доля (0.001) -> проценты (0.1)
     return _D(v) * Decimal("100")
 
 
@@ -120,7 +158,7 @@ def _get_any_enabled_keys(exchange: Exchange) -> tuple[Optional[str], Optional[s
     return ((rec.api_key or None), (rec.api_secret or None)) if rec else (None, None)
 
 
-# ---------- internal row ----------
+# ---------- row ----------
 
 @dataclass
 class _Row:
@@ -148,19 +186,14 @@ class _Row:
 
 # ---------- adapter ----------
 
-class BybitAdapter:
+class BybitAdapter(ProviderAdapter):
     code = "BYBIT"
 
     def _fetch_coin_info_signed(self, *, api_key: str, api_secret: str, timeout: int) -> list[dict]:
-        """
-        GET /v5/asset/coin/query-info с подписью (требуется: apiTimestamp, apiKey, apiSignature).
-        Подписываем строку: timestamp + apiKey + recvWindow + queryString  (у нас queryString пуст).
-        """
         ts = str(int(time.time() * 1000))
-        query = ""  # без фильтра, чтобы получить ВСЕ монеты
+        query = ""
         prehash = ts + api_key + RECV_WINDOW + query
         sign = hmac.new(api_secret.encode(), prehash.encode(), hashlib.sha256).hexdigest()
-
         headers = {
             "User-Agent": UA,
             "Accept": "application/json",
@@ -168,14 +201,12 @@ class BybitAdapter:
             "X-BAPI-TIMESTAMP": ts,
             "X-BAPI-RECV-WINDOW": RECV_WINDOW,
             "X-BAPI-SIGN": sign,
-            "X-BAPI-SIGN-TYPE": "2",  # HMAC-SHA256
+            "X-BAPI-SIGN-TYPE": "2",
         }
-
-        data = _http_get_json(COIN_INFO_URL, headers=headers, timeout=timeout)
+        data = _http_get_json(COIN_INFO_URL, headers=headers, timeout=timeout, retries=3)
         if not isinstance(data, dict):
             return []
         if int(data.get("retCode", -1)) != 0:
-            # Пробрасываем сообщение об ошибке как исключение
             raise RuntimeError(f"Bybit API error: retCode={data.get('retCode')} retMsg={data.get('retMsg')}")
         result = data.get("result") or {}
         rows = result.get("rows") or []
@@ -184,7 +215,6 @@ class BybitAdapter:
     def _rows_from_public(self, payload: list[dict]) -> list[_Row]:
         stables = _stable_set_from_sitesetup()
         memo_chains = _memo_required_chains_from_site()
-
         rows: list[_Row] = []
 
         for item in payload:
@@ -192,41 +222,30 @@ class BybitAdapter:
             if not sym:
                 continue
             asset_name = _disp(item.get("name")) or sym
-            remain_amount = _D(item.get("remainAmount"))  # макс. на транзакцию по монете (может отсутствовать)
+            remain_amount = _D(item.get("remainAmount"))
             chains = item.get("chains") or []
 
+            # FIAT кейс
             if not chains:
-                # трактуем как FIAT (виртуальная цепь "FIAT")
-                rows.append(
-                    _Row(
-                        asset_code=sym,
-                        asset_name=asset_name,
-                        chain_code="FIAT",
-                        chain_display="FIAT",
-                        AD=False,
-                        AW=False,
-                        conf_dep=0,
-                        conf_wd=0,
-                        dep_min=_D(0),
-                        dep_max=_D(0),
-                        wd_min=_D(0),
-                        wd_max=remain_amount,
-                        dep_fee_pct=_D(0),
-                        dep_fee_fix=_D(0),
-                        wd_fee_pct=_D(0),
-                        wd_fee_fix=_D(0),
-                        is_stable=(sym in stables) or (_U(asset_name) in stables),
-                        requires_memo=False,
-                        amount_precision=8,
-                        raw_meta=_json_safe(item),
-                    )
-                )
+                rows.append(_Row(
+                    asset_code=sym, asset_name=asset_name,
+                    chain_code="FIAT", chain_display="FIAT",
+                    AD=False, AW=False,
+                    conf_dep=0, conf_wd=0,
+                    dep_min=_D(0), dep_max=_D(0),
+                    wd_min=_D(0), wd_max=remain_amount if remain_amount > 0 else _D(0),
+                    dep_fee_pct=_D(0), dep_fee_fix=_D(0),
+                    wd_fee_pct=_D(0), wd_fee_fix=_D(0),
+                    is_stable=(sym in stables) or (_U(asset_name) in stables),
+                    requires_memo=False,
+                    amount_precision=8,
+                    raw_meta=_json_safe(item),
+                ))
                 continue
 
             for ch in chains:
                 chain_code = _U(ch.get("chain")) or "NATIVE"
                 chain_disp = _disp(ch.get("chainType")) or chain_code
-
                 can_dep = _B(ch.get("chainDeposit"))
                 can_wd = _B(ch.get("chainWithdraw"))
 
@@ -237,8 +256,7 @@ class BybitAdapter:
                     dep_conf = 1
                     wd_conf = max(wd_conf, dep_conf)
 
-                dep_min = _D(ch.get("depositMin") or 0)
-                dep_max = _D(0)  # явного depositMax нет в этом ответе
+                dep_min = _D(ch.get("depositMin") or 0); dep_max = _D(0)
                 wd_min = _D(ch.get("withdrawMin") or 0)
                 wd_max = remain_amount if remain_amount > 0 else _D(0)
 
@@ -248,47 +266,26 @@ class BybitAdapter:
                 requires_memo = (chain_code in memo_chains) or (_U(chain_disp) in memo_chains)
                 amount_precision = int(ch.get("minAccuracy") or 8)
 
-                rows.append(
-                    _Row(
-                        asset_code=sym,
-                        asset_name=asset_name,
-                        chain_code=chain_code,
-                        chain_display=chain_disp,
-                        AD=can_dep,
-                        AW=can_wd,
-                        conf_dep=dep_conf,
-                        conf_wd=wd_conf,
-                        dep_min=dep_min,
-                        dep_max=dep_max,
-                        wd_min=wd_min,
-                        wd_max=wd_max,
-                        dep_fee_pct=_D(0),
-                        dep_fee_fix=_D(0),
-                        wd_fee_pct=wd_fee_pct,
-                        wd_fee_fix=wd_fee_fix,
-                        is_stable=(sym in stables) or (_U(asset_name) in stables),
-                        requires_memo=requires_memo,
-                        amount_precision=amount_precision,
-                        raw_meta=_json_safe({"coin": item, "chain": ch}),
-                    )
-                )
-
+                rows.append(_Row(
+                    asset_code=sym, asset_name=asset_name,
+                    chain_code=chain_code, chain_display=chain_disp,
+                    AD=can_dep, AW=can_wd,
+                    conf_dep=dep_conf, conf_wd=wd_conf,
+                    dep_min=dep_min, dep_max=_D(0),
+                    wd_min=wd_min, wd_max=wd_max,
+                    dep_fee_pct=_D(0), dep_fee_fix=_D(0),
+                    wd_fee_pct=wd_fee_pct, wd_fee_fix=wd_fee_fix,
+                    is_stable=(sym in stables) or (_U(asset_name) in stables),
+                    requires_memo=requires_memo,
+                    amount_precision=amount_precision,
+                    raw_meta=_json_safe({"coin": item, "chain": ch}),
+                ))
         return rows
 
     @transaction.atomic
-    def sync_assets(
-        self,
-        exchange: Exchange,
-        *,
-        timeout: int = 20,
-        limit: int = 0,
-        reconcile: bool = True,
-        verbose: bool = False,
-    ) -> AssetSyncStats:
-        """
-        Синхронизация активов Bybit с подписанным запросом.
-        """
+    def sync_assets(self, exchange: Exchange, *, timeout: int = 20, limit: int = 0, reconcile: bool = True, verbose: bool = False) -> AssetSyncStats:
         stats = AssetSyncStats()
+        change_counter = Counter()
 
         api_key, api_secret = _get_any_enabled_keys(exchange)
         if not api_key or not api_secret:
@@ -304,70 +301,56 @@ class BybitAdapter:
             rows = rows[:limit]
 
         seen: Set[Tuple[str, str]] = set()
-
         for r in rows:
             stats.processed += 1
             seen.add((r.asset_code, r.chain_code))
 
-            defaults = dict(
+            new_vals = dict(
                 asset_name=r.asset_name,
-                chain_display=r.chain_display,
                 AD=bool(r.AD),
                 AW=bool(r.AW),
-                confirmations_deposit=int(r.conf_dep),
-                confirmations_withdraw=int(max(r.conf_dep, r.conf_wd)),
-                deposit_fee_percent=_D(r.dep_fee_pct),
-                deposit_fee_fixed=_D(r.dep_fee_fix),
-                deposit_min=_D(r.dep_min),
-                deposit_max=_D(r.dep_max),
-                deposit_min_usdt=_D(0),
-                deposit_max_usdt=_D(0),
-                withdraw_fee_percent=_D(r.wd_fee_pct),
-                withdraw_fee_fixed=_D(r.wd_fee_fix),
-                withdraw_min=_D(r.wd_min),
-                withdraw_max=_D(r.wd_max),
-                withdraw_min_usdt=_D(0),
-                withdraw_max_usdt=_D(0),
+                confirmations_deposit=int(r.conf_dep if r.conf_dep > 0 or r.chain_code == "FIAT" else 1),
+                confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
+                deposit_fee_percent=_q_pct(r.dep_fee_pct),
+                deposit_fee_fixed=_q_amt(r.dep_fee_fix),
+                deposit_min=_q_amt(r.dep_min),
+                deposit_max=_q_amt(r.dep_max),
+                deposit_min_usdt=_q_amt(0),
+                deposit_max_usdt=_q_amt(0),
+                withdraw_fee_percent=_q_pct(r.wd_fee_pct),
+                withdraw_fee_fixed=_q_amt(r.wd_fee_fix),
+                withdraw_min=_q_amt(r.wd_min),
+                withdraw_max=_q_amt(r.wd_max),
+                withdraw_min_usdt=_q_amt(0),
+                withdraw_max_usdt=_q_amt(0),
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),
                 amount_precision=int(r.amount_precision or 8),
-                status_note="",
+                asset_kind=AssetKind.CRYPTO if r.chain_code != "FIAT" else AssetKind.FIAT,
                 provider_symbol=r.asset_code,
                 provider_chain=r.chain_code,
-                raw_metadata=_json_safe(r.raw_meta),
-                last_synced_at=timezone.now(),
-                asset_kind=AssetKind.CRYPTO if r.chain_code != "FIAT" else AssetKind.FIAT,
             )
-
             obj, created = ExchangeAsset.objects.get_or_create(
-                exchange=exchange,
-                asset_code=r.asset_code,
-                chain_code=r.chain_code,
-                defaults=defaults,
+                exchange=exchange, asset_code=r.asset_code, chain_code=r.chain_code,
+                defaults={**new_vals, "raw_metadata": _json_safe(r.raw_meta), "chain_display": r.chain_display, "asset_name": r.asset_name},
             )
-
-            # крипта: минимум 1 подтверждение депозита
-            if obj.asset_kind == AssetKind.CRYPTO and obj.confirmations_deposit == 0:
-                obj.confirmations_deposit = 1
-                if obj.confirmations_withdraw < obj.confirmations_deposit:
-                    obj.confirmations_withdraw = obj.confirmations_deposit
-
             if created:
                 stats.created += 1
             else:
-                changed = False
-                for fld, val in defaults.items():
-                    if getattr(obj, fld) != val:
-                        setattr(obj, fld, val)
-                        changed = True
+                changed: list[str] = []
+                for f, v in new_vals.items():
+                    if getattr(obj, f) != v:
+                        setattr(obj, f, v)
+                        changed.append(f)
                 if changed:
-                    obj.updated_at = timezone.now()
-                    obj.save()
+                    for f in changed:
+                        change_counter[f] += 1
+                    obj.raw_metadata = _json_safe(r.raw_meta)
+                    obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
                     stats.updated += 1
                 else:
                     stats.skipped += 1
 
-        # отключаем отсутствующие у провайдера (AD/AW); ручные D/W не трогаем
         if reconcile:
             to_disable = []
             for obj in ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW"):
@@ -382,5 +365,7 @@ class BybitAdapter:
 
         if verbose:
             print(f"[Bybit] processed={stats.processed} created={stats.created} updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled}")
-
+            if change_counter:
+                top = ", ".join(f"{k}={v}" for k, v in change_counter.most_common(10))
+                print(f"[BYBIT] field changes breakdown: {top}")
         return stats
