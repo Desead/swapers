@@ -5,7 +5,7 @@ from django.utils.html import format_html
 from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
-
+from app_market.providers import get_adapter, has_adapter
 
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
@@ -20,7 +20,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         "show_prices_on_home",
     )
     list_filter = (
-        "provider", "exchange_kind", "is_available",
+       "exchange_kind", "is_available",
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
@@ -66,10 +66,8 @@ class ExchangeAdmin(admin.ModelAdmin):
         "action_enable_send",
         "action_disable_send",
         "action_healthcheck_now",
+        "sync_assets_now",
     ]
-
-    class Media:
-        js = ("admin/js/collapse.js",)
 
     # — helpers —
 
@@ -193,6 +191,71 @@ class ExchangeAdmin(admin.ModelAdmin):
         msg = _t("Готово: доступно={} недоступно={}.").format(ok, down)
         level = messages.SUCCESS if down == 0 else messages.WARNING
         self.message_user(request, msg + " " + _t("Подробности см. в 'История доступности'."), level)
+
+    @admin.action(description=_t("Синхронизировать активы (загрузить монеты) сейчас"))
+    def sync_assets_now(self, request, queryset):
+        """
+        Админ-экшен: для выделенных ПЛ запускает загрузку монет через адаптеры.
+        Использует тот же pipeline, что и management-команда.
+        """
+        total_processed = total_created = total_updated = total_skipped = total_disabled = 0
+        errors = 0
+
+        # Берём только нужные поля; поля 'name' у модели нет.
+        for ex in queryset.only("id", "provider"):
+            code = ex.provider
+            title = str(ex)  # get_provider_display()
+
+            if not has_adapter(code):
+                messages.warning(request, f"{title}: адаптер не найден — пропущено.")
+                continue
+
+            adapter = get_adapter(code)
+            if not hasattr(adapter, "sync_assets"):
+                messages.error(request, f"{title}: некорректный адаптер (нет метода sync_assets).")
+                errors += 1
+                continue
+
+            try:
+                stats = adapter.sync_assets(
+                    exchange=ex,
+                    timeout=15,
+                    reconcile=False,
+                    verbose=False,  # в админку не спамим помонетно
+                )
+                p = getattr(stats, "processed", 0)
+                c = getattr(stats, "created", 0)
+                u = getattr(stats, "updated", 0)
+                s = getattr(stats, "skipped", 0)
+                d = getattr(stats, "disabled", 0)
+
+                total_processed += p
+                total_created += c
+                total_updated += u
+                total_skipped += s
+                total_disabled += d
+
+                messages.success(
+                    request,
+                    f"{title}: processed={p}, created={c}, updated={u}, skipped={s}, disabled={d}"
+                )
+            except Exception as e:
+                errors += 1
+                messages.error(request, f"{title}: ошибка синхронизации: {e}")
+
+        if errors == 0:
+            messages.info(
+                request,
+                f"Готово. Итого: processed={total_processed}, created={total_created}, "
+                f"updated={total_updated}, skipped={total_skipped}, disabled={total_disabled}"
+            )
+        else:
+            messages.warning(
+                request,
+                f"Завершено с ошибками: {errors}. "
+                f"Итого: processed={total_processed}, created={total_created}, "
+                f"updated={total_updated}, skipped={total_skipped}, disabled={total_disabled}"
+            )
 
 
 # ---------------------------
