@@ -183,7 +183,7 @@ class SiteSetup(TranslatableModel):
 
     admin_session_timeout_min = models.PositiveIntegerField(
         verbose_name=_t("Автовыход из админки, минут"),
-        default=10,
+        default=20,
         help_text=_t("Через сколько минут бездействия разлогинивать из админки. "
                      "0 — не разлогинивать по простою (сессия живёт до закрытия браузера)."),
     )
@@ -411,17 +411,24 @@ class SiteSetup(TranslatableModel):
 
     # --- [5] Список стейблкоинов ---
     stablecoins = models.TextField(
-        verbose_name=_t("Список стейблкоинов"),
+        verbose_name=_t("Стейблкоины"),
         blank=True,
         default="USDT, USDC, PYUSD, FDUSD, TUSD, USDP, GUSD, DAI, USDS, USDe, RLUSD, frxUSD, FRAX, LUSD, GHO, crvUSD, sUSD, DOLA, MIM, USDD, USDM, USDV, USD0, USDH, HAY, alUSD, USX, VAI, eUSD, GRAI, USK, DJED, USDA, BOLD, USDK,EURC, EURT, EURS, EUROe, EURe, EURA, AEUR, EURI, EURR, agEUR, cEUR, jEUR, PAR,GBPT, GBPe,XSGD, XIDR, BRZ, MXNT,XCHF, VCHF, HCHF,GYEN, JPYC,ZARP,QCAD, CADC,TRYB,TAUD, AUDD",
         help_text=_t("Через запятую (например: USDT, USDC, DAI)."),
     )
     # --- [5.1] Сети, где требуется MEMO/TAG (XRP/XLM/TON и т.п.) ---
     memo_required_chains = models.TextField(
-        verbose_name=_t("Сети, где требуется MEMO/TAG"),
+        verbose_name=_t("Сети с MEMO/TAG"),
         blank=True,
         default="XRP, XLM, EOS, TON, NOT, ATOM, OSMO, KAVA, LUNC, LUNA, BNB, XEM, HBAR",
         help_text=_t("Через запятую. (например: XRP, TON, BNB)."),
+    )
+    # --- [5.2] Список всех фиатных валют. Биржи не всегда отдают флаг фиата, приходится догадываться ) ---
+    fiat_name = models.TextField(
+        verbose_name=_t("Фиатные валюты"),
+        blank=True,
+        default="AED, AFN, ALL, AMD, ANG, AOA, ARS, AUD, AWG, AZN, BAM, BBD, BDT, BGN, BHD, BIF, BMD, BND, BOB, BRL, BSD, BTN, BWP, BYN, BZD, CAD, CDF, CHF, CLP, CNY, COP, CRC, CUP, CVE, CZK, DJF, DKK, DOP, DZD, EGP, ERN, ETB, EUR, FJD, FKP, GBP, GEL, GHS, GIP, GMD, GNF, GTQ, GYD, HKD, HNL, HTG, HUF, IDR, ILS, INR, IQD, IRR, ISK, JMD, JOD, JPY, KES, KGS, KHR, KMF, KPW, KRW, KWD, KYD, KZT, LAK, LBP, LKR, LRD, LSL, LYD, MAD, MDL, MGA, MKD, MMK, MNT, MOP, MRU, MUR, MVR, MWK, MXN, MYR, MZN, NAD, NGN, NIO, NOK, NPR, NZD, OMR, PAB, PEN, PGK, PHP, PKR, PLN, PYG, QAR, RON, RSD, RUB, RWF, SAR, SBD, SCR, SDG, SEK, SGD, SHP, SLE, SOS, SRD, SSP, STN, SYP, SZL, THB, TJS, TMT, TND, TOP, TRY, TTD, TWD, TZS, UAH, UGX, USD, UYU, UZS, VED, VES, VND, VUV, WST, XAF, XCD, XOF, XPF, YER, ZAR, ZMW, ZWG",
+        help_text=_t("Через запятую. (например: EUR, USD, RUB)."),
     )
 
     # --- [6] Путь для будущей XML-выгрузки курсов ---

@@ -72,7 +72,9 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
     list_display = (
         "exchange",
         "asset_code",
+        "asset_name",
         "chain_code",
+        "chain_name",
         "asset_kind",
         "confirmations_view",  # ← новое поле-колонка "2/3"
         "deposit_open",
@@ -81,7 +83,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "requires_memo",
         # "last_synced_at",
     )
-    list_display_links = ("exchange", "asset_code", "chain_code")
+    list_display_links = ("exchange", "asset_code",)
     list_filter = (
         "exchange",
         "asset_kind",
@@ -94,7 +96,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "asset_code",
         "asset_name",
         "chain_code",
-        "chain_display",
+        "chain_name",
         "provider_symbol",
         "provider_chain",
     )
@@ -112,7 +114,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "asset_code",
         "chain_code",
         "asset_name",
-        "chain_display",
+        "chain_name",
     )
 
     fieldsets = (
@@ -120,7 +122,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
             "fields": (
                 "exchange", "asset_kind",
                 "asset_code", "asset_name",
-                "chain_code", "chain_display",
+                "chain_code", "chain_name",
                 "is_stablecoin", "requires_memo",
             )
         }),
@@ -205,52 +207,20 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
     withdraw_open.boolean = True
     withdraw_open.short_description = _t("Вывод")
 
-    @admin.action(description=_t("Удалить ВСЕ активы (без подтверждения)"))
-    def action_purge_all_assets(modeladmin, request, queryset):
-        """Удаляет все ExchangeAsset без страницы подтверждения."""
-        if not modeladmin.has_delete_permission(request):
-            modeladmin.message_user(request, _t("Нет прав на удаление."), level=messages.ERROR)
-            return
-        with transaction.atomic():
-            total = ExchangeAsset.objects.count()
-            ExchangeAsset.objects.all().delete()  # один DELETE, без загрузки объектов в память
-        modeladmin.message_user(
-            request,
-            _t("Удалено %(n)s активов ПЛ.") % {"n": total},
-            level=messages.WARNING,
-        )
 
-    @admin.action(description=_t("Удалить активы текущей выборки (по фильтрам)"))
-    def action_purge_filtered_assets(modeladmin, request, queryset):
-        """
-        Удаляет только записи из текущей выборки (учитывает фильтры в списке).
-        Без подтверждения, безопасно для больших выборок:
-        если нажать «Выбрать всё», Django пришлёт select_across=1 и ID не перечисляет.
-        """
-        if not modeladmin.has_delete_permission(request):
-            modeladmin.message_user(request, _t("Нет прав на удаление."), level=messages.ERROR)
-            return
-
-        # Если нажато «Выбрать всё», берём весь текущий queryset из списка, иначе — переданный queryset.
-        select_across = request.POST.get("select_across") == "1"
-        qs = modeladmin.get_queryset(request) if select_across else queryset
-
-        with transaction.atomic():
-            total = qs.count()
-            qs.delete()
-        modeladmin.message_user(
-            request,
-            _t("Удалено %(n)s активов из текущей выборки.") % {"n": total},
-            level=messages.WARNING,
-        )
+    @admin.action(description="Удалить выбранные (без подтверждения, быстро)")
+    def hard_delete(self, request, queryset):
+        # НИ В КОЕМ СЛУЧАЕ не итерируем и не читаем поля!
+        cnt = queryset.count()
+        queryset.delete()  # чистый bulk-delete
+        self.message_user(request, f"Удалено {cnt} записей", level=messages.SUCCESS)
 
     actions = [
-        action_purge_all_assets,
-        action_purge_filtered_assets,
+        hard_delete,
     ]
 
-    def get_actions(self, request):
-        actions = super().get_actions(request)
-        # Удаляем встроенный массовый экшен «Удалить выбранные»
-        actions.pop("delete_selected", None)
-        return actions
+    # def get_actions(self, request):
+    #     actions = super().get_actions(request)
+    #     # Удаляем встроенный массовый экшен «Удалить выбранные»
+    #     actions.pop("delete_selected", None)
+    #     return actions

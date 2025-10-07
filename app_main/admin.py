@@ -328,9 +328,9 @@ class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableA
             "classes": ("wide", "collapse"),
             "fields": (("logo", "favicon"),),
         }),
-        (_t("Списки стейблкоинов и memo/tag"), {
+        (_t("Списки стейблкоинов, memo/tag и фиатных монет"), {
             "classes": ("wide", "collapse"),
-            "fields": (("stablecoins", "memo_required_chains",),),
+            "fields": (("fiat_name","stablecoins", "memo_required_chains",),),
         }),
         (_t("Интеграции: XML, <head>, Telegram"), {
             "classes": ("wide", "collapse"),

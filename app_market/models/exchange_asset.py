@@ -48,11 +48,11 @@ class ExchangeAsset(models.Model):
         verbose_name=_t("Сеть"),
         editable=False,
     )
-    chain_display = models.CharField(  # как показывать сеть пользователю (опционально)
+    chain_name = models.CharField(  # как показывать сеть пользователю (опционально)
         max_length=128,
         blank=True,
         default="",
-        verbose_name=_t("Сеть экран"),
+        verbose_name=_t("Сеть название"),
         editable=False,
     )
 
@@ -130,7 +130,7 @@ class ExchangeAsset(models.Model):
     withdraw_min_usdt = models.DecimalField(
         max_digits=28, decimal_places=10, default=Decimal("5"),
         validators=[MinValueValidator(Decimal("0"))],
-        verbose_name=_t("Мин. вывод (в USDTт)"),
+        verbose_name=_t("Мин. вывод (в USDT)"),
     )
     withdraw_max_usdt = models.DecimalField(
         max_digits=28, decimal_places=10, default=Decimal("0"),

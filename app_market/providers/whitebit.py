@@ -7,7 +7,7 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any, Dict, Optional, Set, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
@@ -17,16 +17,19 @@ from django.utils import timezone
 
 from app_market.models.exchange import Exchange
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
-from app_market.models.account import ExchangeApiKey
-from app_main.models import SiteSetup
 from .base import ProviderAdapter, AssetSyncStats
+from .numeric import (
+    UA, D, q_amount, q_percent, json_safe,
+    U, disp, B,
+    stable_set, memo_required_set,
+    get_any_enabled_keys,
+)
 
 WB_BASE = "https://whitebit.com"
 ASSETS_URL = f"{WB_BASE}/api/v4/public/assets"
 FEE_URL = f"{WB_BASE}/api/v4/public/fee"
 PRIV_FEE_PATH = "/api/v4/main-account/fee"
 PRIV_FEE_URL = f"{WB_BASE}{PRIV_FEE_PATH}"
-UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 
 # === Helpers: HTTP с ретраями ===
 
@@ -78,114 +81,6 @@ def _http_post_signed_json(url: str, body: dict, api_key: str, api_secret: str, 
                 break
     raise RuntimeError(f"WhiteBIT: ошибка запросов: {last_exc}")
 
-# === Helpers: безопасные Decimal и квантизация ===
-
-_MAX_ABS = Decimal("1e20")  # здравый кап на суммы/лимиты/фикс.комиссии
-
-def _D(x: Any) -> Decimal:
-    """Мягкое превращение в Decimal без NaN/Inf."""
-    try:
-        if isinstance(x, Decimal):
-            d = x
-        elif x in (None, "", "0E-10"):
-            d = Decimal("0")
-        else:
-            d = Decimal(str(x))
-    except (InvalidOperation, ValueError, TypeError):
-        return Decimal("0")
-
-    # NaN / Inf → 0
-    if not d.is_finite():
-        return Decimal("0")
-    # кап значений
-    if d > _MAX_ABS:
-        return _MAX_ABS
-    if d < -_MAX_ABS:
-        return -_MAX_ABS
-    return d
-
-def _B(x: Any) -> bool:
-    if isinstance(x, bool):
-        return x
-    if isinstance(x, (int, float)):
-        return bool(x)
-    if isinstance(x, str):
-        v = x.strip().lower()
-        return v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}
-    return False
-
-def _upper(s: Optional[str]) -> str:
-    return (s or "").strip().upper()
-
-def _disp(s: Optional[str]) -> str:
-    return (s or "").strip()
-
-def _json_safe(o: Any) -> Any:
-    if isinstance(o, Decimal):
-        return str(o)
-    if isinstance(o, dict):
-        return {k: _json_safe(v) for k, v in o.items()}
-    if isinstance(o, (list, tuple)):
-        return [_json_safe(v) for v in o]
-    return o
-
-def _q_amount(value: Any, prec: int) -> Decimal:
-    """Квантизация сумм/лимитов/фиксов по точности актива (ROUND_DOWN)."""
-    d = _D(value)
-    if d == 0:
-        return d
-    if prec < 0:
-        prec = 0
-    if prec > 18:
-        prec = 18
-    q = Decimal(1).scaleb(-prec)  # 10^-prec
-    # отрицательных лимитов/комиссий по фикс-сумме не допускаем
-    if d < 0:
-        d = Decimal("0")
-    try:
-        return d.quantize(q, rounding=ROUND_DOWN)
-    except InvalidOperation:
-        # в крайнем случае обрежем строкой
-        s = f"{d:f}"
-        if "." in s:
-            head, tail = s.split(".", 1)
-            return _D(f"{head}.{tail[:prec]}")
-        return _D(s)
-
-def _q_percent(value: Any) -> Decimal:
-    """Проценты → [0..100], 5 знаков, ROUND_HALF_UP."""
-    d = _D(value)
-    if d < 0:
-        d = Decimal("0")
-    if d > Decimal("100"):
-        d = Decimal("100")
-    try:
-        return d.quantize(Decimal("0.00001"), rounding=ROUND_HALF_UP)
-    except InvalidOperation:
-        return Decimal("0")
-
-# === SiteSetup helpers ===
-
-def _stable_set_from_sitesetup() -> Set[str]:
-    ss = SiteSetup.get_solo()
-    raw = ss.stablecoins
-    items: list[str] = []
-    if isinstance(raw, str):
-        items = [p for p in re.split(r"[\s,;]+", raw) if p]
-    elif isinstance(raw, (list, tuple)):
-        items = [str(p) for p in raw if p]
-    return {p.strip().upper() for p in items}
-
-def _memo_required_set() -> Set[str]:
-    ss = SiteSetup.get_solo()
-    try:
-        return ss.get_memo_required_chains_set()
-    except Exception:
-        raw = (getattr(ss, "memo_required_chains", "") or "").strip()
-        if not raw:
-            return set()
-        return {p.strip().upper() for p in re.split(r"[\s,;]+", raw) if p.strip()}
-
 # === Парсинг публичных структур ===
 
 @dataclass
@@ -202,8 +97,8 @@ class FeePack:
 
 def _flex_percent(v: Any) -> Decimal:
     if isinstance(v, dict):
-        return _D(v.get("percent"))
-    return _D(v)
+        return D(v.get("percent"))
+    return D(v)
 
 def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
     out: Dict[Tuple[str, Optional[str]], FeePack] = {}
@@ -219,15 +114,15 @@ def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
 
         out[(ticker, network)] = FeePack(
             deposit=FeeSide(
-                min_amount=_D(dep.get("min_amount")),
-                max_amount=_D(dep.get("max_amount")),
-                fixed=_D(dep.get("fixed")),
+                min_amount=D(dep.get("min_amount")),
+                max_amount=D(dep.get("max_amount")),
+                fixed=D(dep.get("fixed")),
                 percent=_flex_percent(dep.get("flex")),
             ),
             withdraw=FeeSide(
-                min_amount=_D(wd.get("min_amount")),
-                max_amount=_D(wd.get("max_amount")),
-                fixed=_D(wd.get("fixed")),
+                min_amount=D(wd.get("min_amount")),
+                max_amount=D(wd.get("max_amount")),
+                fixed=D(wd.get("fixed")),
                 percent=_flex_percent(wd.get("flex")),
             ),
         )
@@ -238,12 +133,12 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
     for ticker, payload in obj.items():
         if not isinstance(payload, dict):
             continue
-        t = _upper(ticker)
-        name = _disp(payload.get("name")) or t
+        t = U(ticker)
+        name = disp(payload.get("name")) or t
         precision = int(payload.get("currency_precision") or 8)
-        requires_memo = _B(payload.get("is_memo"))
-        can_dep_global = _B(payload.get("can_deposit"))
-        can_wd_global = _B(payload.get("can_withdraw"))
+        requires_memo = B(payload.get("is_memo"))
+        can_dep_global = B(payload.get("can_deposit"))
+        can_wd_global = B(payload.get("can_withdraw"))
 
         is_fiat = isinstance(payload.get("providers"), dict)
         asset_kind = AssetKind.FIAT if is_fiat else AssetKind.CRYPTO
@@ -268,8 +163,8 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
                 "can_deposit": can_dep_global,
                 "can_withdraw": can_wd_global,
                 "confirmations": int(payload.get("confirmations") or 0),
-                "deposit_limits": {"min": _D(payload.get("min_deposit")), "max": _D(payload.get("max_deposit"))},
-                "withdraw_limits": {"min": _D(payload.get("min_withdraw")), "max": _D(payload.get("max_withdraw"))},
+                "deposit_limits": {"min": D(payload.get("min_deposit")), "max": D(payload.get("max_deposit"))},
+                "withdraw_limits": {"min": D(payload.get("min_withdraw")), "max": D(payload.get("max_withdraw"))},
             }
             continue
 
@@ -286,26 +181,17 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
                 "can_withdraw": wd_ok,
                 "confirmations": int((confirms or {}).get(net) or 0),
                 "deposit_limits": {
-                    "min": _D((lim_dep.get(net) or {}).get("min")),
-                    "max": _D((lim_dep.get(net) or {}).get("max")),
+                    "min": D((lim_dep.get(net) or {}).get("min")),
+                    "max": D((lim_dep.get(net) or {}).get("max")),
                 },
                 "withdraw_limits": {
-                    "min": _D((lim_wd.get(net) or {}).get("min")),
-                    "max": _D((lim_wd.get(net) or {}).get("max")),
+                    "min": D((lim_wd.get(net) or {}).get("min")),
+                    "max": D((lim_wd.get(net) or {}).get("max")),
                 },
             }
     return result
 
 # === Ключи ===
-
-def _get_any_enabled_keys(exchange: Exchange) -> tuple[Optional[str], Optional[str]]:
-    key = (
-        ExchangeApiKey.objects
-        .filter(exchange=exchange, is_enabled=True)
-        .order_by("id")
-        .first()
-    )
-    return ((key.api_key or None), (key.api_secret or None)) if key else (None, None)
 
 def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict[str, dict]:
     body = {"request": PRIV_FEE_PATH, "nonce": int(time.time() * 1000)}
@@ -313,7 +199,7 @@ def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict
     out: Dict[str, dict] = {}
     if isinstance(data, list):
         for row in data:
-            t = _upper(row.get("ticker"))
+            t = U(row.get("ticker"))
             if t:
                 out[t] = row
     return out
@@ -359,8 +245,8 @@ class WhitebitAdapter(ProviderAdapter):
         verbose: bool = False,
     ) -> AssetSyncStats:
         stats = AssetSyncStats()
-        stable_set = _stable_set_from_sitesetup()
-        memo_set = _memo_required_set()
+        stables = stable_set()
+        memo_set = memo_required_set()
 
         # публичные структуры
         assets_json = _http_get_json(ASSETS_URL, timeout=timeout)
@@ -370,7 +256,7 @@ class WhitebitAdapter(ProviderAdapter):
         pub_fee_map = _parse_public_fee(fee_json)
 
         # приватные комиссии (приоритетнее)
-        api_key, api_secret = _get_any_enabled_keys(exchange)
+        api_key, api_secret = get_any_enabled_keys(exchange)
         priv_fee_map: Dict[str, dict] = {}
         if api_key and api_secret:
             try:
@@ -386,8 +272,8 @@ class WhitebitAdapter(ProviderAdapter):
                 d = priv.get("deposit") or {}
                 w = priv.get("withdraw") or {}
                 return (
-                    _D(d.get("percentFlex")), _D(d.get("fixed")),
-                    _D(w.get("percentFlex")), _D(w.get("fixed")),
+                    D(d.get("percentFlex")), D(d.get("fixed")),
+                    D(w.get("percentFlex")), D(w.get("fixed")),
                 )
             pack = pub_fee_map.get((t, n)) or pub_fee_map.get((t, None))
             if pack:
@@ -415,30 +301,30 @@ class WhitebitAdapter(ProviderAdapter):
             dep_pct, dep_fix, wd_pct, wd_fix = merge_fee(ticker, network)
 
             provider_memo = bool(meta.get("requires_memo") or False)
-            chain_norm = _upper(network or ticker)
+            chain_norm = U(network or ticker)
             requires_memo = (kind == AssetKind.CRYPTO) and (provider_memo or (chain_norm in memo_set))
 
             rows.append(_Row(
                 ticker=ticker,
                 chain=network,
-                name=_disp(meta.get("asset_name")) or ticker,
+                name=disp(meta.get("asset_name")) or ticker,
                 kind=kind,
-                AD=_B(meta.get("can_deposit")),
-                AW=_B(meta.get("can_withdraw")),
+                AD=B(meta.get("can_deposit")),
+                AW=B(meta.get("can_withdraw")),
                 conf_dep=dep_conf,
                 conf_wd=wd_conf,
-                dep_min=_D(dep_lim.get("min")),
-                dep_max=_D(dep_lim.get("max")),
-                wd_min=_D(wd_lim.get("min")),
-                wd_max=_D(wd_lim.get("max")),
+                dep_min=D(dep_lim.get("min")),
+                dep_max=D(dep_lim.get("max")),
+                wd_min=D(wd_lim.get("min")),
+                wd_max=D(wd_lim.get("max")),
                 dep_fee_pct=dep_pct,
                 dep_fee_fix=dep_fix,
                 wd_fee_pct=wd_pct,
                 wd_fee_fix=wd_fix,
                 requires_memo=requires_memo,
                 amount_precision=int(meta.get("amount_precision") or 8),
-                raw_meta={"assets": _json_safe(meta)},
-                is_stable=(kind == AssetKind.CRYPTO) and (ticker in stable_set),
+                raw_meta={"assets": json_safe(meta)},
+                is_stable=(kind == AssetKind.CRYPTO) and (ticker in stables),
             ))
 
         # UPSERT + reconcile
@@ -457,14 +343,14 @@ class WhitebitAdapter(ProviderAdapter):
                 AW=bool(r.AW),
                 confirmations_deposit=int(r.conf_dep),
                 confirmations_withdraw=int(max(r.conf_dep, r.conf_wd)),
-                deposit_min=_q_amount(r.dep_min, prec),
-                deposit_max=_q_amount(r.dep_max, prec),
-                withdraw_min=_q_amount(r.wd_min, prec),
-                withdraw_max=_q_amount(r.wd_max, prec),
-                deposit_fee_percent=_q_percent(r.dep_fee_pct),
-                deposit_fee_fixed=_q_amount(r.dep_fee_fix, prec),
-                withdraw_fee_percent=_q_percent(r.wd_fee_pct),
-                withdraw_fee_fixed=_q_amount(r.wd_fee_fix, prec),
+                deposit_min=q_amount(r.dep_min, prec),
+                deposit_max=q_amount(r.dep_max, prec),
+                withdraw_min=q_amount(r.wd_min, prec),
+                withdraw_max=q_amount(r.wd_max, prec),
+                deposit_fee_percent=q_percent(r.dep_fee_pct),
+                deposit_fee_fixed=q_amount(r.dep_fee_fix, prec),
+                withdraw_fee_percent=q_percent(r.wd_fee_pct),
+                withdraw_fee_fixed=q_amount(r.wd_fee_fix, prec),
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),
                 amount_precision=prec,
@@ -477,7 +363,7 @@ class WhitebitAdapter(ProviderAdapter):
                 exchange=exchange,
                 asset_code=r.ticker,
                 chain_code=chain_code,
-                defaults={**new_vals, "raw_metadata": _json_safe(r.raw_meta), "chain_display": chain_code},
+                defaults={**new_vals, "raw_metadata": json_safe(r.raw_meta), "chain_name": chain_code},
             )
 
             if created:
@@ -490,8 +376,7 @@ class WhitebitAdapter(ProviderAdapter):
                         changed.append(f)
 
                 if changed:
-                    # raw_metadata обновляем ТОЛЬКО при реальном изменении деловых полей
-                    obj.raw_metadata = _json_safe(r.raw_meta)
+                    obj.raw_metadata = json_safe(r.raw_meta)
                     obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
                     stats.updated += 1
                 else:
