@@ -16,10 +16,10 @@ from app_market.models.exchange import Exchange
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 from .base import ProviderAdapter, AssetSyncStats
 from .numeric import (
-    UA, D, q_amount, q_percent, json_safe,
+    UA, D, to_db_amount, to_db_percent, json_safe,
     U, disp, B,
     stable_set, memo_required_set,
-    ensure_wd_conf_ge_dep,
+    ensure_wd_conf_ge_dep, infer_asset_kind, crypto_withdraw_guard,
 )
 
 HTX_BASES = ["https://api.htx.com", "https://api.huobi.pro", "https://api.huobi.com"]
@@ -112,9 +112,6 @@ class HtxAdapter(ProviderAdapter):
                 dep_conf = int(ch.get("numOfFastConfirmations") or 0)
                 wd_conf  = int(ch.get("numOfConfirmations") or dep_conf)
                 dep_conf, wd_conf = ensure_wd_conf_ge_dep(dep_conf, wd_conf)
-                if dep_conf < 1:
-                    dep_conf = 1
-                    wd_conf = max(wd_conf, dep_conf)
 
                 dep_min = D(ch.get("depositMinAmount") or ch.get("minDepositAmt") or 0)
                 dep_max = D(ch.get("depositMaxAmount") or ch.get("maxDepositAmt") or 0)
@@ -166,30 +163,53 @@ class HtxAdapter(ProviderAdapter):
         seen: Set[Tuple[str, str]] = set()
         for r in rows:
             stats.processed += 1
+
+            # Определяем тип актива и применяем централизованные лимиты для крипты
+            prec = int(r.amount_precision or 8)
+            kind = infer_asset_kind(r.asset_code, r.chain_code, r.chain_name)
+
+            if kind == AssetKind.CRYPTO:
+                ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
+                if not ok:
+                    stats.skipped += 1
+                    continue
+                # гарантируем минимум 1 подтверждение на депозит для крипты
+                dep_conf = r.conf_dep if r.conf_dep > 0 else 1
+                wd_conf = max(r.conf_wd, dep_conf)
+            else:
+                wd_min_q = to_db_amount(r.wd_min, prec)
+                wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
+                dep_conf = r.conf_dep  # для FIAT оставляем как есть
+                wd_conf = r.conf_wd
+
+            # прошла проверки — считаем увиденной
             seen.add((r.asset_code, r.chain_code))
 
             new_vals = dict(
                 asset_name=r.asset_name,
                 AD=bool(r.AD),
                 AW=bool(r.AW),
-                confirmations_deposit=int(r.conf_dep if r.conf_dep > 0 else 1),
-                confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
-                deposit_fee_percent=q_percent(r.dep_fee_pct),
-                deposit_fee_fixed=q_amount(r.dep_fee_fix, r.amount_precision),
-                deposit_min=q_amount(r.dep_min, r.amount_precision),
-                deposit_max=q_amount(r.dep_max, r.amount_precision),
-                # deposit_min_usdt=q_amount(D(0), r.amount_precision),
-                # deposit_max_usdt=q_amount(D(0), r.amount_precision),
-                withdraw_fee_percent=q_percent(r.wd_fee_pct),
-                withdraw_fee_fixed=q_amount(r.wd_fee_fix, r.amount_precision),
-                withdraw_min=q_amount(r.wd_min, r.amount_precision),
-                withdraw_max=q_amount(r.wd_max, r.amount_precision),
-                # withdraw_min_usdt=q_amount(D(0), r.amount_precision),
-                # withdraw_max_usdt=q_amount(D(0), r.amount_precision),
+                confirmations_deposit=int(dep_conf),
+                confirmations_withdraw=int(wd_conf),
+
+                deposit_fee_percent=to_db_percent(r.dep_fee_pct),
+                deposit_fee_fixed=to_db_amount(r.dep_fee_fix, prec),
+                deposit_min=to_db_amount(r.dep_min, prec),
+                deposit_max=to_db_amount(r.dep_max, prec),
+                # deposit_min_usdt — не трогаем
+                # deposit_max_usdt — не трогаем
+
+                withdraw_fee_percent=to_db_percent(r.wd_fee_pct),
+                withdraw_fee_fixed=wd_fee_fix_q,
+                withdraw_min=wd_min_q,
+                withdraw_max=to_db_amount(r.wd_max, prec),
+                # withdraw_min_usdt — не трогаем
+                # withdraw_max_usdt — не трогаем
+
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),
-                amount_precision=int(r.amount_precision or 8),
-                asset_kind=AssetKind.CRYPTO,
+                amount_precision=prec,
+                asset_kind=kind,
                 provider_symbol=r.asset_code,
                 provider_chain=r.chain_code,
             )

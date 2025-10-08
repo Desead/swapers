@@ -1,61 +1,124 @@
 from __future__ import annotations
 
 import re
-from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP
-from typing import Any, Iterable, Optional, Set, Tuple
+from decimal import Decimal, InvalidOperation, ROUND_DOWN, ROUND_HALF_UP, getcontext
+from typing import Any, Optional, Set
+
+from django.conf import settings
 
 from app_main.models import SiteSetup
 from app_market.models.exchange_asset import AssetKind
 from app_market.models.account import ExchangeApiKey
 
-_NUM_TOKENS_NULL = {"", "na", "n/a", "nan", "null", "none", "-", "—", "inf", "infinity", "-inf", "-infinity", "+inf", "+infinity"}
 
+# =========================
+# Global Decimal context
+# =========================
+getcontext().prec = int(getattr(settings, "DECIMAL_CONTEXT_PREC", 50))
+
+
+# =========================
+# What this module exports
+# =========================
 __all__ = [
-    # Константы
-    "MAX_ABS_AMOUNT", "MAX_PERCENT", "PERCENT_QUANT", "MAX_AMOUNT_PREC", "UA",
+    # Identity / misc
+    "UA",
 
-    # Числовые утилиты
-    "D", "q_amount", "q_percent", "json_safe", "as_int",
+    # DB geometry
+    "DB_INT_DIGITS", "DB_DEC_PLACES", "DB_QUANT",
+    "DB_MAX_AMOUNT", "DB_MAX_AMOUNT_SAFE",
 
-    # Строки/булево/прочее
-    "U", "disp", "B", "ensure_wd_conf_ge_dep",
+    # Calculation geometry
+    "CALC_INT_DIGITS", "CALC_DEC_PLACES", "CALC_QUANT",
+    "CALC_MAX_AMOUNT",
 
-    # Доступ к SiteSetup
+    # Percents
+    "PERCENT_PLACES_DB", "PERCENT_PLACES_CALC",
+    "PERCENT_QUANT_DB", "PERCENT_QUANT_CALC",
+    "MAX_PERCENT",
+
+    # Crypto withdraw business limits (for CRYPTO assets)
+    "CRYPTO_WD_MIN_MIN", "CRYPTO_WD_MIN_MAX", "CRYPTO_WD_FEE_FIX_MAX",
+    "crypto_withdraw_guard",
+
+    # Core numeric utils
+    "D",
+    "to_calc_amount", "to_db_amount",
+    "to_calc_percent", "to_db_percent",
+
+    # Helpers
+    "json_safe", "as_int", "U", "disp", "B", "ensure_wd_conf_ge_dep",
     "stable_set", "memo_required_set", "fiat_set",
-
-    # Утилиты для провайдеров
     "get_any_enabled_keys", "infer_asset_kind",
 ]
 
-# ===== Константы и параметры нормализации =====
 
+# =========================
+# Identity
+# =========================
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 
-# ⚠️ Модели ExchangeAsset: суммы/лимиты/фиксы — DecimalField(28,10)
-# Значит максимум 18 целых и 10 дробных. Кэп делаем под это поле.
-MAX_ABS_AMOUNT = Decimal("999999999999999999.9999999999")
 
-# Лимит процентов (0..100)
-MAX_PERCENT = Decimal("100")
+# =========================
+# DB Decimal geometry (amounts)
+# =========================
+DB_INT_DIGITS   = int(getattr(settings, "DECIMAL_AMOUNT_INT_DIGITS", 18))
+DB_DEC_PLACES   = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
+DB_QUANT        = Decimal(1).scaleb(-DB_DEC_PLACES)                         # 10^-dec
+_DB_WALL        = (Decimal(10) ** DB_INT_DIGITS) - DB_QUANT                 # e.g. 1e18 - 1e-10 (…9999)
+DB_MAX_AMOUNT   = _DB_WALL
+# SAFE max: на один квант ниже «стены», чтобы не “перепрыгивало” в 1e18 из-за округлений
+DB_MAX_AMOUNT_SAFE = DB_MAX_AMOUNT - DB_QUANT                               # …9998
 
-# Квант для процентов: ровно 5 знаков после запятой (совместимо с DecimalField(..., 5))
-PERCENT_QUANT = Decimal("0.00001")
 
-# Максимальная точность *сумм* для хранения в БД: 10 знаков (как в моделях)
-MAX_AMOUNT_PREC = 10
+# =========================
+# Calculation geometry (amounts)
+# =========================
+_CALC_OFFSET        = int(getattr(settings, "DECIMAL_CALC_INT_OFFSET", 1))
+CALC_INT_DIGITS     = max(1, DB_INT_DIGITS - _CALC_OFFSET)                  # usually 17
+CALC_DEC_PLACES     = DB_DEC_PLACES                                         # 10
+CALC_QUANT          = Decimal(1).scaleb(-CALC_DEC_PLACES)
+# ещё безопаснее относительно «стены» расчётов
+_CALC_WALL          = (Decimal(10) ** CALC_INT_DIGITS) - CALC_QUANT
+CALC_MAX_AMOUNT     = _CALC_WALL - CALC_QUANT
 
 
-# ===== Базовые утилиты Decimal =====
+# =========================
+# Percents
+# =========================
+PERCENT_PLACES_DB   = int(getattr(settings, "DECIMAL_PERCENT_PLACES_DB", 5))
+PERCENT_PLACES_CALC = int(getattr(settings, "DECIMAL_PERCENT_PLACES_CALC", 6))
+PERCENT_QUANT_DB    = Decimal(1).scaleb(-PERCENT_PLACES_DB)                 # 10^-5
+PERCENT_QUANT_CALC  = Decimal(1).scaleb(-PERCENT_PLACES_CALC)               # 10^-6
+MAX_PERCENT         = Decimal("100")
+
+
+# =========================
+# Business limits for crypto withdraw (centralized)
+# =========================
+# Можно переопределить в settings.py при желании.
+CRYPTO_WD_MIN_MIN     = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MIN", "0")))         # строго > 0
+CRYPTO_WD_MIN_MAX     = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MAX", "100000")))    # <= 100000
+CRYPTO_WD_FEE_FIX_MAX = Decimal(str(getattr(settings, "CRYPTO_WD_FEE_FIX_MAX", "100000")))# <= 100000
+
+
+# =========================
+# Base numeric helpers
+# =========================
+
+_NUM_TOKENS_NULL = {
+    "", "na", "n/a", "nan", "null", "none", "-", "—",
+    "inf", "infinity", "-inf", "-infinity", "+inf", "+infinity"
+}
+
 def _sanitize_number_like(x: Any) -> str:
     if isinstance(x, (int, float, Decimal)):
         return str(x)
     s = str(x or "").strip()
-    s_low = s.lower()
-    if s_low in _NUM_TOKENS_NULL:
+    if s.lower() in _NUM_TOKENS_NULL:
         return "0"
     s = s.replace("\u00a0", "").replace(" ", "").replace("_", "")
-    import re as _re
-    m = _re.search(r"[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?", s)
+    m = re.search(r"[-+]?\d+(?:[.,]\d+)?(?:[eE][-+]?\d+)?", s)
     if not m:
         return "0"
     token = m.group(0)
@@ -65,45 +128,56 @@ def _sanitize_number_like(x: Any) -> str:
 
 
 def D(x: Any) -> Decimal:
-    """«Мягко» превращает значение в Decimal; NaN/Inf/None/ошибки → 0; кап по модулю."""
+    """
+    «Мягкое» Decimal-приведение:
+    - чистим мусор/локали/NaN/Inf → 0;
+    - клип по модулю к DB_MAX_AMOUNT_SAFE (на один квант ниже стены).
+    """
     try:
-        if isinstance(x, Decimal):
-            d = x
-        else:
-            d = Decimal(_sanitize_number_like(x))
+        d = x if isinstance(x, Decimal) else Decimal(_sanitize_number_like(x))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
 
     if not d.is_finite():
         return Decimal("0")
 
-    if d > MAX_ABS_AMOUNT:
-        return MAX_ABS_AMOUNT
-    if d < -MAX_ABS_AMOUNT:
-        return -MAX_ABS_AMOUNT
+    if d > DB_MAX_AMOUNT_SAFE:
+        return DB_MAX_AMOUNT_SAFE
+    if d < -DB_MAX_AMOUNT_SAFE:
+        return -DB_MAX_AMOUNT_SAFE
     return d
 
 
-def q_amount(value: Any, prec: int, *, allow_negative: bool = False) -> Decimal:
+# =========================
+# Calculation regime
+# =========================
+
+def to_calc_amount(value: Any, prec: int, *, allow_negative: bool = False) -> Decimal:
     """
-    Квантизация сумм/лимитов/фикс-комиссий по точности `prec`:
-    - отрицательные → 0 (если allow_negative=False)
-    - prec зажимается в [0..MAX_AMOUNT_PREC] (модель хранит до 10 знаков)
-    - округление ROUND_DOWN
+    Нормализация суммы ДЛЯ РАСЧЁТОВ:
+    - клип к CALC_MAX_AMOUNT;
+    - prec в [0..DB_DEC_PLACES];
+    - округление ROUND_DOWN;
+    - если allow_negative=False, отрицательные → 0.
     """
     d = D(value)
     if not allow_negative and d < 0:
         d = Decimal("0")
 
+    if d > CALC_MAX_AMOUNT:
+        d = CALC_MAX_AMOUNT
+    if d < -CALC_MAX_AMOUNT:
+        d = -CALC_MAX_AMOUNT
+
     if prec < 0:
         prec = 0
-    if prec > MAX_AMOUNT_PREC:
-        prec = MAX_AMOUNT_PREC
+    if prec > DB_DEC_PLACES:
+        prec = DB_DEC_PLACES
 
     if d == 0:
         return d
 
-    q = Decimal(1).scaleb(-prec)  # 10^-prec
+    q = Decimal(1).scaleb(-prec)
     try:
         return d.quantize(q, rounding=ROUND_DOWN)
     except InvalidOperation:
@@ -114,18 +188,89 @@ def q_amount(value: Any, prec: int, *, allow_negative: bool = False) -> Decimal:
         return D(s)
 
 
-def q_percent(value: Any) -> Decimal:
-    """Проценты: диапазон [0..100], 5 знаков, ROUND_HALF_UP."""
+def to_calc_percent(value: Any) -> Decimal:
+    """Процент ДЛЯ РАСЧЁТОВ: [0..100], 6 знаков, ROUND_HALF_UP."""
     d = D(value)
     if d < 0:
         d = Decimal("0")
     if d > MAX_PERCENT:
         d = MAX_PERCENT
     try:
-        return d.quantize(PERCENT_QUANT, rounding=ROUND_HALF_UP)
+        return d.quantize(PERCENT_QUANT_CALC, rounding=ROUND_HALF_UP)
     except InvalidOperation:
         return Decimal("0")
 
+
+# =========================
+# DB regime
+# =========================
+
+def to_db_amount(value: Any, prec: int, *, allow_negative: bool = False) -> Decimal:
+    """
+    Нормализация суммы ДЛЯ ЗАПИСИ В БД:
+    1) to_calc_amount(...)  — клип к CALC_MAX и квантизация по prec,
+    2) клип к DB_MAX_AMOUNT_SAFE,
+    3) финальный quantize до DB_DEC_PLACES (DB_QUANT), ROUND_DOWN.
+    """
+    d = to_calc_amount(value, prec, allow_negative=allow_negative)
+
+    if d > DB_MAX_AMOUNT_SAFE:
+        d = DB_MAX_AMOUNT_SAFE
+    if d < -DB_MAX_AMOUNT_SAFE:
+        d = -DB_MAX_AMOUNT_SAFE
+
+    try:
+        return d.quantize(DB_QUANT, rounding=ROUND_DOWN)
+    except InvalidOperation:
+        s = f"{d:f}"
+        if "." in s:
+            head, tail = s.split(".", 1)
+            tail = (tail + "0" * DB_DEC_PLACES)[:DB_DEC_PLACES]
+            return D(f"{head}.{tail}")
+        return D(s)
+
+
+def to_db_percent(value: Any) -> Decimal:
+    """Процент ДЛЯ ЗАПИСИ В БД: [0..100], 5 знаков, ROUND_HALF_UP."""
+    d = D(value)
+    if d < 0:
+        d = Decimal("0")
+    if d > MAX_PERCENT:
+        d = MAX_PERCENT
+    try:
+        return d.quantize(PERCENT_QUANT_DB, rounding=ROUND_HALF_UP)
+    except InvalidOperation:
+        return Decimal("0")
+
+
+# =========================
+# Central crypto-withdraw guard
+# =========================
+
+def crypto_withdraw_guard(wd_min: Any, wd_fee_fixed: Any, prec: int) -> tuple[bool, Decimal, Decimal]:
+    """
+    Централизованный фильтр для КРИПТО-активов (применяем в провайдерах):
+      1) минимальный вывод > 0
+      2) минимальный вывод <= CRYPTO_WD_MIN_MAX
+      3) фиксированная комиссия вывода <= CRYPTO_WD_FEE_FIX_MAX
+
+    Возвращает: (ok, wd_min_q, wd_fee_fix_q) — ok=false => сеть/монету лучше пропустить.
+    Значения wd_min_q и wd_fee_fix_q уже нормализованы под БД (to_db_amount(..., prec)).
+    """
+    min_q = to_db_amount(wd_min, prec)
+    fee_q = to_db_amount(wd_fee_fixed, prec)
+
+    zero_q   = to_db_amount(CRYPTO_WD_MIN_MIN, prec)
+    min_max  = to_db_amount(CRYPTO_WD_MIN_MAX, prec)
+    fee_max  = to_db_amount(CRYPTO_WD_FEE_FIX_MAX, prec)
+
+    ok = (min_q > zero_q) and (min_q <= min_max) and (fee_q <= fee_max)
+    return ok, min_q, fee_q
+
+
+# =========================
+# Misc helpers
+# =========================
 
 def json_safe(o: Any) -> Any:
     if isinstance(o, Decimal):
@@ -149,7 +294,6 @@ def as_int(x: Any, default: int = 0, *, min_value: int | None = None, max_value:
     return v
 
 
-# ===== Строки/булево/прочее =====
 def U(s: Optional[str]) -> str:
     return (s or "").strip().upper()
 
@@ -179,7 +323,10 @@ def ensure_wd_conf_ge_dep(dep_conf: int, wd_conf: int) -> tuple[int, int]:
     return dep_conf, wd_conf
 
 
-# ===== SiteSetup =====
+# =========================
+# SiteSetup helpers
+# =========================
+
 def _split_tokens(raw: Any) -> list[str]:
     if isinstance(raw, str):
         return [p for p in re.split(r"[\s,;]+", raw) if p]
@@ -214,7 +361,10 @@ def fiat_set() -> Set[str]:
     }
 
 
-# ===== Провайдерные утилиты =====
+# =========================
+# Provider utilities
+# =========================
+
 def get_any_enabled_keys(exchange) -> tuple[Optional[str], Optional[str]]:
     rec = (
         ExchangeApiKey.objects

@@ -19,10 +19,11 @@ from app_market.models.exchange import Exchange
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 from .base import ProviderAdapter, AssetSyncStats
 from .numeric import (
-    UA, D, q_amount, q_percent, json_safe,
+    UA, D, to_db_amount, to_db_percent, json_safe,
     U, disp, B,
     stable_set, memo_required_set,
     infer_asset_kind, get_any_enabled_keys,
+    crypto_withdraw_guard,
 )
 
 BASE = "https://api.mexc.com"
@@ -74,7 +75,7 @@ class _Row:
     is_stable: bool
     requires_memo: bool
     amount_precision: int
-    asset_kind: str
+    asset_kind: AssetKind
     raw_meta: dict
 
 
@@ -206,19 +207,15 @@ class MexcAdapter(ProviderAdapter):
 
             prec = int(r.amount_precision or 8)
 
-            # --- фильтр по выводу ---
-            # 1) минимальный вывод > 0
-            # 2) минимальный вывод < 100_000
-            wd_min_q = q_amount(r.wd_min, prec)
-            if not (wd_min_q > q_amount(D(0), prec) and wd_min_q < q_amount(D(100_000), prec)):
-                stats.skipped += 1
-                continue  # полностью пропускаем монету/цепь
-
-            # Доп. фильтр по фикс-комиссии вывода: ≤ 100_000 (иначе мусор)
-            wd_fee_fix_q = q_amount(r.wd_fee_fix, prec)
-            if wd_fee_fix_q >= q_amount(D(100_000), prec):
-                stats.skipped += 1
-                continue
+            # Централизованные ограничения для криптовалютных цепочек
+            if r.asset_kind == AssetKind.CRYPTO:
+                ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
+                if not ok:
+                    stats.skipped += 1
+                    continue
+            else:
+                wd_min_q = to_db_amount(r.wd_min, prec)
+                wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
 
             # прошла фильтр — учитываем как присутствующую
             seen.add((r.asset_code, r.chain_code))
@@ -230,14 +227,19 @@ class MexcAdapter(ProviderAdapter):
                 confirmations_deposit=int(r.conf_dep if (r.asset_kind == AssetKind.FIAT) or (r.conf_dep > 0) else 1),
                 confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
 
-                deposit_fee_percent=q_percent(r.dep_fee_pct),
-                deposit_fee_fixed=q_amount(r.dep_fee_fix, prec),
-                deposit_min=q_amount(r.dep_min, prec),
-                deposit_max=q_amount(r.dep_max, prec),
+                deposit_fee_percent=to_db_percent(r.dep_fee_pct),
+                deposit_fee_fixed=to_db_amount(r.dep_fee_fix, prec),
+                deposit_min=to_db_amount(r.dep_min, prec),
+                deposit_max=to_db_amount(r.dep_max, prec),
+                # deposit_min_usdt — не трогаем
+                # deposit_max_usdt — не трогаем
 
-                withdraw_fee_percent=q_percent(r.wd_fee_pct),
-                withdraw_fee_fixed=q_amount(r.wd_fee_fix, prec),
+                withdraw_fee_percent=to_db_percent(r.wd_fee_pct),
+                withdraw_fee_fixed=wd_fee_fix_q,
                 withdraw_min=wd_min_q,
+                # ВАЖНО: withdraw_max не пишем с биржи (политика для MEXC)
+                # withdraw_min_usdt — не трогаем
+                # withdraw_max_usdt — не трогаем
 
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),

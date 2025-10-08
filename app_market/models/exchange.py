@@ -1,8 +1,16 @@
 from decimal import Decimal
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _t
+
+from django.conf import settings
+
+AMOUNT_MAX_DIGITS = settings.DECIMAL_AMOUNT_INT_DIGITS + settings.DECIMAL_AMOUNT_DEC_PLACES
+AMOUNT_DEC_PLACES = settings.DECIMAL_AMOUNT_DEC_PLACES
+
+PERCENT_MAX_DIGITS = settings.DECIMAL_PERCENT_MAX_DIGITS
+PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 
 
 class ExchangeKind(models.TextChoices):
@@ -176,63 +184,69 @@ class Exchange(models.Model):
 
     # --- Торговые комиссии (%, могут быть отрицательными), теперь симметричные: 12,5 ---
     spot_taker_fee = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0.1"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0.1"),
         verbose_name=_t("Спот: тейкер, %"),
         help_text=_t("Может быть отрицательной."),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
     spot_maker_fee = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0.1"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0.1"),
         verbose_name=_t("Спот: мейкер, %"),
         help_text=_t("Может быть отрицательной."),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
     futures_taker_fee = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0.1"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0.1"),
         verbose_name=_t("Фьючерсы: тейкер, %"),
         help_text=_t("Может быть отрицательной."),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
     futures_maker_fee = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0.1"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0.1"),
         verbose_name=_t("Фьючерсы: мейкер, %"),
         help_text=_t("Может быть отрицательной."),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
 
     # --- Комиссии на ввод/вывод ---
     # Проценты и фикс допускают 0 (семантика: 0 = не используется). Знак не ограничиваем.
     fee_deposit_percent = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Ввод: %"),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
     fee_deposit_fixed = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Ввод: фикс"),
     )
     # Ограничители комиссии (>= 0), применяются после расчёта % + фикс; 0 = без минимума/максимума
     fee_deposit_min = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Ввод: мин. комиссия"),
     )
     fee_deposit_max = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Ввод: макс. комиссия"),
     )
 
     fee_withdraw_percent = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Вывод: %"),
+        validators=[MaxValueValidator(Decimal("100"))],
     )
     fee_withdraw_fixed = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Вывод: фикс"),
     )
     fee_withdraw_min = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Вывод: мин. комиссия"),
     )
     fee_withdraw_max = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Вывод: макс. комиссия"),
     )

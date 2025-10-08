@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _t
+
+from django.conf import settings
+
+AMOUNT_MAX_DIGITS = settings.DECIMAL_AMOUNT_INT_DIGITS + settings.DECIMAL_AMOUNT_DEC_PLACES
+AMOUNT_DEC_PLACES = settings.DECIMAL_AMOUNT_DEC_PLACES
+
+PERCENT_MAX_DIGITS = settings.DECIMAL_PERCENT_MAX_DIGITS
+PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 
 
 class AssetKind(models.TextChoices):
@@ -74,66 +82,66 @@ class ExchangeAsset(models.Model):
 
     # Комиссии/лимиты на ВВОД
     deposit_fee_percent = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
-        validators=[MinValueValidator(Decimal("0"))],
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
         verbose_name=_t("Комиссия ввода, %"),
     )
     deposit_fee_fixed = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Комиссия ввода, фикс"),
     )
     deposit_min = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. ввод"),
     )
     deposit_max = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Макс. ввод"),
     )
     # В USDT-эквиваленте (для массовых политик)
     deposit_min_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("5"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("5"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. ввод (в USDT)"),
     )
     deposit_max_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Макс. ввод (в USDT)"),
     )
 
     # Комиссии/лимиты на ВЫВОД
     withdraw_fee_percent = models.DecimalField(
-        max_digits=12, decimal_places=5, default=Decimal("0"),
-        validators=[MinValueValidator(Decimal("0"))],
+        max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
         verbose_name=_t("Комиссия вывода, %"),
     )
     withdraw_fee_fixed = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Комиссия вывода, фикс"),
     )
     withdraw_min = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. вывод"),
     )
     withdraw_max = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Макс. вывод"),
     )
     # В USDT-эквиваленте
     withdraw_min_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("5"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("5"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. вывод (в USDT)"),
     )
     withdraw_max_usdt = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Макс. вывод (в USDT)"),
     )
@@ -155,17 +163,17 @@ class ExchangeAsset(models.Model):
 
     # Резервы
     reserve_current = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Текущий резерв"),
     )
     reserve_min = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Мин. резерв"),
     )
     reserve_max = models.DecimalField(
-        max_digits=28, decimal_places=10, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Макс. резерв"),
     )

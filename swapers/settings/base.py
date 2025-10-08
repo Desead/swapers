@@ -246,6 +246,7 @@ SECRETS_DIR = BASE_DIR / ".secrets"
 SECRETS_DIR.mkdir(exist_ok=True)
 FIELD_KEY_FILE = SECRETS_DIR / "field_encryption.key"
 
+
 def _read_or_create_field_key(path: Path) -> str:
     """
     Храним один Fernet-ключ в файле. Если файла нет — создаём.
@@ -266,4 +267,25 @@ def _read_or_create_field_key(path: Path) -> str:
     path.write_text(key, encoding="utf-8")
     return key
 
+
 FIELD_ENCRYPTION_KEY = _read_or_create_field_key(FIELD_KEY_FILE)
+
+# ===== Decimal geometry for amounts =====
+DECIMAL_AMOUNT_INT_DIGITS = 18  # целых разрядов в БД
+DECIMAL_AMOUNT_DEC_PLACES = 10  # знаков после точки в БД
+
+# «Зазор» для вычислений: на сколько целых разрядов меньше, чем в БД (обычно 1)
+DECIMAL_CALC_INT_OFFSET = 1  # 1 => вычисления ведём на 17 целых
+
+# ===== Percents =====
+DECIMAL_PERCENT_PLACES_DB = 5  # хранение (БД)
+DECIMAL_PERCENT_PLACES_CALC = 6  # расчёты (можно держать чуть тоньше)
+DECIMAL_PERCENT_MAX_DIGITS = 12  # max_digits для процентных полей БД
+
+# ===== Decimal context precision =====
+DECIMAL_CONTEXT_PREC = 50  # глобальная точность контекста Decimal
+
+# ===== Business limits for crypto withdraw (centralized) =====
+CRYPTO_WD_MIN_MIN = 0
+CRYPTO_WD_MIN_MAX = 100_000
+CRYPTO_WD_FEE_FIX_MAX = 100_000

@@ -19,10 +19,10 @@ from app_market.models.exchange import Exchange
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 from .base import ProviderAdapter, AssetSyncStats
 from .numeric import (
-    UA, D, q_amount, q_percent, json_safe,
+    UA, D, to_db_amount, to_db_percent, json_safe,
     U, disp, B,
     stable_set, memo_required_set,
-    get_any_enabled_keys,
+    get_any_enabled_keys, infer_asset_kind, crypto_withdraw_guard,
 )
 
 WB_BASE = "https://whitebit.com"
@@ -30,6 +30,7 @@ ASSETS_URL = f"{WB_BASE}/api/v4/public/assets"
 FEE_URL = f"{WB_BASE}/api/v4/public/fee"
 PRIV_FEE_PATH = "/api/v4/main-account/fee"
 PRIV_FEE_URL = f"{WB_BASE}{PRIV_FEE_PATH}"
+
 
 # === Helpers: HTTP с ретраями ===
 
@@ -49,6 +50,7 @@ def _http_get_json(url: str, timeout: int = 20, retries: int = 3) -> Any:
             else:
                 break
     raise RuntimeError(f"WhiteBIT: ошибка запросов: {last_exc}")
+
 
 def _http_post_signed_json(url: str, body: dict, api_key: str, api_secret: str, timeout: int = 30, retries: int = 3) -> Any:
     payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
@@ -81,6 +83,7 @@ def _http_post_signed_json(url: str, body: dict, api_key: str, api_secret: str, 
                 break
     raise RuntimeError(f"WhiteBIT: ошибка запросов: {last_exc}")
 
+
 # === Парсинг публичных структур ===
 
 @dataclass
@@ -90,15 +93,18 @@ class FeeSide:
     fixed: Decimal = Decimal("0")
     percent: Decimal = Decimal("0")
 
+
 @dataclass
 class FeePack:
     deposit: FeeSide
     withdraw: FeeSide
 
+
 def _flex_percent(v: Any) -> Decimal:
     if isinstance(v, dict):
         return D(v.get("percent"))
     return D(v)
+
 
 def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
     out: Dict[Tuple[str, Optional[str]], FeePack] = {}
@@ -127,6 +133,7 @@ def _parse_public_fee(obj: dict) -> Dict[Tuple[str, Optional[str]], FeePack]:
             ),
         )
     return out
+
 
 def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
     result: Dict[Tuple[str, Optional[str]], dict] = {}
@@ -191,6 +198,7 @@ def _parse_public_assets(obj: dict) -> Dict[Tuple[str, Optional[str]], dict]:
             }
     return result
 
+
 # === Ключи ===
 
 def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict[str, dict]:
@@ -203,6 +211,7 @@ def _fetch_private_fee(api_key: str, api_secret: str, timeout: int = 30) -> Dict
             if t:
                 out[t] = row
     return out
+
 
 # === Внутренние строки для UPSERT ===
 
@@ -229,6 +238,7 @@ class _Row:
     raw_meta: dict
     is_stable: bool
 
+
 # === Адаптер ===
 
 class WhitebitAdapter(ProviderAdapter):
@@ -236,13 +246,13 @@ class WhitebitAdapter(ProviderAdapter):
 
     @transaction.atomic
     def sync_assets(
-        self,
-        exchange: Exchange,
-        *,
-        timeout: int = 20,
-        limit: int = 0,
-        reconcile: bool = True,
-        verbose: bool = False,
+            self,
+            exchange: Exchange,
+            *,
+            timeout: int = 20,
+            limit: int = 0,
+            reconcile: bool = True,
+            verbose: bool = False,
     ) -> AssetSyncStats:
         stats = AssetSyncStats()
         stables = stable_set()
@@ -288,12 +298,12 @@ class WhitebitAdapter(ProviderAdapter):
         for (ticker, network), meta in assets_map.items():
             if limit and len(rows) >= limit:
                 break
-            kind = meta.get("asset_kind") or AssetKind.CRYPTO
 
             dep_conf = int(meta.get("confirmations") or 0)
-            if kind == AssetKind.CRYPTO and dep_conf < 1:
+            kind_guess = meta.get("asset_kind") or AssetKind.CRYPTO
+            if kind_guess == AssetKind.CRYPTO and dep_conf < 1:
                 dep_conf = 1
-            wd_conf = dep_conf  # отдельного не даёт публичка — берём минимум как dep_conf
+            wd_conf = dep_conf  # отдельного нет — берём минимум как dep_conf
 
             dep_lim = meta.get("deposit_limits") or {}
             wd_lim = meta.get("withdraw_limits") or {}
@@ -302,13 +312,13 @@ class WhitebitAdapter(ProviderAdapter):
 
             provider_memo = bool(meta.get("requires_memo") or False)
             chain_norm = U(network or ticker)
-            requires_memo = (kind == AssetKind.CRYPTO) and (provider_memo or (chain_norm in memo_set))
+            requires_memo = (kind_guess == AssetKind.CRYPTO) and (provider_memo or (chain_norm in memo_set))
 
             rows.append(_Row(
                 ticker=ticker,
                 chain=network,
                 name=disp(meta.get("asset_name")) or ticker,
-                kind=kind,
+                kind=kind_guess,
                 AD=B(meta.get("can_deposit")),
                 AW=B(meta.get("can_withdraw")),
                 conf_dep=dep_conf,
@@ -324,7 +334,7 @@ class WhitebitAdapter(ProviderAdapter):
                 requires_memo=requires_memo,
                 amount_precision=int(meta.get("amount_precision") or 8),
                 raw_meta={"assets": json_safe(meta)},
-                is_stable=(kind == AssetKind.CRYPTO) and (ticker in stables),
+                is_stable=(kind_guess == AssetKind.CRYPTO) and (ticker in stables),
             ))
 
         # UPSERT + reconcile
@@ -333,28 +343,48 @@ class WhitebitAdapter(ProviderAdapter):
         for r in rows:
             stats.processed += 1
             chain_code = (r.chain or r.ticker)
+
+            # Определяем тип актива единообразно и применяем централизованные лимиты для крипты
+            kind = infer_asset_kind(r.ticker, chain_code, chain_code)
+            prec = int(r.amount_precision or 8)
+
+            if kind == AssetKind.CRYPTO:
+                ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
+                if not ok:
+                    stats.skipped += 1
+                    continue
+            else:
+                wd_min_q = to_db_amount(r.wd_min, prec)
+                wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
+
+            # прошла проверки — считаем увиденной
             seen.add((r.ticker, chain_code))
 
-            # нормализуем значения перед сохранением
-            prec = int(r.amount_precision or 8)
             new_vals = dict(
                 asset_name=r.name,
                 AD=bool(r.AD),
                 AW=bool(r.AW),
-                confirmations_deposit=int(r.conf_dep),
-                confirmations_withdraw=int(max(r.conf_dep, r.conf_wd)),
-                deposit_min=q_amount(r.dep_min, prec),
-                deposit_max=q_amount(r.dep_max, prec),
-                withdraw_min=q_amount(r.wd_min, prec),
-                withdraw_max=q_amount(r.wd_max, prec),
-                deposit_fee_percent=q_percent(r.dep_fee_pct),
-                deposit_fee_fixed=q_amount(r.dep_fee_fix, prec),
-                withdraw_fee_percent=q_percent(r.wd_fee_pct),
-                withdraw_fee_fixed=q_amount(r.wd_fee_fix, prec),
+                confirmations_deposit=int(r.conf_dep if (kind == AssetKind.FIAT) or (r.conf_dep > 0) else 1),
+                confirmations_withdraw=int(max(r.conf_dep if r.conf_dep > 0 else 1, r.conf_wd)),
+
+                deposit_fee_percent=to_db_percent(r.dep_fee_pct),
+                deposit_fee_fixed=to_db_amount(r.dep_fee_fix, prec),
+                deposit_min=to_db_amount(r.dep_min, prec),
+                deposit_max=to_db_amount(r.dep_max, prec),
+                # deposit_min_usdt — не трогаем
+                # deposit_max_usdt — не трогаем
+
+                withdraw_fee_percent=to_db_percent(r.wd_fee_pct),
+                withdraw_fee_fixed=wd_fee_fix_q,
+                withdraw_min=wd_min_q,
+                withdraw_max=to_db_amount(r.wd_max, prec),
+                # withdraw_min_usdt — не трогаем
+                # withdraw_max_usdt — не трогаем
+
                 requires_memo=bool(r.requires_memo),
                 is_stablecoin=bool(r.is_stable),
                 amount_precision=prec,
-                asset_kind=r.kind,
+                asset_kind=kind,
                 provider_symbol=r.ticker,
                 provider_chain=(r.chain or ""),
             )
