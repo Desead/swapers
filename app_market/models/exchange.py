@@ -21,7 +21,8 @@ class ExchangeKind(models.TextChoices):
     NODE = "NODE", _t("Нода")
     EXCHANGER = "EXCHANGER", _t("Обменники")
     BANK = "BANK", _t("Банк")
-    MANUAL = "MANUAL", _t("Ручной обмен (возможно в офисе)")
+    MANUAL = "MANUAL", _t("Ручной обмен")
+    OFFICE = "OFFICE", _t("Обмен в офисе")
 
 
 class LiquidityProvider(models.TextChoices):
@@ -81,6 +82,7 @@ class LiquidityProvider(models.TextChoices):
 
     # Ручной режим
     MANUAL = "MANUAL", "Manual"
+    OFFICE = "OFFICE", "Office"
 
 
 PROVIDER_PARTNER_LINKS: dict[str, str] = {
@@ -102,14 +104,17 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.OKX: "https://www.okx.com/",
     LiquidityProvider.GEMINI: "https://www.gemini.com/",
     LiquidityProvider.LBANK: "https://www.lbank.com/",
+
     # DEX
     LiquidityProvider.UNISWAP: "https://app.uniswap.org/",
     LiquidityProvider.PANCAKESWAP: "https://pancakeswap.finance/",
+
     # PSP
     LiquidityProvider.PAYPAL: "https://www.paypal.com/",
     LiquidityProvider.ADVCASH: "https://advcash.com/",
     LiquidityProvider.FIREKASSA: "https://firekassa.com/",
     LiquidityProvider.APIRONE: "https://apirone.com/",
+
     # EXCHANGER
     LiquidityProvider.CHANGENOW: "https://changenow.io/",
     LiquidityProvider.CHANGELLY: "https://changelly.com/",
@@ -123,19 +128,23 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.TRONWALLET: "https://www.tronlink.org/",
     LiquidityProvider.ANTARCTICWALLET: "https://antarcticwallet.com/",
     LiquidityProvider.TELEGRAM_WALLET: "https://t.me/wallet",
+
     # NODE (даём официальные сайты проектов)
     LiquidityProvider.BTC_NODE: "https://bitcoin.org/",
     LiquidityProvider.XMR_NODE: "https://www.getmonero.org/",
     LiquidityProvider.USDT_NODE: "https://tether.to/",
     LiquidityProvider.USDC_NODE: "https://www.circle.com/usdc",
     LiquidityProvider.DASH_NODE: "https://www.dash.org/",
+
     # BANK
     LiquidityProvider.SBERBANK: "https://www.sberbank.ru/",
     LiquidityProvider.TBANK: "https://www.tbank.ru/",
     LiquidityProvider.ALFABANK: "https://alfabank.ru/",
     LiquidityProvider.VTB: "https://www.vtb.ru/",
+
     # MANUAL — пусто (нет внешнего сайта)
     LiquidityProvider.MANUAL: "",
+    LiquidityProvider.OFFICE: "",
 }
 
 
@@ -319,6 +328,8 @@ class Exchange(models.Model):
         # MANUAL
         if self.provider == LiquidityProvider.MANUAL:
             return ExchangeKind.MANUAL
+        if self.provider == LiquidityProvider.OFFICE:
+            return ExchangeKind.OFFICE
 
         # Иначе — оставляем как есть (обычно CEX)
         return self.exchange_kind

@@ -34,7 +34,7 @@ class Command(BaseCommand):
         """
         Возвращает генератор Exchange для синхронизации.
         Правила:
-          - ориентируемся только на is_available=True (как ты просил);
+          - ориентируемся только на is_available=True;
           - ExchangeKind.MANUAL, NODE, WALLET, BANK, PSP, EXCHANGER — разрешены,
             но будет реальный запуск только если есть адаптер (has_adapter).
           - Если provider=ALL — обрабатываем все is_available=True.
@@ -70,9 +70,9 @@ class Command(BaseCommand):
             code = ex.provider
 
             # MANUAL — никогда не запрашиваем, просто пропускаем
-            if ex.exchange_kind == ExchangeKind.MANUAL:
+            if ex.exchange_kind == ExchangeKind.MANUAL or ex.exchange_kind == ExchangeKind.OFFICE:
                 if verbose:
-                    self.stdout.write(self.style.WARNING(f"→ {code} (id={ex.id}) пропущен: MANUAL"))
+                    self.stdout.write(self.style.WARNING(f"→ {code} (id={ex.id}) пропущен: MANUAL/OFFICE"))
                 continue
 
             if not has_adapter(code):

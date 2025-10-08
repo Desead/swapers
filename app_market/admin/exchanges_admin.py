@@ -99,6 +99,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         groups = [
             (_t("Ручной режим"), pick([
                 LiquidityProvider.MANUAL,
+                LiquidityProvider.OFFICE,
             ])),
             (_t("Централизованные биржи (CEX)"), pick([
                 LiquidityProvider.KUCOIN,
