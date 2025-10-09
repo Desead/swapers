@@ -51,8 +51,6 @@ class KucoinAdapter(UnifiedProviderBase):
         stables = stable_set()
         memo_chains = memo_required_set()
 
-        temp = set()
-
         for item in payload:
             sym = U(item.get("currency"))
             if not sym:
@@ -101,8 +99,6 @@ class KucoinAdapter(UnifiedProviderBase):
                 wd_max = D(ch.get("maxWithdraw") or 0)
 
                 wd_fee_fix = D(ch.get("withdrawalMinFee") or 0)
-                # todo Не совсем ясно что за величина здесь хранится во withdrawFeeRate
-                temp.add(ch.get("withdrawFeeRate"))
                 if ch.get("withdrawFeeRate") in ["0.01", "0.004", "0.002", "0.001"]:
                     pass
                 wd_fee_pct = D(ch.get("withdrawFeeRate") or 0)
@@ -134,4 +130,3 @@ class KucoinAdapter(UnifiedProviderBase):
                     is_stable=(sym in stables) or (U(asset_name) in stables),
                     raw_meta={"asset": json_safe(item)},  # только корневой объект
                 )
-                print(f"temp: {temp}")
