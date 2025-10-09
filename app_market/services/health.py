@@ -123,6 +123,8 @@ def prune_availability_logs(retention_days: int = 7) -> int:
 
 # Публичные lightweight endpoint'ы (GET). Без ключей.
 # STATUS/MAINTENANCE: публичные эндпойнты статуса (если у биржи они есть)
+# https://api.kucoin.com/api/v1/status
+
 _CEX_STATUS_PROBES: dict[str, str] = {
     LiquidityProvider.WHITEBIT: "https://whitebit.com/api/v4/public/platform/status",
     LiquidityProvider.BYBIT: "https://api.bybit.com/v5/system/status",

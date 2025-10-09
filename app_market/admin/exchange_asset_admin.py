@@ -79,9 +79,8 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "confirmations_view",  # ← новое поле-колонка "2/3"
         "deposit_open",
         "withdraw_open",
-        "is_stablecoin",
-        "requires_memo",
-        # "last_synced_at",
+        "withdraw_fee_fixed",
+        "deposit_min",
     )
     list_display_links = ("exchange", "asset_code",)
     list_filter = (
@@ -109,7 +108,6 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
         "withdraw_open",
         "created_at",
         "updated_at",
-        "last_synced_at",
         "icon_preview",
         "asset_code",
         "chain_code",
@@ -159,7 +157,7 @@ class ExchangeAssetAdmin(admin.ModelAdmin):
             "fields": (("nominal", "amount_precision", "amount_precision_display"), ("reserve_current", "reserve_min", "reserve_max")),
         }),
         (_t("Иконка"), {"classes": ("collapse",), "fields": ("icon_file", "icon_url", "icon_preview")}),
-        (_t("Служебное"), {"classes": ("wide", "collapse"), "fields": ("provider_symbol", "provider_chain", "status_note", "raw_metadata", "last_synced_at")}),
+        (_t("Служебное"), {"classes": ("wide", "collapse"), "fields": ("provider_symbol", "provider_chain", "status_note", "raw_metadata",)}),
         (_t("Аудит"), {"classes": ("collapse",), "fields": ("created_at", "updated_at")}),
     )
 

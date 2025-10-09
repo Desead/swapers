@@ -10,12 +10,10 @@ from app_main.models import SiteSetup
 from app_market.models.exchange_asset import AssetKind
 from app_market.models.account import ExchangeApiKey
 
-
 # =========================
 # Global Decimal context
 # =========================
 getcontext().prec = int(getattr(settings, "DECIMAL_CONTEXT_PREC", 50))
-
 
 # =========================
 # What this module exports
@@ -50,57 +48,56 @@ __all__ = [
     "json_safe", "as_int", "U", "disp", "B", "ensure_wd_conf_ge_dep",
     "stable_set", "memo_required_set", "fiat_set",
     "get_any_enabled_keys", "infer_asset_kind",
-]
 
+    "NO_CHAIN",
+]
 
 # =========================
 # Identity
 # =========================
 UA = "swapers-sync/1.0 (+https://github.com/Desead/swapers)"
 
-
 # =========================
 # DB Decimal geometry (amounts)
 # =========================
-DB_INT_DIGITS   = int(getattr(settings, "DECIMAL_AMOUNT_INT_DIGITS", 18))
-DB_DEC_PLACES   = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
-DB_QUANT        = Decimal(1).scaleb(-DB_DEC_PLACES)                         # 10^-dec
-_DB_WALL        = (Decimal(10) ** DB_INT_DIGITS) - DB_QUANT                 # e.g. 1e18 - 1e-10 (…9999)
-DB_MAX_AMOUNT   = _DB_WALL
+DB_INT_DIGITS = int(getattr(settings, "DECIMAL_AMOUNT_INT_DIGITS", 18))
+DB_DEC_PLACES = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
+DB_QUANT = Decimal(1).scaleb(-DB_DEC_PLACES)  # 10^-dec
+_DB_WALL = (Decimal(10) ** DB_INT_DIGITS) - DB_QUANT  # e.g. 1e18 - 1e-10 (…9999)
+DB_MAX_AMOUNT = _DB_WALL
 # SAFE max: на один квант ниже «стены», чтобы не “перепрыгивало” в 1e18 из-за округлений
-DB_MAX_AMOUNT_SAFE = DB_MAX_AMOUNT - DB_QUANT                               # …9998
-
+DB_MAX_AMOUNT_SAFE = DB_MAX_AMOUNT - DB_QUANT  # …9998
 
 # =========================
 # Calculation geometry (amounts)
 # =========================
-_CALC_OFFSET        = int(getattr(settings, "DECIMAL_CALC_INT_OFFSET", 1))
-CALC_INT_DIGITS     = max(1, DB_INT_DIGITS - _CALC_OFFSET)                  # usually 17
-CALC_DEC_PLACES     = DB_DEC_PLACES                                         # 10
-CALC_QUANT          = Decimal(1).scaleb(-CALC_DEC_PLACES)
+_CALC_OFFSET = int(getattr(settings, "DECIMAL_CALC_INT_OFFSET", 1))
+CALC_INT_DIGITS = max(1, DB_INT_DIGITS - _CALC_OFFSET)  # usually 17
+CALC_DEC_PLACES = DB_DEC_PLACES  # 10
+CALC_QUANT = Decimal(1).scaleb(-CALC_DEC_PLACES)
 # ещё безопаснее относительно «стены» расчётов
-_CALC_WALL          = (Decimal(10) ** CALC_INT_DIGITS) - CALC_QUANT
-CALC_MAX_AMOUNT     = _CALC_WALL - CALC_QUANT
-
+_CALC_WALL = (Decimal(10) ** CALC_INT_DIGITS) - CALC_QUANT
+CALC_MAX_AMOUNT = _CALC_WALL - CALC_QUANT
 
 # =========================
 # Percents
 # =========================
-PERCENT_PLACES_DB   = int(getattr(settings, "DECIMAL_PERCENT_PLACES_DB", 5))
+PERCENT_PLACES_DB = int(getattr(settings, "DECIMAL_PERCENT_PLACES_DB", 5))
 PERCENT_PLACES_CALC = int(getattr(settings, "DECIMAL_PERCENT_PLACES_CALC", 6))
-PERCENT_QUANT_DB    = Decimal(1).scaleb(-PERCENT_PLACES_DB)                 # 10^-5
-PERCENT_QUANT_CALC  = Decimal(1).scaleb(-PERCENT_PLACES_CALC)               # 10^-6
-MAX_PERCENT         = Decimal("100")
-
+PERCENT_QUANT_DB = Decimal(1).scaleb(-PERCENT_PLACES_DB)  # 10^-5
+PERCENT_QUANT_CALC = Decimal(1).scaleb(-PERCENT_PLACES_CALC)  # 10^-6
+MAX_PERCENT = Decimal("100")
 
 # =========================
 # Business limits for crypto withdraw (centralized)
 # =========================
 # Можно переопределить в settings.py при желании.
-CRYPTO_WD_MIN_MIN     = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MIN", "0")))         # строго > 0
-CRYPTO_WD_MIN_MAX     = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MAX", "100000")))    # <= 100000
-CRYPTO_WD_FEE_FIX_MAX = Decimal(str(getattr(settings, "CRYPTO_WD_FEE_FIX_MAX", "100000")))# <= 100000
+CRYPTO_WD_MIN_MIN = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MIN", "0")))  # строго > 0
+CRYPTO_WD_MIN_MAX = Decimal(str(getattr(settings, "CRYPTO_WD_MIN_MAX", "100000")))  # <= 100000
+CRYPTO_WD_FEE_FIX_MAX = Decimal(str(getattr(settings, "CRYPTO_WD_FEE_FIX_MAX", "100000")))  # <= 100000
 
+# Сеть-заглушка для НЕОПРЕДЕЛЁННЫХ активов (без сетей)
+NO_CHAIN = "NoChain"
 
 # =========================
 # Base numeric helpers
@@ -110,6 +107,7 @@ _NUM_TOKENS_NULL = {
     "", "na", "n/a", "nan", "null", "none", "-", "—",
     "inf", "infinity", "-inf", "-infinity", "+inf", "+infinity"
 }
+
 
 def _sanitize_number_like(x: Any) -> str:
     if isinstance(x, (int, float, Decimal)):
@@ -260,9 +258,9 @@ def crypto_withdraw_guard(wd_min: Any, wd_fee_fixed: Any, prec: int) -> tuple[bo
     min_q = to_db_amount(wd_min, prec)
     fee_q = to_db_amount(wd_fee_fixed, prec)
 
-    zero_q   = to_db_amount(CRYPTO_WD_MIN_MIN, prec)
-    min_max  = to_db_amount(CRYPTO_WD_MIN_MAX, prec)
-    fee_max  = to_db_amount(CRYPTO_WD_FEE_FIX_MAX, prec)
+    zero_q = to_db_amount(CRYPTO_WD_MIN_MIN, prec)
+    min_max = to_db_amount(CRYPTO_WD_MIN_MAX, prec)
+    fee_max = to_db_amount(CRYPTO_WD_FEE_FIX_MAX, prec)
 
     ok = (min_q > zero_q) and (min_q <= min_max) and (fee_q <= fee_max)
     return ok, min_q, fee_q
@@ -310,9 +308,9 @@ def B(*vals: Any) -> bool:
             return bool(x)
         if isinstance(x, str):
             v = x.strip().lower()
-            if v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed"}:
+            if v in {"1", "true", "yes", "y", "on", "enabled", "allow", "allowed","normal"}:
                 return True
-            if v in {"0", "false", "no", "n", "off", "disabled", "deny", "denied"}:
+            if v in {"0", "false", "no", "n", "off", "disabled", "deny", "denied", "prohibited","delisted"}:
                 return False
     return False
 
@@ -376,13 +374,36 @@ def get_any_enabled_keys(exchange) -> tuple[Optional[str], Optional[str]]:
     return ((rec.api_key or None), (rec.api_secret or None)) if rec else (None, None)
 
 
-def infer_asset_kind(asset_code: str, chain_code: str, chain_name: str, *, fiat_codes: Optional[Set[str]] = None) -> AssetKind:
+def infer_asset_kind(
+        asset_code: str,
+        chain_code: str,
+        chain_name: str,
+        *,
+        conf_dep: int | None = None,  # <— оставлены для совместимости, не влияют
+        conf_wd: int | None = None,  # <— оставлены для совместимости, не влияют
+        fiat_codes: Optional[Set[str]] = None,
+) -> AssetKind:
+    """
+    Логика:
+      • FIAT — если тикер в списке фиата (SiteSetup.fiat_name) ИЛИ
+               сеть/название сети содержит подсказки (FIAT/BANK/WIRE/SEPA/SWIFT/CARD/FUNDING/PAY/PAYMENT).
+      • иначе — NOTDEFINED.
+
+    """
     ac = U(asset_code)
     cc = U(chain_code)
     disp_name = U(chain_name)
     fiat_codes = fiat_codes or fiat_set()
 
     FIAT_HINTS = {"FIAT", "BANK", "WIRE", "SEPA", "SWIFT", "CARD", "FUNDING", "PAY", "PAYMENT"}
-    if ac in fiat_codes or cc in FIAT_HINTS or any(h in disp_name for h in FIAT_HINTS):
+
+    # 1) по списку фиата проверяем ТИКЕР (asset_code)
+    if ac in fiat_codes:
         return AssetKind.FIAT
-    return AssetKind.CRYPTO
+
+    # 2) по подсказкам проверяем СЕТЬ/название сети (но не тикер!)
+    if cc in FIAT_HINTS or any(h in disp_name for h in FIAT_HINTS):
+        return AssetKind.FIAT
+
+    # 3) ни то, ни другое — не определён
+    return AssetKind.NOTDEFINED

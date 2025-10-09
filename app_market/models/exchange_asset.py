@@ -15,10 +15,11 @@ PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 
 
 class AssetKind(models.TextChoices):
-    CRYPTO = "CRYPTO", "Crypto"  # без i18n — это канонические ярлыки
-    FIAT = "FIAT", "Fiat"
-    PSP_MONEY = "PSP_MONEY", "PSP money"
-    CASH = "CASH", "Cash"
+    CRYPTO = "CRYPTO", _t("Крипта")
+    FIAT = "FIAT", _t("Фиат")
+    PSP_MONEY = "PSP_MONEY", _t("Платёжка")
+    CASH = "CASH", _t("Наличные")
+    NOTDEFINED = "NOTDEFINED", _t("Не определён")
 
 
 class ExchangeAsset(models.Model):
@@ -192,7 +193,6 @@ class ExchangeAsset(models.Model):
 
     status_note = models.CharField(max_length=255, blank=True, default="", verbose_name=_t("Комментарий к статусу"))
     raw_metadata = models.JSONField(default=dict, blank=True, verbose_name=_t("Сырое описание от ПЛ"))
-    last_synced_at = models.DateTimeField(null=True, blank=True, verbose_name=_t("Последняя синхронизация"))
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name=_t("Создано"))
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_t("Обновлено"))
