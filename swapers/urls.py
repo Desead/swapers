@@ -56,7 +56,7 @@ urlpatterns = [
 ]
 
 # Rosetta — удобнее прятать за DEBUG
-if settings.DEBUG:
+if settings.DEBUG and "rosetta" in settings.INSTALLED_APPS:
     urlpatterns += [path("rosetta/", include("rosetta.urls"))]
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

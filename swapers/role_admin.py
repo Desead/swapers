@@ -3,6 +3,7 @@ from django_otp.admin import OTPAdminSite  # импорт безопасен з�
 # Разрешённые группы (кроме суперпользователя)
 ALLOWED_ADMIN_GROUPS = {"Admins", "Support", "Finance", "Content", "Admin-RO"}
 
+
 class RoleBasedOTPAdminSite(OTPAdminSite):
     """
     Админка с обязательным OTP на форме логина (реализует django-otp)
