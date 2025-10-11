@@ -137,10 +137,15 @@ PROVIDER_SYNC_DEBOUNCE_SECONDS = 300            # минимум 5 минут м
 PROVIDER_SYNC_DB_CHUNK_SIZE = 500               # крупнее батчи, меньше накладных
 PROVIDER_SYNC_FAIL_THRESHOLD = 3                # после 3 подряд фейлов — деградация
 PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 3600        # «пробка» на 1 час
-
+# Ограничим одновременное число провайдеров (примерно 2–3; подбери под железо/БД)
+PROVIDER_SYNC_GLOBAL_MAX_CONCURRENT = 2
+# TTL слота (обычно равен или чуть меньше LOCK_TTL, чтобы не залипало)
+PROVIDER_SYNC_GLOBAL_SLOT_TTL_SECONDS = 1800
 # RECV_WINDOW для подписанных API (prod)
 BYBIT_RECV_WINDOW = 10000    # мс (чуть больше для запаса по времени)
 MEXC_RECV_WINDOW  = 30000    # мс
+
+PROVIDER_SYNC_GLOBAL_WAIT_SECONDS = 600
 # ───────────────────────────────────────────────────────────────────────────────
 # Логи (пример: CSP-отчёты в файл + консоль)
 # ───────────────────────────────────────────────────────────────────────────────

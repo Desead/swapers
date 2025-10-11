@@ -365,10 +365,15 @@ PROVIDER_SYNC_DEBOUNCE_SECONDS = 0  # дебаунс отключён в dev
 PROVIDER_SYNC_DB_CHUNK_SIZE = 200  # поменьше батч для читаемых логов
 PROVIDER_SYNC_FAIL_THRESHOLD = 3  # после 3 подряд фейлов считаем деградацией
 PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 300  # «пробка» на 5 минут
-
+# Глобальный лимит параллельных синков (dev по умолчанию выключен)
+PROVIDER_SYNC_GLOBAL_MAX_CONCURRENT = 0
+# TTL одного глобального «слота» (на всякий случай)
+PROVIDER_SYNC_GLOBAL_SLOT_TTL_SECONDS = 1800
 # RECV_WINDOW для подписанных API (dev)
 BYBIT_RECV_WINDOW = 5000  # мс
 MEXC_RECV_WINDOW = 20000  # мс
+
+PROVIDER_SYNC_GLOBAL_WAIT_SECONDS = 0
 # ───────────────────────────────────────────────────────────────────────────────
 # Заготовки под Celery / Sentry — добавим, когда понадобятся
 # ───────────────────────────────────────────────────────────────────────────────

@@ -12,6 +12,12 @@ from django.utils import timezone
 
 from app_market.models.exchange import Exchange
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
+from app_market.providers.global_slots import (
+    acquire_global_slot,
+    acquire_global_slot_blocking,
+    release_global_slot,
+    Slot,
+)
 
 from .numeric import (
     D, to_db_amount, to_db_percent, json_safe,
@@ -30,6 +36,7 @@ DEBOUNCE_SECONDS: int = int(getattr(settings, "PROVIDER_SYNC_DEBOUNCE_SECONDS", 
 DB_CHUNK_SIZE: int = int(getattr(settings, "PROVIDER_SYNC_DB_CHUNK_SIZE", 500))
 FAIL_THRESHOLD: int = int(getattr(settings, "PROVIDER_SYNC_FAIL_THRESHOLD", 3))
 CIRCUIT_TTL: int = int(getattr(settings, "PROVIDER_SYNC_CIRCUIT_TTL_SECONDS", 60 * 60))  # 1h
+GLOBAL_WAIT_SECONDS: int = int(getattr(settings, "PROVIDER_SYNC_GLOBAL_WAIT_SECONDS", 0))  # ⟵ новое
 
 # retry backoff base
 _BACKOFF_S = (0.5, 1.0, 2.0)  # + джиттер [0..0.2]
@@ -141,7 +148,6 @@ class UnifiedProviderBase(ProviderAdapter):
                 return self.fetch_payload(timeout=timeout)
             except Exception as e:  # ожидаем, что провайдер бросит HTTP-ошибку/исключение
                 last_exc = e
-                # пытаемся вытащить статус/Retry-After
                 status = None
                 retry_after = None
                 resp = getattr(e, "response", None)
@@ -154,9 +160,8 @@ class UnifiedProviderBase(ProviderAdapter):
                         except Exception:
                             retry_after = None
 
-                # решаем, пробуем ли ещё раз
                 if status and (status == 429 or 500 <= int(status) < 600):
-                    if attempt < len(_BACKOFF_S):  # ещё есть попытки
+                    if attempt < len(_BACKOFF_S):
                         self._sleep_backoff(attempt, retry_after)
                         continue
                 else:
@@ -204,10 +209,28 @@ class UnifiedProviderBase(ProviderAdapter):
                         print(f"[{self.code}] дебаунс {int(DEBOUNCE_SECONDS - delta)}с → пропуск")
                     return stats
 
+        # ── Глобальный лимит: ждём свободный слот при необходимости ────────────
+        slot: Slot | None = None
+        max_conc = int(getattr(settings, "PROVIDER_SYNC_GLOBAL_MAX_CONCURRENT", 0))
+        if max_conc > 0:
+            wait_s = int(GLOBAL_WAIT_SECONDS)
+            slot = (
+                acquire_global_slot_blocking(wait_s)
+                if wait_s > 0 else
+                acquire_global_slot()
+            )
+            if slot is None:
+                if verbose:
+                    print(f"[{self.code}] global limit reached → пропуск")
+                logger.info("[%s] global_limit_reached", self.code)
+                return stats
+
         # per-exchange lock
         if not cache.add(lock_key, "1", LOCK_TTL):
             if verbose:
                 print(f"[{self.code}] lock существует → пропуск")
+            if slot is not None:
+                release_global_slot(slot)
             return stats
 
         present_raw: Set[Tuple[str, str]] = set()
@@ -219,11 +242,9 @@ class UnifiedProviderBase(ProviderAdapter):
             if limit and limit > 0:
                 rows = rows[:limit]
 
-            # будем коммитить БД порциями
             def commit_needed():
                 return (batch_count % DB_CHUNK_SIZE) == 0
 
-            # вспомогательная обёртка записи (если dry-run, просто считаем)
             def upsert_row(r: ProviderRow) -> Optional[ExchangeAsset]:
                 nonlocal stats, changes, skip_reasons, batch_count
 
@@ -233,13 +254,12 @@ class UnifiedProviderBase(ProviderAdapter):
                 if prec > int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10)):
                     prec = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
 
-                # Определяем сеть/тип для present_raw СРАЗУ (до фильтров)
                 no_chain = (U(r.chain_code) == "")
                 if no_chain:
                     kind_guess = infer_asset_kind(r.asset_code, "", "")
                     chain_db = "FIAT" if kind_guess == AssetKind.FIAT else NO_CHAIN
                     kind = kind_guess if kind_guess == AssetKind.FIAT else AssetKind.NOTDEFINED
-                    AD = (kind == AssetKind.FIAT)  # без сетей: фиат открыт
+                    AD = (kind == AssetKind.FIAT)
                     AW = (kind == AssetKind.FIAT)
                     conf_dep = 0
                     conf_wd = 0
@@ -251,9 +271,8 @@ class UnifiedProviderBase(ProviderAdapter):
                     conf_dep = int(r.conf_dep)
                     conf_wd = int(r.conf_wd)
 
-                present_raw.add((r.asset_code, chain_db))  # ← ключевое: учитываем ВСЁ, что вернул API
+                present_raw.add((r.asset_code, chain_db))
 
-                # Централизованный фильтр по crypto withdraw — только для крипты
                 if kind == AssetKind.CRYPTO:
                     ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
                     if not ok:
@@ -265,7 +284,6 @@ class UnifiedProviderBase(ProviderAdapter):
                     wd_min_q = to_db_amount(r.wd_min, prec)
                     wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
 
-                # Кванты
                 dep_min_q = to_db_amount(r.dep_min, prec)
                 dep_max_q = to_db_amount(r.dep_max, prec)
                 wd_max_q = to_db_amount(r.wd_max, prec) if self.policy_write_withdraw_max() else to_db_amount(D(0), prec)
@@ -305,14 +323,12 @@ class UnifiedProviderBase(ProviderAdapter):
                 stats.processed += 1
 
                 if not WRITE_ENABLED:
-                    # dry-run: не пишем, просто считаем (условно считаем «принято», чтобы видно было конвейер)
                     return None
 
                 obj = None
                 obj_created = False
                 obj_changed_fields: list[str] = []
 
-                # локальная транзакция (батч)
                 with transaction.atomic():
                     obj, obj_created = ExchangeAsset.objects.get_or_create(
                         exchange=exchange,
@@ -322,7 +338,6 @@ class UnifiedProviderBase(ProviderAdapter):
                             **new_vals,
                             "raw_metadata": json_safe(r.raw_meta),
                             "chain_name": r.chain_name or chain_db,
-                            # новые FIAT — ручные флаги D/W = False только при создании
                             **({"D": False, "W": False} if kind == AssetKind.FIAT else {}),
                         },
                     )
@@ -346,11 +361,9 @@ class UnifiedProviderBase(ProviderAdapter):
                 batch_count += 1
                 return obj
 
-            # основной цикл
             for r in rows:
                 upsert_row(r)
 
-            # reconcile: выключаем только то, чего НЕТ в present_raw
             if reconcile and WRITE_ENABLED:
                 to_disable = []
                 q = ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW")
@@ -368,18 +381,15 @@ class UnifiedProviderBase(ProviderAdapter):
                         )
                     stats.disabled = len(to_disable)
 
-            # успех: сбрасываем счётчик фейлов, пишем метрику и last_ts
             cache.delete(fail_key)
             cache.set(last_key, time.time(), timeout=None)
 
         except Exception as e:
-            # учёт фейлов и «пробка», если подряд >= FAIL_THRESHOLD
             fails = int(cache.get(fail_key) or 0) + 1
             cache.set(fail_key, fails, timeout=CIRCUIT_TTL)
             if fails >= FAIL_THRESHOLD:
                 cache.set(circuit_key, True, timeout=CIRCUIT_TTL)
 
-            # метрика ошибки
             logger.error(
                 "sync_failed",
                 extra={
@@ -393,8 +403,10 @@ class UnifiedProviderBase(ProviderAdapter):
 
         finally:
             cache.delete(lock_key)
+            if slot is not None:
+                release_global_slot(slot)
+
             dur_ms = int((time.perf_counter() - t0) * 1000)
-            # сводка запуска
             logger.info(
                 "sync_done",
                 extra={
