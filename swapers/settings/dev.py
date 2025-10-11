@@ -374,6 +374,26 @@ BYBIT_RECV_WINDOW = 5000  # мс
 MEXC_RECV_WINDOW = 20000  # мс
 
 PROVIDER_SYNC_GLOBAL_WAIT_SECONDS = 0
+
+# Rapira: добавлять синтетический FIAT RUB в список активов
+RAPIRA_INCLUDE_RUB = True
+RAPIRA_RUB_PRECISION = 2
+# Rapira: подтверждения (chainId из /open/token: ETH/TRX/BSC/OP/TON/BTC/…)
+# Значение применяется и к вводу, и к выводу.
+RAPIRA_CONFIRMATIONS = {
+    ("USDT", "ETH"): 6,  # ERC20
+    ("USDT", "TRX"): 20,  # TRC20
+    ("USDT", "BSC"): 10,  # BEP20
+    ("BTC", "BTC"): 2,  # native BTC
+    ("BTC", "BSC"): 10,  # BTC на BSC (BEP20)
+    ("ETH", "OP"): 6,  # Optimism
+    ("ETH", "ETH"): 6,  # Optimism
+    ("ETH", "BSC"): 10,  # Optimism
+    ("TON", "TON"): 4,  # Toncoin
+    ("USDC", "ETH"): 6,  # ERC20
+    ("USDC", "ETH"): 6,  # ERC20
+    ("USDC", "BSC"): 10,  # ERC20
+}
 # ───────────────────────────────────────────────────────────────────────────────
 # Заготовки под Celery / Sentry — добавим, когда понадобятся
 # ───────────────────────────────────────────────────────────────────────────────

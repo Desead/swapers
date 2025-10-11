@@ -41,8 +41,8 @@ DATABASES = {
         "PASSWORD": "CHANGE_ME",
         "HOST": "127.0.0.1",
         "PORT": "5432",
-        "CONN_MAX_AGE": 60,         # держим соединение подольше
-        "CONN_HEALTH_CHECKS": True, # авто-хелсчеки для долгоживущих коннектов
+        "CONN_MAX_AGE": 60,  # держим соединение подольше
+        "CONN_HEALTH_CHECKS": True,  # авто-хелсчеки для долгоживущих коннектов
         "ATOMIC_REQUESTS": False,
     }
 }
@@ -131,21 +131,39 @@ CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
 # Провайдеры: политика синхронизации (PROD значения)
 # ───────────────────────────────────────────────────────────────────────────────
 # Эти настройки читает app_market.providers.base.UnifiedProviderBase через getattr(settings, ...).
-PROVIDER_SYNC_WRITE_ENABLED = True              # в проде пишем в БД
-PROVIDER_SYNC_LOCK_TTL_SECONDS = 1800           # lock на 30 минут
-PROVIDER_SYNC_DEBOUNCE_SECONDS = 300            # минимум 5 минут между полными синками
-PROVIDER_SYNC_DB_CHUNK_SIZE = 500               # крупнее батчи, меньше накладных
-PROVIDER_SYNC_FAIL_THRESHOLD = 3                # после 3 подряд фейлов — деградация
-PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 3600        # «пробка» на 1 час
+PROVIDER_SYNC_WRITE_ENABLED = True  # в проде пишем в БД
+PROVIDER_SYNC_LOCK_TTL_SECONDS = 1800  # lock на 30 минут
+PROVIDER_SYNC_DEBOUNCE_SECONDS = 300  # минимум 5 минут между полными синками
+PROVIDER_SYNC_DB_CHUNK_SIZE = 500  # крупнее батчи, меньше накладных
+PROVIDER_SYNC_FAIL_THRESHOLD = 3  # после 3 подряд фейлов — деградация
+PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 3600  # «пробка» на 1 час
 # Ограничим одновременное число провайдеров (примерно 2–3; подбери под железо/БД)
 PROVIDER_SYNC_GLOBAL_MAX_CONCURRENT = 2
 # TTL слота (обычно равен или чуть меньше LOCK_TTL, чтобы не залипало)
 PROVIDER_SYNC_GLOBAL_SLOT_TTL_SECONDS = 1800
 # RECV_WINDOW для подписанных API (prod)
-BYBIT_RECV_WINDOW = 10000    # мс (чуть больше для запаса по времени)
-MEXC_RECV_WINDOW  = 30000    # мс
+BYBIT_RECV_WINDOW = 10000  # мс (чуть больше для запаса по времени)
+MEXC_RECV_WINDOW = 30000  # мс
 
 PROVIDER_SYNC_GLOBAL_WAIT_SECONDS = 600
+
+# Rapira: добавлять синтетический FIAT RUB в список активов
+RAPIRA_INCLUDE_RUB = True
+RAPIRA_RUB_PRECISION = 2
+RAPIRA_CONFIRMATIONS = {
+    ("USDT", "ETH"): 6,  # ERC20
+    ("USDT", "TRX"): 20,  # TRC20
+    ("USDT", "BSC"): 10,  # BEP20
+    ("BTC", "BTC"): 2,  # native BTC
+    ("BTC", "BSC"): 10,  # BTC на BSC (BEP20)
+    ("ETH", "OP"): 6,  # Optimism
+    ("ETH", "ETH"): 6,  # Optimism
+    ("ETH", "BSC"): 10,  # Optimism
+    ("TON", "TON"): 4,  # Toncoin
+    ("USDC", "ETH"): 6,  # ERC20
+    ("USDC", "ETH"): 6,  # ERC20
+    ("USDC", "BSC"): 10,  # ERC20
+}
 # ───────────────────────────────────────────────────────────────────────────────
 # Логи (пример: CSP-отчёты в файл + консоль)
 # ───────────────────────────────────────────────────────────────────────────────

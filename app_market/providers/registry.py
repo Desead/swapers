@@ -8,6 +8,7 @@ from app_market.providers.cex.kucoin import KucoinAdapter
 from app_market.providers.cex.bybit import BybitAdapter
 from app_market.providers.cex.htx import HtxAdapter
 from app_market.providers.cex.mexc import MexcAdapter
+from app_market.providers.cex.rapira import RapiraAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
@@ -15,6 +16,7 @@ _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.BYBIT: BybitAdapter,
     LiquidityProvider.HTX: HtxAdapter,
     LiquidityProvider.MEXC: MexcAdapter,
+    LiquidityProvider.RAPIRA: RapiraAdapter,
 }
 
 

@@ -87,11 +87,11 @@ class LiquidityProvider(models.TextChoices):
 
 PROVIDER_PARTNER_LINKS: dict[str, str] = {
     # CEX
-    LiquidityProvider.KUCOIN: "https://www.kucoin.com/",
-    LiquidityProvider.WHITEBIT: "https://whitebit.com/",
-    LiquidityProvider.BYBIT: "https://www.bybit.com/",
+    LiquidityProvider.KUCOIN: "https://www.kucoin.com/r/rf/QP3WDF6C",
+    LiquidityProvider.WHITEBIT: "https://whitebit.com/referral/34dab02d-d3ef-448c-a768-3cde46f2de8f",
+    LiquidityProvider.BYBIT: "https://www.bybit.com/invite?ref=PXGJK1",
     LiquidityProvider.RAPIRA: "https://rapira.net/?ref=53BE",
-    LiquidityProvider.MEXC: "https://www.mexc.com/",
+    LiquidityProvider.MEXC: "https://promote.mexc.com/r/ssuoA5IP",
     LiquidityProvider.BINANCE: "https://www.binance.com/",
     LiquidityProvider.COINBASE_EXCHANGE: "https://exchange.coinbase.com/",
     LiquidityProvider.UPBIT: "https://upbit.com/",
