@@ -4,7 +4,7 @@ from typing import Iterable, Optional
 
 from django.core.management.base import BaseCommand, CommandError
 
-from app_market.models.exchange import Exchange, ExchangeKind, LiquidityProvider
+from app_market.models.exchange import Exchange, ExchangeKind
 from app_market.providers import get_adapter, has_adapter, list_adapters
 
 
@@ -35,8 +35,7 @@ class Command(BaseCommand):
         Возвращает генератор Exchange для синхронизации.
         Правила:
           - ориентируемся только на is_available=True;
-          - ExchangeKind.MANUAL, NODE, WALLET, BANK, PSP, EXCHANGER — разрешены,
-            но будет реальный запуск только если есть адаптер (has_adapter).
+          - ExchangeKind.MANUAL/OFFICE разрешены, но реальный запуск будет только если есть адаптер;
           - Если provider=ALL — обрабатываем все is_available=True.
           - Если указан exchange_id — берём ровно один (даже если is_available=False), это «ручной» запуск.
         """
@@ -69,8 +68,8 @@ class Command(BaseCommand):
             processed_any = True
             code = ex.provider
 
-            # MANUAL — никогда не запрашиваем, просто пропускаем
-            if ex.exchange_kind == ExchangeKind.MANUAL or ex.exchange_kind == ExchangeKind.OFFICE:
+            # MANUAL/OFFICE — пропуск
+            if ex.exchange_kind in {ExchangeKind.MANUAL, ExchangeKind.OFFICE}:
                 if verbose:
                     self.stdout.write(self.style.WARNING(f"→ {code} (id={ex.id}) пропущен: MANUAL/OFFICE"))
                 continue

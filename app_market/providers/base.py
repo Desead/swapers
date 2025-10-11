@@ -1,10 +1,12 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Protocol
-from decimal import Decimal
-from typing import Any, Iterable, Optional, Tuple, Set
+from typing import Protocol, Any, Iterable, Optional, Tuple, Set
 from collections import Counter
+from decimal import Decimal
+import logging, random, time
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
@@ -13,11 +15,29 @@ from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 
 from .numeric import (
     D, to_db_amount, to_db_percent, json_safe,
-    U, stable_set, memo_required_set, infer_asset_kind,
-    crypto_withdraw_guard, NO_CHAIN,
+    U, infer_asset_kind, crypto_withdraw_guard, NO_CHAIN,
 )
 
+logger = logging.getLogger("app_market.sync")
 
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Конфигурация поведения (из settings без .env)
+# ───────────────────────────────────────────────────────────────────────────────
+WRITE_ENABLED: bool = bool(getattr(settings, "PROVIDER_SYNC_WRITE_ENABLED", True))
+LOCK_TTL: int = int(getattr(settings, "PROVIDER_SYNC_LOCK_TTL_SECONDS", 30 * 60))  # 30m
+DEBOUNCE_SECONDS: int = int(getattr(settings, "PROVIDER_SYNC_DEBOUNCE_SECONDS", 3 * 60))  # 3m
+DB_CHUNK_SIZE: int = int(getattr(settings, "PROVIDER_SYNC_DB_CHUNK_SIZE", 500))
+FAIL_THRESHOLD: int = int(getattr(settings, "PROVIDER_SYNC_FAIL_THRESHOLD", 3))
+CIRCUIT_TTL: int = int(getattr(settings, "PROVIDER_SYNC_CIRCUIT_TTL_SECONDS", 60 * 60))  # 1h
+
+# retry backoff base
+_BACKOFF_S = (0.5, 1.0, 2.0)  # + джиттер [0..0.2]
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Типы/контракты
+# ───────────────────────────────────────────────────────────────────────────────
 @dataclass
 class AssetSyncStats:
     processed: int = 0
@@ -28,42 +48,32 @@ class AssetSyncStats:
 
 
 class ProviderAdapter(Protocol):
-    """
-    Базовый протокол адаптера провайдера (ПЛ).
-    Реализации обязаны иметь .code (строка, равная LiquidityProvider.<...>)
-    и метод sync_assets().
-    """
     code: str
 
     def sync_assets(
-            self,
-            exchange: Exchange,
-            *,
-            timeout: int = 20,
-            limit: int = 0,
-            reconcile: bool = True,
-            verbose: bool = False,
+        self,
+        exchange: Exchange,
+        *,
+        timeout: int = 20,
+        limit: int = 0,
+        reconcile: bool = True,
+        verbose: bool = False,
     ) -> AssetSyncStats: ...
 
 
-# --------- унифицированная строка от провайдера ---------
 @dataclass
 class ProviderRow:
     asset_code: str
     asset_name: str
-    # Пустая строка = «без сетей»; база сама классифицирует FIAT/NOTDEFINED и выберет chain_code для БД
     chain_code: str
     chain_name: str
 
-    # Автофлаги «как заявлено API» (до учёта подтверждений)
     AD: bool
     AW: bool
 
-    # Подтверждения (0 допустимы)
     conf_dep: int
     conf_wd: int
 
-    # Лимиты и комиссии (Decimal, необработанные)
     dep_min: Decimal
     dep_max: Decimal
     wd_min: Decimal
@@ -77,190 +87,338 @@ class ProviderRow:
     amount_precision: int
     is_stable: bool
 
-    # Корневой объект из API (без дублирования сетей)
     raw_meta: dict
 
 
 class UnifiedProviderBase(ProviderAdapter):
     """
-    Тонкий провайдер реализует:
+    Реализации обязаны переопределить:
       - fetch_payload(timeout) -> Any
       - iter_rows(payload) -> Iterable[ProviderRow]
-
-    Всё остальное (типизация, проверки, квантование, upsert, reconcile) — здесь.
+    Всё остальное — типизация, кванты, upsert, reconcile, логирование — тут.
     """
 
     # --- опции политики / провайдерские хуки ---
-
     def policy_write_withdraw_max(self) -> bool:
-        """Писать ли withdraw_max в БД (по умолчанию да). MEXC может переопределить на False."""
         return True
 
     def provider_name_for_status(self) -> str:
-        """Короткое название в статусе reconcile."""
         return self.code
 
     # --- тонкий провайдер должен реализовать ---
-
     def fetch_payload(self, *, timeout: int) -> Any:
         raise NotImplementedError
 
     def iter_rows(self, payload: Any) -> Iterable[ProviderRow]:
         raise NotImplementedError
 
-    # --- общий конвейер ---
+    # --- служебные утилиты ---
 
-    @transaction.atomic
+    def _lock_key(self, exchange_id: int) -> str:
+        return f"sync:{self.code}:{exchange_id}"
+
+    def _last_key(self, exchange_id: int) -> str:
+        return f"sync:last:{self.code}:{exchange_id}"
+
+    def _fail_key(self, exchange_id: int) -> str:
+        return f"sync:fail:{self.code}:{exchange_id}"
+
+    def _circuit_key(self, exchange_id: int) -> str:
+        return f"sync:circuit:{self.code}:{exchange_id}"
+
+    def _sleep_backoff(self, attempt: int, retry_after: Optional[float] = None) -> None:
+        # уважение Retry-After (секунды); иначе экспонента + джиттер
+        if retry_after is not None:
+            time.sleep(max(0.0, float(retry_after)))
+            return
+        base = _BACKOFF_S[min(attempt, len(_BACKOFF_S)-1)]
+        time.sleep(base + random.uniform(0.0, 0.2))
+
+    def _fetch_with_retries(self, *, timeout: int):
+        last_exc = None
+        for attempt in range(len(_BACKOFF_S) + 1):
+            try:
+                return self.fetch_payload(timeout=timeout)
+            except Exception as e:  # ожидаем, что провайдер бросит HTTP-ошибку/исключение
+                last_exc = e
+                # пытаемся вытащить статус/Retry-After
+                status = None
+                retry_after = None
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    status = getattr(resp, "status_code", None)
+                    ra = getattr(resp, "headers", {}).get("Retry-After") if hasattr(resp, "headers") else None
+                    if ra:
+                        try:
+                            retry_after = float(int(ra))
+                        except Exception:
+                            retry_after = None
+
+                # решаем, пробуем ли ещё раз
+                if status and (status == 429 or 500 <= int(status) < 600):
+                    if attempt < len(_BACKOFF_S):  # ещё есть попытки
+                        self._sleep_backoff(attempt, retry_after)
+                        continue
+                else:
+                    if attempt < len(_BACKOFF_S):
+                        self._sleep_backoff(attempt, None)
+                        continue
+                break
+        raise last_exc  # если дошли сюда — исчерпали попытки
+
+    # --- основной конвейер ---
     def sync_assets(
-            self,
-            exchange: Exchange,
-            *,
-            timeout: int = 20,
-            limit: int = 0,
-            reconcile: bool = True,
-            verbose: bool = False,
-    ):
+        self,
+        exchange: Exchange,
+        *,
+        timeout: int = 20,
+        limit: int = 0,
+        reconcile: bool = True,
+        verbose: bool = False,
+    ) -> AssetSyncStats:
+
+        t0 = time.perf_counter()
         stats = AssetSyncStats()
-        change_counter = Counter()
+        changes = Counter()
+        skip_reasons = Counter()
 
-        payload = self.fetch_payload(timeout=timeout)
-        rows_iter = self.iter_rows(payload)
-        rows = list(rows_iter)
-        if limit and limit > 0:
-            rows = rows[:limit]
+        ex_id = int(exchange.id)
+        lock_key = self._lock_key(ex_id)
+        last_key = self._last_key(ex_id)
+        fail_key = self._fail_key(ex_id)
+        circuit_key = self._circuit_key(ex_id)
 
-        seen: Set[Tuple[str, str]] = set()
+        # circuit open?
+        if cache.get(circuit_key):
+            if verbose:
+                print(f"[{self.code}] circuit open → пропуск")
+            return stats
 
-        for r in rows:
-            stats.processed += 1
-            prec = int(r.amount_precision or 8)
+        # debounce (только для «полных» запусков — без limit и c reconcile)
+        if limit == 0 and reconcile:
+            last_ts = cache.get(last_key)
+            if last_ts:
+                delta = time.time() - float(last_ts)
+                if delta < DEBOUNCE_SECONDS:
+                    if verbose:
+                        print(f"[{self.code}] дебаунс {int(DEBOUNCE_SECONDS - delta)}с → пропуск")
+                    return stats
 
-            # 01. Если сети нет => это не крипта: FIAT или NOTDEFINED
-            no_chain = (U(r.chain_code) == "")
-            if no_chain:
-                kind = infer_asset_kind(r.asset_code, "", "")
-                # 02-03. Автофлаги для безсетевых
-                if kind == AssetKind.FIAT:
-                    AD, AW = True, True
-                    chain_db = "FIAT"
+        # per-exchange lock
+        if not cache.add(lock_key, "1", LOCK_TTL):
+            if verbose:
+                print(f"[{self.code}] lock существует → пропуск")
+            return stats
+
+        present_raw: Set[Tuple[str, str]] = set()
+        batch_count = 0
+
+        try:
+            payload = self._fetch_with_retries(timeout=timeout)
+            rows = list(self.iter_rows(payload))
+            if limit and limit > 0:
+                rows = rows[:limit]
+
+            # будем коммитить БД порциями
+            def commit_needed():
+                return (batch_count % DB_CHUNK_SIZE) == 0
+
+            # вспомогательная обёртка записи (если dry-run, просто считаем)
+            def upsert_row(r: ProviderRow) -> Optional[ExchangeAsset]:
+                nonlocal stats, changes, skip_reasons, batch_count
+
+                prec = int(r.amount_precision or 8)
+                if prec < 0:
+                    prec = 0
+                if prec > int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10)):
+                    prec = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
+
+                # Определяем сеть/тип для present_raw СРАЗУ (до фильтров)
+                no_chain = (U(r.chain_code) == "")
+                if no_chain:
+                    kind_guess = infer_asset_kind(r.asset_code, "", "")
+                    chain_db = "FIAT" if kind_guess == AssetKind.FIAT else NO_CHAIN
+                    kind = kind_guess if kind_guess == AssetKind.FIAT else AssetKind.NOTDEFINED
+                    AD = (kind == AssetKind.FIAT)  # без сетей: фиат открыт
+                    AW = (kind == AssetKind.FIAT)
+                    conf_dep = 0
+                    conf_wd = 0
                 else:
-                    AD, AW = False, False
-                    chain_db = NO_CHAIN
-                conf_dep = 0
-                conf_wd = 0
-            else:
-                # 06. Есть сеть → крипта
-                kind = AssetKind.CRYPTO
-                chain_db = r.chain_code
-                # 08-11. Подтверждения только гасят операции; флаги независимы
-                AD = bool(r.AD) and (int(r.conf_dep) > 0)
-                AW = bool(r.AW) and (int(r.conf_wd) > 0)
-                conf_dep = int(r.conf_dep)
-                conf_wd = int(r.conf_wd)
+                    kind = AssetKind.CRYPTO
+                    chain_db = r.chain_code
+                    AD = bool(r.AD) and (int(r.conf_dep) > 0)
+                    AW = bool(r.AW) and (int(r.conf_wd) > 0)
+                    conf_dep = int(r.conf_dep)
+                    conf_wd = int(r.conf_wd)
 
-            # Централизованные лимиты по криптовыводу — только для крипты
-            if kind == AssetKind.CRYPTO:
-                ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
-                if not ok:
-                    stats.skipped += 1
-                    continue
-            else:
-                wd_min_q = to_db_amount(r.wd_min, prec)
-                wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
+                present_raw.add((r.asset_code, chain_db))  # ← ключевое: учитываем ВСЁ, что вернул API
 
-            # Квантование всех прочих сумм/процентов
-            dep_min_q = to_db_amount(r.dep_min, prec)
-            dep_max_q = to_db_amount(r.dep_max, prec)
-            wd_max_q = to_db_amount(r.wd_max, prec) if self.policy_write_withdraw_max() else to_db_amount(D(0), prec)
-
-            dep_fee_pct_q = to_db_percent(r.dep_fee_pct)
-            dep_fee_fix_q = to_db_amount(r.dep_fee_fix, prec)
-            wd_fee_pct_q = to_db_percent(r.wd_fee_pct)
-
-            seen.add((r.asset_code, chain_db))
-
-            new_vals = dict(
-                asset_name=r.asset_name,
-                AD=AD,
-                AW=AW,
-
-                confirmations_deposit=conf_dep,
-                confirmations_withdraw=conf_wd,
-
-                deposit_min=dep_min_q,
-                deposit_max=dep_max_q,
-
-                withdraw_min=wd_min_q,
-                withdraw_max=wd_max_q,
-
-                deposit_fee_percent=dep_fee_pct_q,
-                deposit_fee_fixed=dep_fee_fix_q,
-
-                withdraw_fee_percent=wd_fee_pct_q,
-                withdraw_fee_fixed=wd_fee_fix_q,
-
-                requires_memo=bool(r.requires_memo),
-                is_stablecoin=bool(r.is_stable),
-                amount_precision=prec,
-                asset_kind=kind,
-                provider_symbol=r.asset_code,
-                provider_chain=chain_db,
-            )
-
-            defaults = {
-                **new_vals,
-                "raw_metadata": json_safe(r.raw_meta),
-                "chain_name": r.chain_name or chain_db,
-                "asset_name": r.asset_name,
-            }
-            # 02. Новые FIAT — ручные флаги D/W сбрасываем в False (только при создании)
-            if kind == AssetKind.FIAT:
-                defaults.update({"D": False, "W": False})
-
-            obj, created = ExchangeAsset.objects.get_or_create(
-                exchange=exchange,
-                asset_code=r.asset_code,
-                chain_code=chain_db,
-                defaults=defaults,
-            )
-
-            if created:
-                stats.created += 1
-            else:
-                changed = []
-                for f, v in new_vals.items():
-                    if getattr(obj, f) != v:
-                        setattr(obj, f, v)
-                        changed.append(f)
-                if changed:
-                    obj.raw_metadata = json_safe(r.raw_meta)
-                    obj.save(update_fields=changed + ["raw_metadata", "updated_at"])
-                    for f in changed:
-                        change_counter[f] += 1
-                    stats.updated += 1
+                # Централизованный фильтр по crypto withdraw — только для крипты
+                if kind == AssetKind.CRYPTO:
+                    ok, wd_min_q, wd_fee_fix_q = crypto_withdraw_guard(r.wd_min, r.wd_fee_fix, prec)
+                    if not ok:
+                        stats.processed += 1
+                        stats.skipped += 1
+                        skip_reasons["wd_guard"] += 1
+                        return None
                 else:
-                    stats.skipped += 1
+                    wd_min_q = to_db_amount(r.wd_min, prec)
+                    wd_fee_fix_q = to_db_amount(r.wd_fee_fix, prec)
 
-        if reconcile:
-            to_disable = []
-            q = ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW")
-            for obj in q:
-                key = (obj.asset_code, obj.chain_code)
-                if key not in seen and (obj.AD or obj.AW):
-                    to_disable.append(obj.id)
-            if to_disable:
-                ExchangeAsset.objects.filter(id__in=to_disable).update(
-                    AD=False, AW=False,
-                    status_note=f"Отключено: отсутствует в выдаче {self.provider_name_for_status()}",
-                    updated_at=timezone.now(),
+                # Кванты
+                dep_min_q = to_db_amount(r.dep_min, prec)
+                dep_max_q = to_db_amount(r.dep_max, prec)
+                wd_max_q = to_db_amount(r.wd_max, prec) if self.policy_write_withdraw_max() else to_db_amount(D(0), prec)
+
+                dep_fee_pct_q = to_db_percent(r.dep_fee_pct)
+                dep_fee_fix_q = to_db_amount(r.dep_fee_fix, prec)
+                wd_fee_pct_q = to_db_percent(r.wd_fee_pct)
+
+                new_vals = dict(
+                    asset_name=r.asset_name,
+                    AD=AD,
+                    AW=AW,
+
+                    confirmations_deposit=conf_dep,
+                    confirmations_withdraw=conf_wd,
+
+                    deposit_min=dep_min_q,
+                    deposit_max=dep_max_q,
+
+                    withdraw_min=wd_min_q,
+                    withdraw_max=wd_max_q,
+
+                    deposit_fee_percent=dep_fee_pct_q,
+                    deposit_fee_fixed=dep_fee_fix_q,
+
+                    withdraw_fee_percent=wd_fee_pct_q,
+                    withdraw_fee_fixed=wd_fee_fix_q,
+
+                    requires_memo=bool(r.requires_memo),
+                    is_stablecoin=bool(r.is_stable),
+                    amount_precision=prec,
+                    asset_kind=kind,
+                    provider_symbol=r.asset_code,
+                    provider_chain=chain_db,
                 )
-                stats.disabled = len(to_disable)
 
-        if verbose:
-            print(
-                f"[{self.code}] processed={stats.processed} created={stats.created} updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled}")
-            if change_counter:
-                top = ", ".join(f"{k}={v}" for k, v in change_counter.most_common(10))
-                print(f"[{self.code}] field changes breakdown: {top}")
+                stats.processed += 1
+
+                if not WRITE_ENABLED:
+                    # dry-run: не пишем, просто считаем (условно считаем «принято», чтобы видно было конвейер)
+                    return None
+
+                obj = None
+                obj_created = False
+                obj_changed_fields: list[str] = []
+
+                # локальная транзакция (батч)
+                with transaction.atomic():
+                    obj, obj_created = ExchangeAsset.objects.get_or_create(
+                        exchange=exchange,
+                        asset_code=r.asset_code,
+                        chain_code=chain_db,
+                        defaults={
+                            **new_vals,
+                            "raw_metadata": json_safe(r.raw_meta),
+                            "chain_name": r.chain_name or chain_db,
+                            # новые FIAT — ручные флаги D/W = False только при создании
+                            **({"D": False, "W": False} if kind == AssetKind.FIAT else {}),
+                        },
+                    )
+
+                    if obj_created:
+                        stats.created += 1
+                    else:
+                        for f, v in new_vals.items():
+                            if getattr(obj, f) != v:
+                                setattr(obj, f, v)
+                                obj_changed_fields.append(f)
+                        if obj_changed_fields:
+                            obj.raw_metadata = json_safe(r.raw_meta)
+                            obj.save(update_fields=obj_changed_fields + ["raw_metadata", "updated_at"])
+                            for f in obj_changed_fields:
+                                changes[f] += 1
+                            stats.updated += 1
+                        else:
+                            stats.skipped += 1
+
+                batch_count += 1
+                return obj
+
+            # основной цикл
+            for r in rows:
+                upsert_row(r)
+
+            # reconcile: выключаем только то, чего НЕТ в present_raw
+            if reconcile and WRITE_ENABLED:
+                to_disable = []
+                q = ExchangeAsset.objects.filter(exchange=exchange).only("id", "asset_code", "chain_code", "AD", "AW")
+                for obj in q:
+                    key = (obj.asset_code, obj.chain_code)
+                    if key not in present_raw and (obj.AD or obj.AW):
+                        to_disable.append(obj.id)
+
+                if to_disable:
+                    with transaction.atomic():
+                        ExchangeAsset.objects.filter(id__in=to_disable).update(
+                            AD=False, AW=False,
+                            status_note=f"Отключено: отсутствует в выдаче {self.provider_name_for_status()}",
+                            updated_at=timezone.now(),
+                        )
+                    stats.disabled = len(to_disable)
+
+            # успех: сбрасываем счётчик фейлов, пишем метрику и last_ts
+            cache.delete(fail_key)
+            cache.set(last_key, time.time(), timeout=None)
+
+        except Exception as e:
+            # учёт фейлов и «пробка», если подряд >= FAIL_THRESHOLD
+            fails = int(cache.get(fail_key) or 0) + 1
+            cache.set(fail_key, fails, timeout=CIRCUIT_TTL)
+            if fails >= FAIL_THRESHOLD:
+                cache.set(circuit_key, True, timeout=CIRCUIT_TTL)
+
+            # метрика ошибки
+            logger.error(
+                "sync_failed",
+                extra={
+                    "provider": self.code,
+                    "exchange_id": ex_id,
+                    "error": str(e),
+                    "fails_in_row": fails,
+                },
+            )
+            raise
+
+        finally:
+            cache.delete(lock_key)
+            dur_ms = int((time.perf_counter() - t0) * 1000)
+            # сводка запуска
+            logger.info(
+                "sync_done",
+                extra={
+                    "provider": self.code,
+                    "exchange_id": ex_id,
+                    "processed": stats.processed,
+                    "created": stats.created,
+                    "updated": stats.updated,
+                    "skipped": stats.skipped,
+                    "disabled": stats.disabled,
+                    "duration_ms": dur_ms,
+                    "skip_reason_wd_guard": skip_reasons.get("wd_guard", 0),
+                    "write_enabled": WRITE_ENABLED,
+                },
+            )
+
+            if verbose:
+                print(
+                    f"[{self.code}] processed={stats.processed} created={stats.created} "
+                    f"updated={stats.updated} skipped={stats.skipped} disabled={stats.disabled} "
+                    f"duration_ms={dur_ms}"
+                )
+                if changes:
+                    top = ", ".join(f"{k}={v}" for k, v in changes.most_common(10))
+                    print(f"[{self.code}] field changes breakdown: {top}")
 
         return stats

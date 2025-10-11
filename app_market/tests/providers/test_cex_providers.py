@@ -2,11 +2,11 @@ import pytest
 from decimal import Decimal
 
 from app_market.models.exchange_asset import ExchangeAsset, AssetKind
-from app_market.providers.bybit import BybitAdapter
-from app_market.providers.kucoin import KucoinAdapter
-from app_market.providers.htx import HtxAdapter
-from app_market.providers.whitebit import WhitebitAdapter
-from app_market.providers.mexc import MexcAdapter
+from app_market.providers.cex.bybit import BybitAdapter
+from app_market.providers.cex.kucoin import KucoinAdapter
+from app_market.providers.cex.htx import HtxAdapter
+from app_market.providers.cex.whitebit import WhitebitAdapter
+from app_market.providers.cex.mexc import MexcAdapter
 from app_market.providers.numeric import NO_CHAIN
 
 pytestmark = pytest.mark.django_db

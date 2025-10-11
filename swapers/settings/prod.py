@@ -108,7 +108,6 @@ CSP_REPORT_ONLY = False
 CSP_DEFAULT_SRC = ("'self'",)
 CSP_SCRIPT_SRC = (
     "'self'",
-    # разрешённые CDN для JS (оставь/измени под свой стек)
     "https://cdn.jsdelivr.net",
     "https://cdnjs.cloudflare.com",
 )
@@ -125,14 +124,19 @@ CSP_FRAME_ANCESTORS = ("'self'",)
 CSP_FORM_ACTION = ("'self'",)
 CSP_BASE_URI = ("'self'",)
 CSP_OBJECT_SRC = ("'none'",)
-
-# Нонсы в заголовок (у тебя уже было включено в dev и подтянется сюда; дублируем для наглядности)
 CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
+# CSP_REPORT_URI наследуется из dev (если нужен сбор отчётов)
 
-# Если используешь сбор отчётов — оставь URI:
-# (В dev уже задано: CSP_REPORT_URI = "/csp-report/")
-# Можно оставить и в enforce-режиме — браузеры будут присылать отчёты о нарушениях.
-# CSP_REPORT_URI = "/csp-report/"
+# ───────────────────────────────────────────────────────────────────────────────
+# Провайдеры: политика синхронизации (PROD значения)
+# ───────────────────────────────────────────────────────────────────────────────
+# Эти настройки читает app_market.providers.base.UnifiedProviderBase через getattr(settings, ...).
+PROVIDER_SYNC_WRITE_ENABLED = True              # в проде пишем в БД
+PROVIDER_SYNC_LOCK_TTL_SECONDS = 1800           # lock на 30 минут
+PROVIDER_SYNC_DEBOUNCE_SECONDS = 180            # минимум 3 минуты между полными синками
+PROVIDER_SYNC_DB_CHUNK_SIZE = 500               # крупнее батчи, меньше накладных
+PROVIDER_SYNC_FAIL_THRESHOLD = 3                # после 3 подряд фейлов — деградация
+PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 3600        # «пробка» на 1 час
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Логи (пример: CSP-отчёты в файл + консоль)

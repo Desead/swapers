@@ -129,7 +129,7 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.ANTARCTICWALLET: "https://antarcticwallet.com/",
     LiquidityProvider.TELEGRAM_WALLET: "https://t.me/wallet",
 
-    # NODE (даём официальные сайты проектов)
+    # NODE
     LiquidityProvider.BTC_NODE: "https://bitcoin.org/",
     LiquidityProvider.XMR_NODE: "https://www.getmonero.org/",
     LiquidityProvider.USDT_NODE: "https://tether.to/",
@@ -142,14 +142,12 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.ALFABANK: "https://alfabank.ru/",
     LiquidityProvider.VTB: "https://www.vtb.ru/",
 
-    # MANUAL — пусто (нет внешнего сайта)
     LiquidityProvider.MANUAL: "",
     LiquidityProvider.OFFICE: "",
 }
 
 
 class Exchange(models.Model):
-    # Фиксированный список провайдеров (одна запись на провайдера)
     provider = models.CharField(
         max_length=32,
         choices=LiquidityProvider.choices,
@@ -159,7 +157,6 @@ class Exchange(models.Model):
         verbose_name=_t("Название"),
     )
 
-    # Тип провайдера (авто-подставляется из provider при сохранении)
     exchange_kind = models.CharField(
         max_length=10,
         choices=ExchangeKind.choices,
@@ -170,7 +167,6 @@ class Exchange(models.Model):
         help_text=_t("Устанавливается автоматически"),
     )
 
-    # Авто-статус доступности (обновляется health-check’ом)
     is_available = models.BooleanField(
         default=True,
         editable=False,
@@ -179,11 +175,9 @@ class Exchange(models.Model):
         help_text=_t("Изменяется автоматически (health-check, статусы API)."),
     )
 
-    # Режимы работы
     can_receive = models.BooleanField(default=True, verbose_name=_t("Приём средств"))
     can_send = models.BooleanField(default=True, verbose_name=_t("Вывод средств"))
 
-    # Базовый стейблкоин
     stablecoin = models.CharField(
         max_length=20,
         default="USDT",
@@ -191,7 +185,7 @@ class Exchange(models.Model):
         help_text=_t("Стейблкоин для расчётов, например: USDT."),
     )
 
-    # --- Торговые комиссии (%, могут быть отрицательными), теперь симметричные: 12,5 ---
+    # --- Торговые комиссии (%, могут быть отрицательными) ---
     spot_taker_fee = models.DecimalField(
         max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0.1"),
         verbose_name=_t("Спот: тейкер, %"),
@@ -218,7 +212,6 @@ class Exchange(models.Model):
     )
 
     # --- Комиссии на ввод/вывод ---
-    # Проценты и фикс допускают 0 (семантика: 0 = не используется). Знак не ограничиваем.
     fee_deposit_percent = models.DecimalField(
         max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Ввод: %"),
@@ -228,9 +221,9 @@ class Exchange(models.Model):
         max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         verbose_name=_t("Ввод: фикс"),
     )
-    # Ограничители комиссии (>= 0), применяются после расчёта % + фикс; 0 = без минимума/максимума
+    # FIX: decimal_places для min-комиссии должен быть как у сумм (AMOUNT_DEC_PLACES)
     fee_deposit_min = models.DecimalField(
-        max_digits=AMOUNT_MAX_DIGITS, decimal_places=PERCENT_DEC_PLACES, default=Decimal("0"),
+        max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DEC_PLACES, default=Decimal("0"),
         validators=[MinValueValidator(Decimal("0"))],
         verbose_name=_t("Ввод: мин. комиссия"),
     )
@@ -260,7 +253,6 @@ class Exchange(models.Model):
         verbose_name=_t("Вывод: макс. комиссия"),
     )
 
-    # Отображение и вебхук
     show_prices_on_home = models.BooleanField(
         default=False, db_index=True, verbose_name=_t("Цены")
     )
@@ -278,10 +270,8 @@ class Exchange(models.Model):
 
     @property
     def partner_url(self) -> str:
-        """Партнёрская (или просто официальная) ссылка для провайдера — из кода, только для чтения."""
         return PROVIDER_PARTNER_LINKS.get(self.provider, "")
 
-    # Валидации/нормализации
     def _auto_kind_from_provider(self) -> str:
         # PSP
         if self.provider in {
@@ -325,17 +315,14 @@ class Exchange(models.Model):
         }:
             return ExchangeKind.BANK
 
-        # MANUAL
         if self.provider == LiquidityProvider.MANUAL:
             return ExchangeKind.MANUAL
         if self.provider == LiquidityProvider.OFFICE:
             return ExchangeKind.OFFICE
 
-        # Иначе — оставляем как есть (обычно CEX)
         return self.exchange_kind
 
     def clean(self):
-        # min <= max (если оба ненулевые). 0 = «без ограничителя».
         if self.fee_deposit_min and self.fee_deposit_max:
             if self.fee_deposit_max < self.fee_deposit_min:
                 raise ValidationError({"fee_deposit_max": _t("Максимум не может быть меньше минимума.")})
@@ -344,15 +331,12 @@ class Exchange(models.Model):
                 raise ValidationError({"fee_withdraw_max": _t("Максимум не может быть меньше минимума.")})
 
     def save(self, *args, **kwargs):
-        # Авто-тип по провайдеру
         mapped_kind = self._auto_kind_from_provider()
         if mapped_kind != self.exchange_kind:
             self.exchange_kind = mapped_kind
 
-        # Нормализация стейблкоина
         if self.stablecoin:
             self.stablecoin = self.stablecoin.strip().upper()
 
-        # Полная валидация
         self.full_clean()
         super().save(*args, **kwargs)

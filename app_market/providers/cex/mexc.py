@@ -11,8 +11,8 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
 from app_market.models.exchange import Exchange
-from .base import UnifiedProviderBase, ProviderRow
-from .numeric import (
+from app_market.providers.base import UnifiedProviderBase, ProviderRow
+from app_market.providers.numeric import (
     UA, D, U, B, disp, json_safe,
     stable_set, memo_required_set,
     get_any_enabled_keys,

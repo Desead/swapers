@@ -28,7 +28,6 @@ class ExchangeAsset(models.Model):
     Примеры: USDT@TRC20 (KuCoin), BTC@BTC (WhiteBIT), RUB@SBERBANK (Сбер), USD@PAYPAL.
     """
 
-    # Привязка к поставщику ликвидности (ПЛ)
     exchange = models.ForeignKey(
         "app_market.Exchange",
         on_delete=models.CASCADE,
@@ -37,7 +36,6 @@ class ExchangeAsset(models.Model):
         verbose_name=_t("Поставщик"),
     )
 
-    # Идентификация (без i18n)
     asset_code = models.CharField(
         max_length=32,
         db_index=True,
@@ -51,13 +49,13 @@ class ExchangeAsset(models.Model):
         verbose_name=_t("Название"),
         editable=False,
     )
-    chain_code = models.CharField(  # стандартное короткое имя сети/канала
+    chain_code = models.CharField(
         max_length=64,
         db_index=True,
         verbose_name=_t("Сеть"),
         editable=False,
     )
-    chain_name = models.CharField(  # как показывать сеть пользователю (опционально)
+    chain_name = models.CharField(
         max_length=128,
         blank=True,
         default="",
@@ -235,7 +233,17 @@ class ExchangeAsset(models.Model):
         if self.chain_code:
             self.chain_code = self.chain_code.strip().upper()
 
-        # --- гарантии по подтверждениям ---
+        # Кламп точностей
+        max_dec = int(getattr(settings, "DECIMAL_AMOUNT_DEC_PLACES", 10))
+        if self.amount_precision < 0:
+            self.amount_precision = 0
+        if self.amount_precision > max_dec:
+            self.amount_precision = max_dec
+        if self.amount_precision_display < 0:
+            self.amount_precision_display = 0
+        if self.amount_precision_display > max_dec:
+            self.amount_precision_display = max_dec
+
         # Вывод не меньше ввода
         if self.confirmations_withdraw < self.confirmations_deposit:
             self.confirmations_withdraw = self.confirmations_deposit
@@ -261,7 +269,3 @@ class ExchangeAsset(models.Model):
 
         if self.nominal <= 0:
             raise models.ValidationError({"nominal": _t("Номинал должен быть больше нуля.")})
-
-    # ВАЖНО: авто-политики (резервы/техработы) должны менять AD/AW,
-    # а не D/W. Это реализуем во внешнем сервисе после операций,
-    # чтобы иметь понятный аудит (не в save()).

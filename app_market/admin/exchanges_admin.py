@@ -6,7 +6,7 @@ from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
 from app_market.providers import get_adapter, has_adapter
-from swapers.settings import DEBUG
+from swapers.settings.dev import DEBUG
 
 
 @admin.register(Exchange)

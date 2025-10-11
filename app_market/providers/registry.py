@@ -3,11 +3,11 @@ from typing import Dict, Type, Optional
 
 from app_market.models.exchange import LiquidityProvider
 from .base import ProviderAdapter
-from .whitebit import WhitebitAdapter
-from .kucoin import KucoinAdapter
-from .bybit import BybitAdapter
-from .htx import HtxAdapter
-from .mexc import MexcAdapter
+from app_market.providers.cex.whitebit import WhitebitAdapter
+from app_market.providers.cex.kucoin import KucoinAdapter
+from app_market.providers.cex.bybit import BybitAdapter
+from app_market.providers.cex.htx import HtxAdapter
+from app_market.providers.cex.mexc import MexcAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
