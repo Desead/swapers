@@ -7,9 +7,11 @@ Django settings — PROD.
 - Безопасность (SSL/HSTS/secure-cookies)
 - SMTP
 - Кэш: DatabaseCache (кросс-процесс, если Redis ещё нет)
+- CSP: режим enforce, запрет inline-скриптов (nonce), мягкий режим для стилей
 """
 
 from .dev import *  # импортируем dev-базу и переопределяем ниже
+from pathlib import Path
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Общие
@@ -39,7 +41,8 @@ DATABASES = {
         "PASSWORD": "CHANGE_ME",
         "HOST": "127.0.0.1",
         "PORT": "5432",
-        "CONN_MAX_AGE": 60,        # держим соединение подольше
+        "CONN_MAX_AGE": 60,         # держим соединение подольше
+        "CONN_HEALTH_CHECKS": True, # авто-хелсчеки для долгоживущих коннектов
         "ATOMIC_REQUESTS": False,
     }
 }
@@ -86,7 +89,7 @@ SECURE_HSTS_PRELOAD = False
 
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
-SESSION_COOKIE_SAMESITE = "Lax"  # можно оставить Lax; при работе в iframe потребуется "None"
+SESSION_COOKIE_SAMESITE = "Lax"  # при работе в iframe на другом домене потребуется "None"
 CSRF_COOKIE_SAMESITE = "Lax"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -94,9 +97,46 @@ SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 LANGUAGE_COOKIE_SECURE = True
 
 # ───────────────────────────────────────────────────────────────────────────────
+# CSP (боевой режим)
+# ───────────────────────────────────────────────────────────────────────────────
+# У dev-настроек CSP_REPORT_ONLY=True — переопределяем на enforce.
+CSP_REPORT_ONLY = False
+
+# Список источников ужесточаем: уносим 'unsafe-inline' из script-src — используем nonce.
+# Для стилей оставляем 'unsafe-inline' как переходный шаг, чтобы ничего не сломать.
+# Когда перепишешь инлайн-стили на классы/файлы/nonce — просто убери 'unsafe-inline' ниже.
+CSP_DEFAULT_SRC = ("'self'",)
+CSP_SCRIPT_SRC = (
+    "'self'",
+    # разрешённые CDN для JS (оставь/измени под свой стек)
+    "https://cdn.jsdelivr.net",
+    "https://cdnjs.cloudflare.com",
+)
+CSP_STYLE_SRC = (
+    "'self'",
+    "'unsafe-inline'",  # ← временно; убери, когда переведёшь инлайн-стили на nonce/файлы
+    "https://cdn.jsdelivr.net",
+    "https://fonts.googleapis.com",
+)
+CSP_IMG_SRC = ("'self'", "data:")
+CSP_FONT_SRC = ("'self'", "data:", "https://fonts.gstatic.com")
+CSP_CONNECT_SRC = ("'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com")
+CSP_FRAME_ANCESTORS = ("'self'",)
+CSP_FORM_ACTION = ("'self'",)
+CSP_BASE_URI = ("'self'",)
+CSP_OBJECT_SRC = ("'none'",)
+
+# Нонсы в заголовок (у тебя уже было включено в dev и подтянется сюда; дублируем для наглядности)
+CSP_INCLUDE_NONCE_IN = ("script-src", "style-src")
+
+# Если используешь сбор отчётов — оставь URI:
+# (В dev уже задано: CSP_REPORT_URI = "/csp-report/")
+# Можно оставить и в enforce-режиме — браузеры будут присылать отчёты о нарушениях.
+# CSP_REPORT_URI = "/csp-report/"
+
+# ───────────────────────────────────────────────────────────────────────────────
 # Логи (пример: CSP-отчёты в файл + консоль)
 # ───────────────────────────────────────────────────────────────────────────────
-from pathlib import Path
 LOG_DIR = Path(BASE_DIR, "logs")
 LOG_DIR.mkdir(exist_ok=True)
 

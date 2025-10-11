@@ -17,10 +17,11 @@ from django.utils.translation import gettext_lazy as _t
 # ВНИМАНИЕ: файл лежит в swapers/settings/, поэтому BASE_DIR на уровень выше папки swapers
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-DEBUG = True                             # прод переопределит на False
-SECRET_KEY = "CHANGE_ME_IN_PROD"         # прод переопределит реальным ключом
-ALLOWED_HOSTS: list[str] = ["*"]         # dev: удобнее *; в проде — список доменов
-ALLOW_INDEXING = False                   # dev: запрет индексации (наш middleware уважает)
+DEBUG = True  # прод переопределит на False
+SECRET_KEY = "CHANGE_ME_IN_PROD"  # прод переопределит реальным ключом
+ALLOWED_HOSTS: list[str] = ["*"]  # dev: удобнее *; в проде — список доменов
+CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:8000"]
+ALLOW_INDEXING = False  # dev: запрет индексации (наш middleware уважает)
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -65,9 +66,9 @@ INSTALLED_APPS = [
 
     # Наши приложения
     "app_library.apps.AppLibraryConfig",
-    "app_main.apps.AxesRusConfig",   # rate-limit/lockout (обёртка над axes)
+    "app_main.apps.AxesRusConfig",  # rate-limit/lockout (обёртка над axes)
     "app_market.apps.AppMarketConfig",
-    "app_main.apps.AppMainConfig",   # чтобы сработал ready()
+    "app_main.apps.AppMainConfig",  # чтобы сработал ready()
 
     # Сторонние
     "django.contrib.sites",
@@ -162,8 +163,8 @@ DATABASES = {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
         # Ниже значения совпадают с дефолтами Django; оставлены ради явности:
-        "CONN_MAX_AGE": 0,        # 0 = закрывать соединение после каждого запроса (для SQLite ок)
-        "ATOMIC_REQUESTS": False, # транзакции контролируем вручную точечно
+        "CONN_MAX_AGE": 0,  # 0 = закрывать соединение после каждого запроса (для SQLite ок)
+        "ATOMIC_REQUESTS": False,  # транзакции контролируем вручную точечно
     }
 }
 
@@ -212,8 +213,8 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Аутентификация / Allauth
 # ───────────────────────────────────────────────────────────────────────────────
 AUTHENTICATION_BACKENDS = [
-    "axes.backends.AxesStandaloneBackend",                # сначала Axes
-    "allauth.account.auth_backends.AuthenticationBackend" # затем allauth
+    "axes.backends.AxesStandaloneBackend",  # сначала Axes
+    "allauth.account.auth_backends.AuthenticationBackend"  # затем allauth
 ]
 
 # Почта по умолчанию (консоль). Прод переопределит SMTP.
@@ -321,6 +322,7 @@ SECRETS_DIR = BASE_DIR / ".secrets"
 SECRETS_DIR.mkdir(exist_ok=True)
 FIELD_KEY_FILE = SECRETS_DIR / "field_encryption.key"
 
+
 def _read_or_create_field_key(path: Path) -> str:
     """Храним один Fernet-ключ в файле. Если файла нет — создаём."""
     if path.exists():
@@ -332,6 +334,7 @@ def _read_or_create_field_key(path: Path) -> str:
     key = Fernet.generate_key().decode("utf-8")
     path.write_text(key, encoding="utf-8")
     return key
+
 
 FIELD_ENCRYPTION_KEY = _read_or_create_field_key(FIELD_KEY_FILE)
 
