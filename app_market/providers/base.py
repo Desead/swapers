@@ -26,7 +26,7 @@ logger = logging.getLogger("app_market.sync")
 # ───────────────────────────────────────────────────────────────────────────────
 WRITE_ENABLED: bool = bool(getattr(settings, "PROVIDER_SYNC_WRITE_ENABLED", True))
 LOCK_TTL: int = int(getattr(settings, "PROVIDER_SYNC_LOCK_TTL_SECONDS", 30 * 60))  # 30m
-DEBOUNCE_SECONDS: int = int(getattr(settings, "PROVIDER_SYNC_DEBOUNCE_SECONDS", 3 * 60))  # 3m
+DEBOUNCE_SECONDS: int = int(getattr(settings, "PROVIDER_SYNC_DEBOUNCE_SECONDS", 5 * 60))  # 5m
 DB_CHUNK_SIZE: int = int(getattr(settings, "PROVIDER_SYNC_DB_CHUNK_SIZE", 500))
 FAIL_THRESHOLD: int = int(getattr(settings, "PROVIDER_SYNC_FAIL_THRESHOLD", 3))
 CIRCUIT_TTL: int = int(getattr(settings, "PROVIDER_SYNC_CIRCUIT_TTL_SECONDS", 60 * 60))  # 1h

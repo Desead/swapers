@@ -322,6 +322,7 @@ SECRETS_DIR = BASE_DIR / ".secrets"
 SECRETS_DIR.mkdir(exist_ok=True)
 FIELD_KEY_FILE = SECRETS_DIR / "field_encryption.key"
 
+
 def _read_or_create_field_key(path: Path) -> str:
     """Храним один Fernet-ключ в файле. Если файла нет — создаём."""
     if path.exists():
@@ -333,6 +334,7 @@ def _read_or_create_field_key(path: Path) -> str:
     key = Fernet.generate_key().decode("utf-8")
     path.write_text(key, encoding="utf-8")
     return key
+
 
 FIELD_ENCRYPTION_KEY = _read_or_create_field_key(FIELD_KEY_FILE)
 
@@ -357,13 +359,16 @@ CRYPTO_WD_FEE_FIX_MAX = 100_000
 # ───────────────────────────────────────────────────────────────────────────────
 # Эти настройки читает app_market.providers.base.UnifiedProviderBase через getattr(settings, ...).
 # В DEV делаем максимально удобные значения, чтобы не мешать отладке/тестам.
-PROVIDER_SYNC_WRITE_ENABLED = True              # писать в БД (выключай при dry-run)
-PROVIDER_SYNC_LOCK_TTL_SECONDS = 120            # lock живёт 2 минуты
-PROVIDER_SYNC_DEBOUNCE_SECONDS = 0              # дебаунс отключён в dev
-PROVIDER_SYNC_DB_CHUNK_SIZE = 200               # поменьше батч для читаемых логов
-PROVIDER_SYNC_FAIL_THRESHOLD = 3                # после 3 подряд фейлов считаем деградацией
-PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 300         # «пробка» на 5 минут
+PROVIDER_SYNC_WRITE_ENABLED = True  # писать в БД (выключай при dry-run)
+PROVIDER_SYNC_LOCK_TTL_SECONDS = 120  # lock живёт 2 минуты
+PROVIDER_SYNC_DEBOUNCE_SECONDS = 0  # дебаунс отключён в dev
+PROVIDER_SYNC_DB_CHUNK_SIZE = 200  # поменьше батч для читаемых логов
+PROVIDER_SYNC_FAIL_THRESHOLD = 3  # после 3 подряд фейлов считаем деградацией
+PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 300  # «пробка» на 5 минут
 
+# RECV_WINDOW для подписанных API (dev)
+BYBIT_RECV_WINDOW = 5000  # мс
+MEXC_RECV_WINDOW = 20000  # мс
 # ───────────────────────────────────────────────────────────────────────────────
 # Заготовки под Celery / Sentry — добавим, когда понадобятся
 # ───────────────────────────────────────────────────────────────────────────────
