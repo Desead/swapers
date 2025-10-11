@@ -28,7 +28,8 @@ pytest -q
 pytest -q app_market/tests
 python .\manage.py runserver
 
-
+# В проде 1 раз до старта:
+python manage.py createcachetable django_cache 
 # Создать/обновить каталоги переводов
 python manage.py makemessages -l ru -l de -l fr -l es -l it -l uk `
   --ignore=.venv/* --ignore=node_modules/* --no-location
