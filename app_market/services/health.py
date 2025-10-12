@@ -25,7 +25,7 @@ class HealthCode:
     RATE_LIMIT = "RATE_LIMIT"
     AUTH_ERROR = "AUTH_ERROR"
     UNKNOWN = "UNKNOWN"
-    SKIPPED_MANUAL = "SKIPPED_MANUAL/OFFICE"
+    SKIPPED_MANUAL = "SKIPPED_CASH"
     SKIPPED_PSP = "SKIPPED_PSP"
     SKIPPED_NO_PROBE = "SKIPPED_NO_PROBE"
 
@@ -48,13 +48,13 @@ def check_exchange(exchange: Exchange, persist: bool = True) -> HealthResult:
     Твои правила:
       1) is_available — результат авто-проверки, НЕ зависит от can_receive/can_send;
       2) фактические режимы считаем как (is_available AND can_*), см. effective_modes();
-      3) MANUAL/OFFICE: is_available всегда True;
+      3) CASH: is_available всегда True;
       4) PSP: пока всегда True (хук на будущее оставлен);
       5) CEX/DEX: сначала status (если есть), потом time/ping.
     """
-    # MANUAL — всегда доступен
-    if exchange.provider == LiquidityProvider.MANUAL or exchange.provider == LiquidityProvider.OFFICE:
-        res = HealthResult(exchange.provider, exchange.id, True, HealthCode.SKIPPED_MANUAL, "Manual provider; forced True.", 0)
+    # CASH — всегда доступен
+    if exchange.provider == LiquidityProvider.CASH:
+        res = HealthResult(exchange.provider, exchange.id, True, HealthCode.SKIPPED_MANUAL, "CASH provider; forced True.", 0)
         if persist:
             _set_availability(exchange, True)
         log_health_result(exchange, res)

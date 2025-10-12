@@ -22,7 +22,7 @@ def test_partner_url_for_manual_is_empty():
     """
     Для ручного режима ссылка отсутствует.
     """
-    ex = Exchange.objects.create(provider=LiquidityProvider.MANUAL)
+    ex = Exchange.objects.create(provider=LiquidityProvider.CASH)
     assert ex.partner_url == ""
 
 
@@ -44,9 +44,9 @@ def test_admin_partner_link_renders_anchor_for_known_provider():
 
 def test_admin_partner_link_shows_dash_for_manual():
     """
-    В админке для Manual должен выводиться эм-даш '—' вместо ссылки.
+    В админке для CASH должен выводиться эм-даш '—' вместо ссылки.
     """
-    ex = Exchange.objects.create(provider=LiquidityProvider.MANUAL)
+    ex = Exchange.objects.create(provider=LiquidityProvider.CASH)
     ex_admin = ExchangeAdmin(Exchange, admin.site)
 
     html = ex_admin.partner_link(ex)

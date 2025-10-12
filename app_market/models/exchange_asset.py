@@ -15,6 +15,9 @@ PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 
 
 class AssetKind(models.TextChoices):
+    """
+    Все существующие типы активов
+    """
     CRYPTO = "CRYPTO", _t("Крипта")
     FIAT = "FIAT", _t("Фиат")
     PSP_MONEY = "PSP_MONEY", _t("Платёжка")

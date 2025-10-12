@@ -35,7 +35,7 @@ class Command(BaseCommand):
         Возвращает генератор Exchange для синхронизации.
         Правила:
           - ориентируемся только на is_available=True;
-          - ExchangeKind.MANUAL/OFFICE разрешены, но реальный запуск будет только если есть адаптер;
+          - ExchangeKind.CASH разрешены, но реальный запуск будет только если есть адаптер;
           - Если provider=ALL — обрабатываем все is_available=True.
           - Если указан exchange_id — берём ровно один (даже если is_available=False), это «ручной» запуск.
         """
@@ -68,10 +68,10 @@ class Command(BaseCommand):
             processed_any = True
             code = ex.provider
 
-            # MANUAL/OFFICE — пропуск
-            if ex.exchange_kind in {ExchangeKind.MANUAL, ExchangeKind.OFFICE}:
+            # CASH — пропуск
+            if ex.exchange_kind in {ExchangeKind.CASH}:
                 if verbose:
-                    self.stdout.write(self.style.WARNING(f"→ {code} (id={ex.id}) пропущен: MANUAL/OFFICE"))
+                    self.stdout.write(self.style.WARNING(f"→ {code} (id={ex.id}) пропущен: CASH"))
                 continue
 
             if not has_adapter(code):

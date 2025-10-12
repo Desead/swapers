@@ -28,9 +28,6 @@ def test_exchange_unique_provider():
 
 
 def test_exchange_can_be_manual_kind():
-    ex = Exchange.objects.create(provider=LiquidityProvider.MANUAL, exchange_kind=ExchangeKind.MANUAL)
-    assert ex.exchange_kind == ExchangeKind.MANUAL
+    ex = Exchange.objects.create(provider=LiquidityProvider.CASH, exchange_kind=ExchangeKind.CASH)
+    assert ex.exchange_kind == ExchangeKind.CASH
 
-def test_exchange_can_be_office_kind():
-    ex = Exchange.objects.create(provider=LiquidityProvider.OFFICE, exchange_kind=ExchangeKind.OFFICE)
-    assert ex.exchange_kind == ExchangeKind.OFFICE

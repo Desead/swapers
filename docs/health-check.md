@@ -10,7 +10,7 @@
 
 * Поле `Exchange.is_available` выставляется **автоматически** (health-check).
 * Режимы `can_receive` / `can_send` независимы, но **работают только если** `is_available=True`.
-* Для `MANUAL` и пока для `PSP`/`WALLET`/`NODE`/`BANK` — `is_available=True` (проверки будут позже).
+* Для `CASH` и пока для `PSP`/`WALLET`/`NODE`/`BANK` — `is_available=True` (проверки будут позже).
 * Для CEX/DEX: сначала **status/maintenance** (если есть), затем **time/ping**.
 * Команда: `python manage.py market_healthcheck [опции]`.
 * Партнёрская ссылка для каждого провайдера берётся **из кода** и отображается в админке как кликабельный линк.
@@ -25,7 +25,7 @@
 
 * `provider` — провайдер из фиксированного enum `LiquidityProvider` (метки **без i18n**).
 * `exchange_kind` — тип:
-  `CEX`, `DEX`, `PSP`, `WALLET`, `NODE`, `EXCHANGER`, `BANK`, `MANUAL`.
+  `CEX`, `DEX`, `PSP`, `WALLET`, `NODE`, `EXCHANGER`, `BANK`, `CASH`.
 * `is_available` — автоматически выставляемый флаг доступности.
 * `can_receive`, `can_send` — ручные режимы работы.
 * Комиссии (торговые и на ввод/вывод), `stablecoin`, `show_prices_on_home`, `webhook_endpoint`.
@@ -38,7 +38,7 @@
 
    * `can_receive_effective = is_available AND can_receive`
    * `can_send_effective = is_available AND can_send`
-3. `MANUAL` — `is_available=True` всегда.
+3. `CASH` — `is_available=True` всегда.
 4. Пока `PSP`, `WALLET`, `NODE`, `BANK` — `is_available=True` (заглушка на будущее).
 5. CEX/DEX — см. «Механика проверки» ниже.
 
@@ -78,7 +78,7 @@
 
 ### Остальные типы
 
-* `MANUAL` — `True` (по политике).
+* `CASH` — `True` (по политике).
 * `PSP`, `WALLET`, `NODE`, `BANK` — пока `True`; место под будущие проверки зарезервировано в `check_exchange()`.
 
 ---
@@ -150,7 +150,7 @@ python manage.py market_healthcheck [--provider P] [--kind K] [--only-home] [--d
 
 * `--provider P` — фильтр по провайдерам (можно несколько) из `LiquidityProvider`
   (например: `KUCOIN`, `BYBIT`, `RAPIRA`, `BINANCE`, `OKX` и т.д.)
-* `--kind K` — фильтр по типам: `CEX`, `DEX`, `PSP`, `WALLET`, `NODE`, `EXCHANGER`, `BANK`, `MANUAL`.
+* `--kind K` — фильтр по типам: `CEX`, `DEX`, `PSP`, `WALLET`, `NODE`, `EXCHANGER`, `BANK`, `CASH`.
 * `--only-home` — проверять только с `show_prices_on_home=True`.
 * `--dry-run` — не сохранять `is_available`, только печатать результат.
 * `--verbose` — подробный вывод (код, задержка, эффективные режимы, путь проверки).
@@ -175,7 +175,7 @@ KuCoin       | kind=CEX     | is_avail=True (OK)            | recv=True send=Tru
 WhiteBIT     | kind=CEX     | is_avail=False (MAINTENANCE)  | recv=False send=False| 35ms | via=status/time
 Rapira       | kind=CEX     | is_avail=True (OK)            | recv=True send=True  | 27ms | via=time
 PayPal       | kind=PSP     | is_avail=True (SKIPPED_PSP)   | recv=True send=True  | 0ms  | via=SKIPPED_PSP
-Manual       | kind=MANUAL  | is_avail=True (SKIPPED_MANUAL)| recv=False send=True | 0ms  | via=SKIPPED_MANUAL
+CASH       | kind=CASH  | is_avail=True (SKIPPED_MANUAL)| recv=False send=True | 0ms  | via=SKIPPED_MANUAL
 ```
 
 ---
@@ -186,7 +186,7 @@ Manual       | kind=MANUAL  | is_avail=True (SKIPPED_MANUAL)| recv=False send=Tr
 * Свойство `Exchange.partner_url` возвращает URL (по умолчанию — официальный сайт).
 * В админке поле `partner_link` (read-only) рендерится как кликабельный `<a>`
   с текстом «Перейти на сайт {Название}».
-* Для `MANUAL` ссылка пустая («—» в админке).
+* Для `CASH` ссылка пустая («—» в админке).
 * Позже можно заменить на UTM/реферальные линк-билдеры.
 
 ---

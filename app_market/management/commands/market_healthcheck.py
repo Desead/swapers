@@ -12,7 +12,7 @@ from app_market.services.health import check_exchange, effective_modes, HealthCo
 class Command(BaseCommand):
     help = (
         "Проверяет доступность поставщиков ликвидности и проставляет Exchange.is_available. "
-        "MANUAL/PSP сейчас считаются доступными (по политике v1)."
+        "CASH/PSP сейчас считаются доступными (по политике v1)."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -26,7 +26,7 @@ class Command(BaseCommand):
             "--kind",
             action="append",
             dest="kinds",
-            help="Фильтр по типам (CEX/PSP/MANUAL/DEX). Можно указывать несколько.",
+            help="Фильтр по типам (CEX/PSP/CASH/DEX). Можно указывать несколько.",
         )
         parser.add_argument(
             "--only-home",

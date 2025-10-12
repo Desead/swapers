@@ -14,6 +14,9 @@ PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 
 
 class ExchangeKind(models.TextChoices):
+    """
+    Типы ПЛ, которые вообще бывают
+    """
     CEX = "CEX", _t("Классическая биржа (CEX)")
     DEX = "DEX", _t("Децентрализованная биржа (DEX)")
     PSP = "PSP", _t("Платёжная система (PSP)")
@@ -21,11 +24,13 @@ class ExchangeKind(models.TextChoices):
     NODE = "NODE", _t("Нода")
     EXCHANGER = "EXCHANGER", _t("Обменники")
     BANK = "BANK", _t("Банк")
-    MANUAL = "MANUAL", _t("Ручной обмен")
-    OFFICE = "OFFICE", _t("Обмен в офисе")
+    CASH = "CASH", _t("Наличные (касса)")
 
 
 class LiquidityProvider(models.TextChoices):
+    """
+    Конкретные ПЛ которые есть у нас в системе
+    """
     # Биржи (CEX/DEX) — как были
     KUCOIN = "KUCOIN", "KuCoin"
     WHITEBIT = "WHITEBIT", "WhiteBIT"
@@ -81,8 +86,7 @@ class LiquidityProvider(models.TextChoices):
     VTB = "VTB", "ВТБ банк"
 
     # Ручной режим
-    MANUAL = "MANUAL", "Manual"
-    OFFICE = "OFFICE", "Office"
+    CASH = "CASH", _t("Наличные")
 
 
 PROVIDER_PARTNER_LINKS: dict[str, str] = {
@@ -142,16 +146,18 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.ALFABANK: "https://alfabank.ru/",
     LiquidityProvider.VTB: "https://www.vtb.ru/",
 
-    LiquidityProvider.MANUAL: "",
-    LiquidityProvider.OFFICE: "",
+    LiquidityProvider.CASH: "",
 }
 
 
 class Exchange(models.Model):
+    """
+    Биржи, платёжки и т.д. То есть провайдеры ликвидности. Сокращённо ПЛ.
+    """
     provider = models.CharField(
         max_length=32,
         choices=LiquidityProvider.choices,
-        default=LiquidityProvider.MANUAL,
+        default=LiquidityProvider.CASH,
         unique=True,
         db_index=True,
         verbose_name=_t("Название"),
@@ -315,10 +321,9 @@ class Exchange(models.Model):
         }:
             return ExchangeKind.BANK
 
-        if self.provider == LiquidityProvider.MANUAL:
-            return ExchangeKind.MANUAL
-        if self.provider == LiquidityProvider.OFFICE:
-            return ExchangeKind.OFFICE
+        if self.provider == LiquidityProvider.CASH:
+            return ExchangeKind.CASH
+
 
         return self.exchange_kind
 
