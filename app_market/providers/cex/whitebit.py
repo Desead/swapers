@@ -7,10 +7,12 @@ import json
 import time
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-import requests
+from decimal import Decimal
+from django.db import models, transaction
 
-from app_market.models.exchange import Exchange
-from app_market.providers.base import UnifiedProviderBase, ProviderRow
+from app_market.models.exchange import Exchange, ExchangeKind
+from app_market.models.exchange_asset import ExchangeAsset, AssetKind  # ← ДОБАВИЛ ExchangeAsset
+from app_market.providers.base import UnifiedProviderBase, ProviderRow, AssetSyncStats
 from app_market.providers.http import SESSION
 from app_market.providers.numeric import (
     D, U, disp, json_safe,
@@ -135,25 +137,86 @@ def _merge_fee_for(ticker: str, network: Optional[str], pub: Dict[Tuple[str, Opt
             pack.deposit.percent, pack.deposit.fixed,
             pack.withdraw.percent, pack.withdraw.fixed,
         )
-    from decimal import Decimal
     return (Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"))
 
 
 class WhitebitAdapter(UnifiedProviderBase):
+    """
+    Универсальный адаптер WhiteBIT:
+
+    Режим определяется автоматом:
+      - Exchange.exchange_kind == CASH → работаем как «наличные»: берём только фиат, создаём один раз.
+      - иначе (CEX) → работаем как «биржа»: берём только крипту (дефолт, чтобы не менять текущее поведение).
+
+    Можно переопределить флаги явно: sync_assets(..., fiat=True/False, crypto=True/False).
+    """
     code = "WHITEBIT"
     _exchange: Exchange | None = None
+    _want_fiat: bool = False
+    _want_crypto: bool = True
+    _cash_mode: bool = False  # для пост-обработки (asset_kind, min_usdt, и т.п.)
 
     def provider_name_for_status(self) -> str:
         return "WhiteBIT"
 
+    # ---- режим/флаги ----
+
+    def _setup_mode(self, exchange: Exchange, fiat: Optional[bool], crypto: Optional[bool]) -> None:
+        if fiat is None and crypto is None:
+            # Автовыбор: CASH → только фиат, CEX → только крипта
+            if exchange.exchange_kind == ExchangeKind.CASH:
+                self._want_fiat, self._want_crypto = True, False
+                self._cash_mode = True
+            else:
+                self._want_fiat, self._want_crypto = False, True
+                self._cash_mode = False
+        else:
+            self._want_fiat = bool(fiat) if fiat is not None else False
+            self._want_crypto = bool(crypto) if crypto is not None else False
+            self._cash_mode = self._want_fiat and not self._want_crypto
+
+    # ---- lifecycle ----
+
     def sync_assets(
-        self, exchange: Exchange, *, timeout: int = 20, limit: int = 0, reconcile: bool = True, verbose: bool = False
-    ):
+        self,
+        exchange: Exchange,
+        *,
+        timeout: int = 20,
+        limit: int = 0,
+        reconcile: bool = True,
+        verbose: bool = False,
+        fiat: Optional[bool] = None,
+        crypto: Optional[bool] = None,
+    ) -> AssetSyncStats:
         self._exchange = exchange
+        self._setup_mode(exchange, fiat, crypto)
+
+        # «один раз» для наличных
+        if self._cash_mode and ExchangeAsset.objects.filter(exchange=exchange).exists():
+            if verbose:
+                print("[WHITEBIT] CASH уже инициализировано → пропуск")
+            return AssetSyncStats()
+
         try:
-            return super().sync_assets(exchange=exchange, timeout=timeout, limit=limit, reconcile=reconcile, verbose=verbose)
+            stats = super().sync_assets(exchange=exchange, timeout=timeout, limit=limit, reconcile=(reconcile and not self._cash_mode), verbose=verbose)
         finally:
             self._exchange = None
+
+        # Пост-обработка для наличных: пометить как CASH и задать min в USDT = 1000, nominal=1
+        if self._cash_mode and (stats.created or stats.updated or stats.skipped >= 0):
+            with transaction.atomic():
+                (ExchangeAsset.objects
+                    .filter(exchange=exchange)
+                    .update(
+                        asset_kind=AssetKind.CASH,
+                        nominal=1,
+                        deposit_min_usdt=Decimal("1000"),
+                        amount_precision_display=models.F("amount_precision"),
+                    )
+                 )
+        return stats
+
+    # ---- загрузка исходных данных ----
 
     def fetch_payload(self, *, timeout: int) -> dict:
         a = SESSION.get(ASSETS_URL, timeout=timeout); a.raise_for_status()
@@ -167,6 +230,8 @@ class WhitebitAdapter(UnifiedProviderBase):
                 priv_fee_map = {}
 
         return {"assets": a.json(), "fee_pub": f.json(), "fee_priv": priv_fee_map}
+
+    # ---- нормализация в ProviderRow ----
 
     def iter_rows(self, payload: dict) -> Iterable[ProviderRow]:
         stables = stable_set()
@@ -203,37 +268,65 @@ class WhitebitAdapter(UnifiedProviderBase):
             can_wd_global = bool(meta.get("can_withdraw"))
             requires_memo_flag = bool(meta.get("is_memo"))
 
-            # FIAT по специфике WhiteBIT: есть providers и нет подтверждений
+            # --- FIAT ветка WhiteBIT ---
+            # У WhiteBIT фиат отличается: есть providers и нет подтверждений.
             if providers and no_confirmations:
-                dep_pct, dep_fix, wd_pct, wd_fix = _merge_fee_for(t, None, pub_fee_map, priv_fee_map)
+                if not self._want_fiat:
+                    continue
 
-                dep_min = D(meta.get("min_deposit"))
-                dep_max = D(meta.get("max_deposit"))
-                wd_min = D(meta.get("min_withdraw"))
-                wd_max = D(meta.get("max_withdraw"))
+                # CEX-режим (если вдруг явно разрешили fiat+crypto): сохраняем как есть (биржевой фиат)
+                if not self._cash_mode:
+                    dep_pct, dep_fix, wd_pct, wd_fix = _merge_fee_for(t, None, pub_fee_map, priv_fee_map)
+                    dep_min = D(meta.get("min_deposit"))
+                    dep_max = D(meta.get("max_deposit"))
+                    wd_min = D(meta.get("min_withdraw"))
+                    wd_max = D(meta.get("max_withdraw"))
 
+                    yield ProviderRow(
+                        asset_code=t,
+                        asset_name=name,
+                        chain_code="",
+                        chain_name="",
+                        AD=can_dep_global,
+                        AW=can_wd_global,
+                        conf_dep=0,
+                        conf_wd=0,
+                        dep_min=dep_min,
+                        dep_max=dep_max,
+                        wd_min=wd_min,
+                        wd_max=wd_max,
+                        dep_fee_pct=dep_pct,
+                        dep_fee_fix=dep_fix,
+                        wd_fee_pct=wd_pct,
+                        wd_fee_fix=wd_fix,
+                        requires_memo=False,
+                        amount_precision=precision,
+                        is_stable=(t in stables),
+                        raw_meta={"assets": json_safe(meta)},
+                    )
+                    continue
+
+                # CASH-режим: всегда разрешено (AD/AW=True), сеть пустая, точность 2, лимиты = 0 (min_usdt проставим постфактум)
                 yield ProviderRow(
                     asset_code=t,
                     asset_name=name,
                     chain_code="",
                     chain_name="",
-                    AD=can_dep_global,
-                    AW=can_wd_global,
-                    conf_dep=0,
-                    conf_wd=0,
-                    dep_min=dep_min,
-                    dep_max=dep_max,
-                    wd_min=wd_min,
-                    wd_max=wd_max,
-                    dep_fee_pct=dep_pct,
-                    dep_fee_fix=dep_fix,
-                    wd_fee_pct=wd_pct,
-                    wd_fee_fix=wd_fix,
+                    AD=True, AW=True,
+                    conf_dep=0, conf_wd=0,
+                    dep_min=D(0), dep_max=D(0),
+                    wd_min=D(0), wd_max=D(0),
+                    dep_fee_pct=D(0), dep_fee_fix=D(0),
+                    wd_fee_pct=D(0), wd_fee_fix=D(0),
                     requires_memo=False,
-                    amount_precision=precision,
+                    amount_precision=2,
                     is_stable=(t in stables),
-                    raw_meta={"assets": json_safe(meta)},
+                    raw_meta={"assets": json_safe(meta), "mode": "CASH"},
                 )
+                continue
+
+            # --- CRYPTO ветка ---
+            if not self._want_crypto:
                 continue
 
             confirms_map = confirmations if isinstance(confirmations, dict) else {}
@@ -241,6 +334,7 @@ class WhitebitAdapter(UnifiedProviderBase):
                 set(nets_dep) | set(nets_wd) | set(confirms_map.keys()) | set((lim_dep or {}).keys()) | set((lim_wd or {}).keys())
             )
 
+            # Без сетей — это скорее всего не поддерживаемый актив
             if not nets_all:
                 yield ProviderRow(
                     asset_code=t,

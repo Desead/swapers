@@ -9,14 +9,19 @@ from app_market.providers.cex.bybit import BybitAdapter
 from app_market.providers.cex.htx import HtxAdapter
 from app_market.providers.cex.mexc import MexcAdapter
 from app_market.providers.cex.rapira import RapiraAdapter
+from .cash.twelvedata import TwelveDataCashAdapter
+from .cash.openexchangerates import OpenExchangeRatesCashAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
+    LiquidityProvider.WHITEBIT_CASH: WhitebitAdapter,
     LiquidityProvider.KUCOIN: KucoinAdapter,
     LiquidityProvider.BYBIT: BybitAdapter,
     LiquidityProvider.HTX: HtxAdapter,
     LiquidityProvider.MEXC: MexcAdapter,
     LiquidityProvider.RAPIRA: RapiraAdapter,
+    LiquidityProvider.TWELVEDATA: TwelveDataCashAdapter,
+    LiquidityProvider.OpExRate: OpenExchangeRatesCashAdapter,
 }
 
 

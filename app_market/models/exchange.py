@@ -31,9 +31,10 @@ class LiquidityProvider(models.TextChoices):
     """
     Конкретные ПЛ которые есть у нас в системе
     """
-    # Биржи (CEX/DEX) — как были
+    # Биржи (CEX/DEX)
     KUCOIN = "KUCOIN", "KuCoin"
     WHITEBIT = "WHITEBIT", "WhiteBIT"
+    WHITEBIT_CASH = "WHITEBIT_CASH", "WhiteBIT (Cash)"  # ← НОВЫЙ КОД ДЛЯ НАЛИЧНЫХ
     BYBIT = "BYBIT", "ByBit"
     HTX = "HTX", "HTX"
     MEXC = "MEXC", "MEXC"
@@ -85,14 +86,17 @@ class LiquidityProvider(models.TextChoices):
     ALFABANK = "ALFABANK", "Альфабанк"
     VTB = "VTB", "ВТБ банк"
 
-    # Ручной режим
+    # Ручной/наличные источники
     CASH = "CASH", _t("Наличные")
+    TWELVEDATA = "TWELVEDATA", "Twelve Data"
+    OpExRate = "OpExRate", "Open Exchange Rates"
 
 
 PROVIDER_PARTNER_LINKS: dict[str, str] = {
     # CEX
     LiquidityProvider.KUCOIN: "https://www.kucoin.com/r/rf/QP3WDF6C",
     LiquidityProvider.WHITEBIT: "https://whitebit.com/referral/34dab02d-d3ef-448c-a768-3cde46f2de8f",
+    LiquidityProvider.WHITEBIT_CASH: "https://whitebit.com/referral/34dab02d-d3ef-448c-a768-3cde46f2de8f",  # тот же линк
     LiquidityProvider.BYBIT: "https://www.bybit.com/invite?ref=PXGJK1",
     LiquidityProvider.RAPIRA: "https://rapira.net/?ref=53BE",
     LiquidityProvider.MEXC: "https://promote.mexc.com/r/ssuoA5IP",
@@ -146,6 +150,10 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     LiquidityProvider.ALFABANK: "https://alfabank.ru/",
     LiquidityProvider.VTB: "https://www.vtb.ru/",
 
+    # CASH
+    LiquidityProvider.TWELVEDATA: "https://twelvedata.com/",
+    LiquidityProvider.OpExRate: "https://openexchangerates.org/",
+
     LiquidityProvider.CASH: "",
 }
 
@@ -158,7 +166,7 @@ class Exchange(models.Model):
         max_length=32,
         choices=LiquidityProvider.choices,
         default=LiquidityProvider.CASH,
-        unique=True,
+        unique=True,  # оставляем уникальность: для CASH-WhiteBIT используем WHITEBIT_CASH
         db_index=True,
         verbose_name=_t("Название"),
     )
@@ -321,10 +329,14 @@ class Exchange(models.Model):
         }:
             return ExchangeKind.BANK
 
-        if self.provider == LiquidityProvider.CASH:
+        # CASH (наличные источники и «кассовый» WhiteBIT)
+        if self.provider in {
+            LiquidityProvider.TWELVEDATA, LiquidityProvider.OpExRate,
+            LiquidityProvider.CASH, LiquidityProvider.WHITEBIT_CASH,
+        }:
             return ExchangeKind.CASH
 
-
+        # для остальных (в т.ч. WHITEBIT) оставляем текущее значение
         return self.exchange_kind
 
     def clean(self):

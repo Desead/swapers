@@ -15,7 +15,7 @@ class ExchangeAdmin(admin.ModelAdmin):
     ordering = ("provider",)
 
     list_display = (
-        "provider", "is_available",
+        "provider", "exchange_kind", "is_available",
         "can_receive", "can_send", "stablecoin",
         "spot_taker_fee", "spot_maker_fee",
         "futures_taker_fee", "futures_maker_fee",
@@ -61,7 +61,6 @@ class ExchangeAdmin(admin.ModelAdmin):
         }),
     )
 
-    # actions
     actions = [
         "action_enable_receive",
         "action_disable_receive",
@@ -71,8 +70,6 @@ class ExchangeAdmin(admin.ModelAdmin):
     ]
     if DEBUG:
         actions += ["sync_assets_now", ]
-
-    # — helpers —
 
     def partner_link(self, obj):
         url = getattr(obj, "partner_url", "") or ""
@@ -97,8 +94,11 @@ class ExchangeAdmin(admin.ModelAdmin):
             return [(v, labels[v]) for v in values if v in labels]
 
         groups = [
-            (_t("Ручной режим"), pick([
+            (_t("Наличные"), pick([
                 LiquidityProvider.CASH,
+                LiquidityProvider.TWELVEDATA,
+                LiquidityProvider.OpExRate,
+                LiquidityProvider.WHITEBIT_CASH,  # ← вместо WHITEBIT
             ])),
             (_t("Централизованные биржи (CEX)"), pick([
                 LiquidityProvider.KUCOIN,
@@ -160,7 +160,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         field.choices = [g for g in groups if g[1]]
         return field
 
-    # — actions impl —
+    # actions impl (без изменений кроме sync_assets_now — как у тебя)
 
     @admin.action(description=_t("Включить приём средств"))
     def action_enable_receive(self, request, queryset):
@@ -206,7 +206,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         # Берём только нужные поля; поля 'name' у модели нет.
         for ex in queryset.only("id", "provider"):
             code = ex.provider
-            title = str(ex)  # get_provider_display()
+            title = str(ex)
 
             if not has_adapter(code):
                 messages.warning(request, f"{title}: адаптер не найден — пропущено.")
@@ -259,10 +259,6 @@ class ExchangeAdmin(admin.ModelAdmin):
                 f"updated={total_updated}, skipped={total_skipped}, disabled={total_disabled}"
             )
 
-
-# ---------------------------
-# ExchangeApiKey
-# ---------------------------
 
 class ExchangeApiKeyAdminForm(forms.ModelForm):
     """
