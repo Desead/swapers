@@ -25,6 +25,7 @@ PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
 1. Прописать провайдера в импорте и в списке доступных провайдеров
 '''
 
+
 class ExchangeKind(models.TextChoices):
     """
     Типы ПЛ, которые вообще бывают

@@ -1,9 +1,12 @@
+# app_market/providers/cex/rapira.py
 from __future__ import annotations
 
 from typing import Any, Iterable, Dict, Tuple
 
 from django.conf import settings
+from django.db import transaction
 
+from app_market.models.exchange_asset import ExchangeAsset, AssetKind
 from app_market.providers.base import UnifiedProviderBase, ProviderRow
 from app_market.providers.http import SESSION
 from app_market.providers.numeric import D, U, B, stable_set
@@ -48,7 +51,11 @@ class RapiraAdapter(UnifiedProviderBase):
     """
     Rapira (https://rapira.net/)
     Источник списка валют по сетям: GET /open/token.
-    Дополнительно добавляем синтетический FIAT-актив RUB (депозит/вывод недоступны).
+
+    Дополнительно добавляем синтетический RUB:
+      • сеть — «FIAT» (через базовую логику для пустой chain_code),
+      • тип — НАЛИЧНЫЕ (CASH).
+
     Подтверждения берём из таблицы оверрайдов RAPIRA_CONFIRMATIONS.
     ВАЖНО: если пары (asset, chain) нет в RAPIRA_CONFIRMATIONS — мы её пропускаем (не пишем в БД).
     """
@@ -138,14 +145,14 @@ class RapiraAdapter(UnifiedProviderBase):
                 raw_meta=item,
             )
 
-        # 2) Синтетический FIAT RUB (депозит/вывод отсутствуют в open-API)
-        #    Не зависит от RAPIRA_CONFIRMATIONS.
+        # 2) Синтетический RUB (депозит/вывод отсутствуют в open-API)
+        #    Не зависит от RAPIRA_CONFIRMATIONS. Тип выставим как CASH в post-process.
         if _include_rub():
             rub_prec = _rub_precision()
             yield ProviderRow(
                 asset_code="RUB",
                 asset_name="Russian Ruble",
-                chain_code="",
+                chain_code="",   # пустая → base присвоит chain_code="FIAT"
                 chain_name="",
 
                 AD=False,
@@ -170,3 +177,30 @@ class RapiraAdapter(UnifiedProviderBase):
 
                 raw_meta={"synthetic": True, "note": "FIAT RUB added from Rapira adapter"},
             )
+
+    # -------- post-process: отметить RUB как наличные --------
+    def sync_assets(
+        self,
+        exchange,
+        *,
+        timeout: int = 20,
+        limit: int = 0,
+        reconcile: bool = True,
+        verbose: bool = False,
+    ):
+        stats = super().sync_assets(
+            exchange=exchange,
+            timeout=timeout,
+            limit=limit,
+            reconcile=reconcile,
+            verbose=verbose,
+        )
+
+        # Явно пометить RUB@FIAT как наличные (CASH)
+        with transaction.atomic():
+            (ExchangeAsset.objects
+             .filter(exchange=exchange, asset_code="RUB")
+             .filter(chain_code__in=("FIAT", "NOCHAIN", "NoChain", ""))
+             .update(asset_kind=AssetKind.CASH))
+
+        return stats

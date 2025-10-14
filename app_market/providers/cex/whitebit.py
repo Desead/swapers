@@ -382,11 +382,4 @@ class WhitebitAdapter(UnifiedProviderBase):
                      confirmations_withdraw=0,
                  ))
 
-        # 4) DEBUG: печать пропущенных из-за wd_guard (можно удалить этот блок)
-        if self._guard_skips:
-            print("----- DEBUG WhiteBIT wd_guard skipped begin -----")
-            for tkr, net in sorted(set(self._guard_skips)):
-                print(f"skip (wd_guard): {tkr}@{net or 'NATIVE'}")
-            print("----- DEBUG WhiteBIT wd_guard skipped end -----")
-
         return stats
