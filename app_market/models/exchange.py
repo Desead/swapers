@@ -285,6 +285,11 @@ class Exchange(models.Model):
         blank=True, default="", verbose_name=_t("Webhook endpoint"),
     )
 
+    description = models.TextField(
+        verbose_name=_t("Описание "),
+        blank=True, null=True, default="небольшой комментарий о провайдере"
+    )
+
     class Meta:
         verbose_name = _t("Поставщик ликвидности")
         verbose_name_plural = _t("Поставщики ликвидности")
