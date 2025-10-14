@@ -7,6 +7,7 @@ import json
 import time
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from app_main.models import SiteSetup
 
 import os
 from django.db import transaction
@@ -29,12 +30,31 @@ PRIV_FEE_URL = f"{WB_BASE}{PRIV_FEE_PATH}"
 CASH_CHAIN_MARKERS = ("FIAT", "NOCHAIN", "NoChain", "")
 
 
-# ---------- fees parsing ----------
+# ---------- helpers ----------
 
 def _flex_percent(v: Any) -> Decimal:
     if isinstance(v, dict):
         return D(v.get("percent"))
     return D(v)
+
+
+def _get_stables_from_site_setup() -> Set[str]:
+    """
+    Пробуем вытащить список стейблкоинов из SiteSetup.stablecoins.
+    Если модель недоступна в проекте — fallback на numeric.stable_set().
+    """
+    try:
+        raw = (SiteSetup.get_solo().stablecoins or "").strip()
+        if not raw:
+            return set()
+        import re
+        toks = [t.strip().upper() for t in re.split(r"[\s,;]+", raw) if t.strip()]
+        return set(toks)
+    except Exception:
+        try:
+            return set(stable_set())
+        except Exception:
+            return set()
 
 
 class _FeeSide:
@@ -133,6 +153,7 @@ class WhitebitAdapter(UnifiedProviderBase):
       • D/W open считаем только по явным спискам deposits/withdraws (если их нет — False/False).
       • Комиссии: приватные (если есть ключи) имеют приоритет, публичные — fallback; на фиат не применяем.
       • После upsert помечаем «наличные» как CASH (nominal=1, precision_display=2, min_usdt=1000).
+      • Стейблкоины для крипты берём из SiteSetup.stablecoins (fallback — numeric.stable_set()).
     """
 
     code = "WHITEBIT"
@@ -165,7 +186,10 @@ class WhitebitAdapter(UnifiedProviderBase):
         fee_pub_json = r_fee.json()
         pub_map = _parse_public_fee(fee_pub_json if isinstance(fee_pub_json, dict) else {})
 
-        return {"assets": assets, "fee_pub": pub_map}
+        # stables из SiteSetup (или fallback)
+        stables = _get_stables_from_site_setup()
+
+        return {"assets": assets, "fee_pub": pub_map, "stables": stables}
 
     def _collect_networks(self, meta: dict) -> Tuple[List[str], Set[str], Set[str], dict]:
         """
@@ -199,12 +223,6 @@ class WhitebitAdapter(UnifiedProviderBase):
             for n in conf_map.keys():
                 nets_all.add(U(n))
 
-        if not nets_all:
-            # последний шанс — одна «нативная» сеть = тикер (будет закрыта по D/W)
-            tkr = U(meta.get("name") or "")
-            # тикер возьмём снаружи в вызове; здесь просто оставим пусто
-            pass
-
         return (sorted(nets_all), nets_dep, nets_wd, conf_map if isinstance(conf_map, dict) else {})
 
     def iter_rows(self, payload: Dict[str, Any]) -> Iterable[ProviderRow]:
@@ -213,7 +231,7 @@ class WhitebitAdapter(UnifiedProviderBase):
 
         assets_json = payload.get("assets") or {}
         pub_map: Dict[Tuple[str, Optional[str]], _FeePack] = payload.get("fee_pub") or {}
-        stables = stable_set()
+        stables: Set[str] = payload.get("stables") or set()
 
         for ticker, meta in assets_json.items():
             tkr = U(ticker)
@@ -239,7 +257,7 @@ class WhitebitAdapter(UnifiedProviderBase):
                     wd_fee_pct=D(0), wd_fee_fix=D(0),
                     requires_memo=False,
                     amount_precision=2,
-                    is_stable=(tkr in stables),
+                    is_stable=False,     # фиат никогда не стейблкоин
                     raw_meta=meta,
                 )
                 continue
@@ -300,7 +318,7 @@ class WhitebitAdapter(UnifiedProviderBase):
                     wd_fee_fix=wd_fix,
                     requires_memo=memo_req,
                     amount_precision=prec,
-                    is_stable=False,
+                    is_stable=(tkr in stables),   # <= стейблы из SiteSetup
                     raw_meta=meta,
                 )
 
@@ -358,6 +376,7 @@ class WhitebitAdapter(UnifiedProviderBase):
                      nominal=Decimal("1"),
                      amount_precision_display=2,
                      deposit_min_usdt=Decimal("1000"),
+                     withdraw_min_usdt=Decimal("1000"),     # ← добавили мин. вывод в USDT
                      AD=True, AW=True,
                      confirmations_deposit=0,
                      confirmations_withdraw=0,
