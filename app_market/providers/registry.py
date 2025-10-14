@@ -14,7 +14,6 @@ from .cash.openexchangerates import OpenExchangeRatesCashAdapter
 
 _REGISTRY: Dict[str, Type[ProviderAdapter]] = {
     LiquidityProvider.WHITEBIT: WhitebitAdapter,
-    LiquidityProvider.WHITEBIT_CASH: WhitebitAdapter,
     LiquidityProvider.KUCOIN: KucoinAdapter,
     LiquidityProvider.BYBIT: BybitAdapter,
     LiquidityProvider.HTX: HtxAdapter,

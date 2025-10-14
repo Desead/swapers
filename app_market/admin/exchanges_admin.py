@@ -98,7 +98,6 @@ class ExchangeAdmin(admin.ModelAdmin):
                 LiquidityProvider.CASH,
                 LiquidityProvider.TWELVEDATA,
                 LiquidityProvider.OpExRate,
-                LiquidityProvider.WHITEBIT_CASH,  # ← вместо WHITEBIT
             ])),
             (_t("Централизованные биржи (CEX)"), pick([
                 LiquidityProvider.KUCOIN,
@@ -313,6 +312,7 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
 
 @admin.register(ExchangeApiKey)
 class ExchangeApiKeyAdmin(admin.ModelAdmin):
+    save_on_top = True
     form = ExchangeApiKeyAdminForm
 
     list_display = ("exchange", "is_enabled", "label", "api_key_view", "api_secret_view", "api_passphrase_view", "api_broker_view",)

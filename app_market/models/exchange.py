@@ -11,7 +11,19 @@ AMOUNT_DEC_PLACES = settings.DECIMAL_AMOUNT_DEC_PLACES
 
 PERCENT_MAX_DIGITS = settings.DECIMAL_PERCENT_MAX_DIGITS
 PERCENT_DEC_PLACES = settings.DECIMAL_PERCENT_PLACES_DB
+'''
+Добавление нового провайдера:
+- файл exchange.py -
+1. прописать его в класс LiquidityProvider
+2. прописать его в методе _auto_kind_from_provider класса Exchange
+3. Прописать его партнёрскую ссылку в списке PROVIDER_PARTNER_LINKS
 
+- файл exchanges_admin.py -
+1. Вставить провайдера в выпадающий список
+
+- файл registry.py -
+1. Прописать провайдера в импорте и в списке доступных провайдеров
+'''
 
 class ExchangeKind(models.TextChoices):
     """
@@ -34,7 +46,6 @@ class LiquidityProvider(models.TextChoices):
     # Биржи (CEX/DEX)
     KUCOIN = "KUCOIN", "KuCoin"
     WHITEBIT = "WHITEBIT", "WhiteBIT"
-    WHITEBIT_CASH = "WHITEBIT_CASH", "WhiteBIT (Cash)"  # ← НОВЫЙ КОД ДЛЯ НАЛИЧНЫХ
     BYBIT = "BYBIT", "ByBit"
     HTX = "HTX", "HTX"
     MEXC = "MEXC", "MEXC"
@@ -96,7 +107,6 @@ PROVIDER_PARTNER_LINKS: dict[str, str] = {
     # CEX
     LiquidityProvider.KUCOIN: "https://www.kucoin.com/r/rf/QP3WDF6C",
     LiquidityProvider.WHITEBIT: "https://whitebit.com/referral/34dab02d-d3ef-448c-a768-3cde46f2de8f",
-    LiquidityProvider.WHITEBIT_CASH: "https://whitebit.com/referral/34dab02d-d3ef-448c-a768-3cde46f2de8f",  # тот же линк
     LiquidityProvider.BYBIT: "https://www.bybit.com/invite?ref=PXGJK1",
     LiquidityProvider.RAPIRA: "https://rapira.net/?ref=53BE",
     LiquidityProvider.MEXC: "https://promote.mexc.com/r/ssuoA5IP",
@@ -166,7 +176,7 @@ class Exchange(models.Model):
         max_length=32,
         choices=LiquidityProvider.choices,
         default=LiquidityProvider.CASH,
-        unique=True,  # оставляем уникальность: для CASH-WhiteBIT используем WHITEBIT_CASH
+        unique=True,
         db_index=True,
         verbose_name=_t("Название"),
     )
@@ -332,11 +342,10 @@ class Exchange(models.Model):
         # CASH (наличные источники и «кассовый» WhiteBIT)
         if self.provider in {
             LiquidityProvider.TWELVEDATA, LiquidityProvider.OpExRate,
-            LiquidityProvider.CASH, LiquidityProvider.WHITEBIT_CASH,
+            LiquidityProvider.CASH,
         }:
             return ExchangeKind.CASH
 
-        # для остальных (в т.ч. WHITEBIT) оставляем текущее значение
         return self.exchange_kind
 
     def clean(self):
