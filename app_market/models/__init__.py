@@ -3,7 +3,7 @@ from .account import ExchangeApiKey
 from .availability import ExchangeAvailabilityLog
 from .exchange_asset import ExchangeAsset, AssetKind
 from .currency_map import CurrencyMap, CurrencyMatchKind
-from app_market.models.prices.price import PriceL1
+from app_market.models.price import PriceL1
 
 __all__ = ["Exchange",
            "ExchangeApiKey",

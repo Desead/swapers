@@ -403,12 +403,12 @@ def _redis_dsn(db: int) -> str:
 
 
 PRICES_REDIS_URL = _redis_dsn(REDIS_DB_PRICES)
-PRICES_L1_STREAM = "prices:l1:updates"  # XADD сюда события L1 из коннекторов
-PRICES_L1_KEY_FMT = "price:l1:{provider_id}:{base_id}:{quote_id}"
+PRICES_L1C_STREAM = "prices:l1c:updates"                       # Stream для событий L1
+PRICES_L1C_KEY_FMT = "price:l1c:{provider}:{base}:{quote}"     # Горячий ключ (TTL)
 
 # SLA/TTL и пороги публикации (по типу площадки)
 PRICES_TTL_SECONDS = {
-    "CEX": 10,
+    "CEX": 20,
     "DEX": 90,
     "PSP": 180,
     "OTC": 300,
