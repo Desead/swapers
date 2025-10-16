@@ -36,20 +36,20 @@ class ExchangeApiKey(models.Model):
 
     # Зашифрованные поля (редактируемые, но невидимые по значению в админке)
     api_key = EncryptedCharField(
-        max_length=256, blank=True, null=True,
+        max_length=4096, blank=True, null=True,
         verbose_name=_t("API Key"),
     )
     api_secret = EncryptedCharField(
-        max_length=256, blank=True, null=True,
+        max_length=4096, blank=True, null=True,
         verbose_name=_t("API Secret"),
     )
     api_passphrase = EncryptedCharField(
-        max_length=256, blank=True, null=True,
+        max_length=4096, blank=True, null=True,
         verbose_name=_t("API Passphrase"),
         help_text=_t("Требуется не всегда"),
     )
     api_broker = EncryptedCharField(
-        max_length=256, blank=True, null=True,
+        max_length=4096, blank=True, null=True,
         verbose_name=_t("Broker key"),
         help_text=_t("Требуется не всегда"),
     )
