@@ -41,6 +41,17 @@ python manage.py makemessages -d djangojs -l ru -l de -l fr -l es -l it -l uk `
 django-admin compilemessages
 
 
+python3 manage.py makemigrations
+python3 manage.py migrate
+python3 manage.py createsuperuser
+python3 manage.py init_roles
+python3 manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
+
+
+
+
+
+
 ```
 
 

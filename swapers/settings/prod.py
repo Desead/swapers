@@ -48,21 +48,6 @@ DATABASES = {
 }
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Кэш (кросс-процесс без Redis)
-# ───────────────────────────────────────────────────────────────────────────────
-# Рекомендуемая настройка до появления Redis. Создай таблицу один раз:
-#   python manage.py createcachetable django_cache
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
-        "LOCATION": "django_cache",
-        "TIMEOUT": 300,
-        "KEY_PREFIX": "swapers",
-    }
-}
-# Когда появится Redis — переключишься на RedisCache (см. комментарий в dev settings).
-
-# ───────────────────────────────────────────────────────────────────────────────
 # Почта (SMTP)
 # ───────────────────────────────────────────────────────────────────────────────
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
@@ -193,17 +178,30 @@ LOGGING = {
 DEV_ONLY_APPS = globals().get("DEV_ONLY_APPS", [])
 INSTALLED_APPS = [a for a in INSTALLED_APPS if a not in DEV_ONLY_APPS]
 
+
 # ───────────────────────────────────────────────────────────────────────────────
-# Заготовки под Celery / Sentry — добавим, когда понадобятся
+# Redis / Prices (L1)
 # ───────────────────────────────────────────────────────────────────────────────
-# CELERY_BROKER_URL = "redis://127.0.0.1:6379/1"
-# CELERY_RESULT_BACKEND = "redis://127.0.0.1:6379/2"
-# CELERY_TASK_ALWAYS_EAGER = False
-# CELERY_TIMEZONE = TIME_ZONE
-# CELERY_BEAT_SCHEDULE = {}
-#
-# SENTRY_DSN = ""
-# if SENTRY_DSN:
-#     import sentry_sdk
-#     sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0.0, profiles_sample_rate=0.0,
-#                     environment="prod", release="swapers-1.0.0")
+REDIS_HOST = "127.0.0.1"
+REDIS_PORT = 6379
+REDIS_PASSWORD = ""  # укажи, если Redis с паролем/ACL (в проде так и должно быть)
+
+REDIS_DB_CACHE = 0
+REDIS_DB_CELERY_BROKER = 1
+REDIS_DB_CELERY_RESULT = 2
+REDIS_DB_PRICES = 3
+
+def _redis_dsn(db: int) -> str:
+    auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
+    return f"redis://{auth}{REDIS_HOST}:{REDIS_PORT}/{db}"
+
+PRICES_REDIS_URL = _redis_dsn(REDIS_DB_PRICES)
+PRICES_L1_KEY_PREFIX = "price:l1"
+PRICES_L1_STREAM_KEY = "prices:l1:updates"
+
+PRICES_TTL_SECONDS = {"CEX": 10, "DEX": 90, "PSP": 180, "OTC": 300, "MANUAL": 600}
+PRICES_PUBLISH_EPSILON_PCT = {"CEX": 0.10, "DEX": 0.20, "PSP": 0.50, "OTC": 0.50, "MANUAL": 1.00}
+PRICES_MAX_PUBLISH_INTERVAL_SEC = {"CEX": 3, "DEX": 60, "PSP": 120, "OTC": 120, "MANUAL": 300}
+
+PRICES_DB_SAMPLE_MIN_INTERVAL_SEC = 60    # в проде пишем ещё реже
+PRICES_DB_SAMPLE_MIN_DELTA_PCT = 0.30

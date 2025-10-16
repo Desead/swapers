@@ -204,10 +204,10 @@ class Exchange(models.Model):
     can_send = models.BooleanField(default=True, verbose_name=_t("Вывод средств"))
 
     stablecoin = models.CharField(
-        max_length=20,
+        max_length=40,
         default="USDT",
         verbose_name=_t("Рабочий стейблкоин"),
-        help_text=_t("Стейблкоин для расчётов, например: USDT."),
+        help_text=_t("Стейблкоины для расчётов. Заполняются автоматически."),
     )
 
     # --- Торговые комиссии (%, могут быть отрицательными) ---
@@ -289,6 +289,12 @@ class Exchange(models.Model):
         verbose_name=_t("Описание "),
         blank=True, null=True, default="небольшой комментарий о провайдере"
     )
+    stats_history = models.JSONField(
+        verbose_name=_t("Статистика провайдера (история)"),
+        blank=True,
+        default=list,
+        help_text=_t("Хронологические снимки: кошелёк/рынок, распределение правых валют, самый популярный стейбл."),
+    )
 
     class Meta:
         verbose_name = _t("Поставщик ликвидности")
@@ -297,6 +303,20 @@ class Exchange(models.Model):
 
     def __str__(self) -> str:
         return self.get_provider_display()
+
+    def add_stats_snapshot(self, snapshot: dict, *, save: bool = True):
+        """Добавляет снимок в историю (без дедупликации по времени)."""
+        hist = list(self.stats_history or [])
+        hist.append(snapshot)
+        self.stats_history = hist
+        if save:
+            # Стабилизируем .stablecoin в upper (см. твой текущий save)
+            super(Exchange, self).save(update_fields=["stats_history"])
+
+    @property
+    def stats_latest(self) -> dict | None:
+        hist = self.stats_history or []
+        return hist[-1] if hist else None
 
     @property
     def partner_url(self) -> str:

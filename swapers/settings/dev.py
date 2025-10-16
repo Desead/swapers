@@ -169,37 +169,6 @@ DATABASES = {
 }
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Кэш (DEV = LocMem; одного процесса достаточно)
-# ───────────────────────────────────────────────────────────────────────────────
-CACHES = {
-    "default": {
-        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "swapers-local",
-        "TIMEOUT": 300,
-        "KEY_PREFIX": "swapers",
-    }
-}
-# Готовые альтернативы (раскомментируешь при надобности):
-# 1) DatabaseCache (кросс-процесс, без Redis). Создать таблицу: `python manage.py createcachetable django_cache`
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
-#         "LOCATION": "django_cache",
-#         "TIMEOUT": 300,
-#         "KEY_PREFIX": "swapers",
-#     }
-# }
-# 2) RedisCache (когда поставишь Redis)
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-#         "LOCATION": "redis://127.0.0.1:6379/0",
-#         "TIMEOUT": 300,
-#         "KEY_PREFIX": "swapers",
-#     }
-# }
-
-# ───────────────────────────────────────────────────────────────────────────────
 # Статика/медиа
 # ───────────────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
@@ -394,17 +363,6 @@ RAPIRA_CONFIRMATIONS = {
     ("USDC", "ETH"): 6,  # ERC20
     ("USDC", "BSC"): 10,  # ERC20
 }
-# ───────────────────────────────────────────────────────────────────────────────
-# Заготовки под Celery / Sentry — добавим, когда понадобятся
-# ───────────────────────────────────────────────────────────────────────────────
-# CELERY_BROKER_URL = ""
-# CELERY_RESULT_BACKEND = ""
-# CELERY_TASK_ALWAYS_EAGER = False
-# CELERY_TIMEZONE = TIME_ZONE
-# CELERY_BEAT_SCHEDULE = {}
-#
-# SENTRY_DSN = ""
-# (Инициализацию Sentry включим в проде, когда появится DSN)
 
 # ───────────────────────────────────────────────────────────────────────────────
 # Логирование (DEV): минимум — CSP-отчёты в консоль
@@ -422,5 +380,86 @@ LOGGING = {
             "level": "INFO",
             "propagate": False,
         },
+    },
+}
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Redis / Prices (L1) — горячие ключи и стримы
+# ───────────────────────────────────────────────────────────────────────────────
+REDIS_HOST = "127.0.0.1"
+REDIS_PORT = 6379
+REDIS_PASSWORD = ""  # если в redis.conf включён requirepass — укажи пароль здесь
+
+# Логические БД Redis (по номерам держим изоляцию ролей)
+REDIS_DB_CACHE = 0  # Django Cache
+REDIS_DB_CELERY_BROKER = 1
+REDIS_DB_CELERY_RESULT = 2
+REDIS_DB_PRICES = 3  # Цены/стримы
+
+
+def _redis_dsn(db: int) -> str:
+    auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
+    return f"redis://{auth}{REDIS_HOST}:{REDIS_PORT}/{db}"
+
+
+PRICES_REDIS_URL = _redis_dsn(REDIS_DB_PRICES)
+PRICES_L1_STREAM = "prices:l1:updates"  # XADD сюда события L1 из коннекторов
+PRICES_L1_KEY_FMT = "price:l1:{provider_id}:{base_id}:{quote_id}"
+
+# SLA/TTL и пороги публикации (по типу площадки)
+PRICES_TTL_SECONDS = {
+    "CEX": 10,
+    "DEX": 90,
+    "PSP": 180,
+    "OTC": 300,
+    "MANUAL": 600,
+}
+PRICES_PUBLISH_EPSILON_PCT = {  # публикуем в Redis/стрим при изменении больше порога
+    "CEX": 0.10,  # 0.10%
+    "DEX": 0.20,
+    "PSP": 0.50,
+    "OTC": 0.50,
+    "MANUAL": 1.00,
+}
+PRICES_MAX_PUBLISH_INTERVAL_SEC = {  # даже без изменений пушим не реже этого
+    "CEX": 3,
+    "DEX": 60,
+    "PSP": 120,
+    "OTC": 120,
+    "MANUAL": 300,
+}
+
+# Сэмплинг в БД (чтобы не писать каждый тик)
+PRICES_DB_SAMPLE_MIN_INTERVAL_SEC = 30  # не чаще чем раз в 30с на пару/ПЛ
+PRICES_DB_SAMPLE_MIN_DELTA_PCT = 0.30  # либо если сдвиг mid ≥ 0.30%
+
+# ───────────────────────────────────────────────────────────────────────────────
+# Кэш (DEV = LocMem; одного процесса достаточно)
+# ───────────────────────────────────────────────────────────────────────────────
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+#         "LOCATION": "swapers-local",
+#         "TIMEOUT": 300,
+#         "KEY_PREFIX": "swapers",
+#     }
+# }
+# Готовые альтернативы (раскомментируешь при надобности):
+# 1) DatabaseCache (кросс-процесс, без Redis). Создать таблицу: `python manage.py createcachetable django_cache`
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+#         "LOCATION": "django_cache",
+#         "TIMEOUT": 300,
+#         "KEY_PREFIX": "swapers",
+#     }
+# }
+# 2) RedisCache (когда поставишь Redis)
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": PRICES_REDIS_URL,  # ← используем redis DB=3 из твоих же настроек
+        "TIMEOUT": 300,
+        "KEY_PREFIX": "swapers",
     },
 }

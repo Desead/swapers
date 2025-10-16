@@ -1,12 +1,13 @@
+import json
 from django.contrib import admin, messages
 from django import forms
 from django.utils.translation import gettext_lazy as _t
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
 from app_market.providers import get_adapter, has_adapter
-from swapers.settings.dev import DEBUG
+from app_market.services.stats import ensure_initial_stats, collect_exchange_stats
 
 
 @admin.register(Exchange)
@@ -26,7 +27,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         "can_receive", "can_send", "show_prices_on_home",
     )
     search_fields = ("provider",)
-    readonly_fields = ("is_available", "exchange_kind", "partner_link")
+    readonly_fields = ("is_available", "exchange_kind", "partner_link", "stats_runs_count", "stats_latest_preview",)
 
     fieldsets = (
         (_t("Общее"), {
@@ -52,6 +53,11 @@ class ExchangeAdmin(admin.ModelAdmin):
                 ("fee_deposit_max", "fee_withdraw_max"),
             )
         }),
+        (_t("Статистика "), {  #
+            "classes": ("wide", "collapse"),
+            "fields": ("stats_runs_count", "stats_latest_preview"),
+            "description": _t("История хранится внутри ПЛ. Новый снимок добавляется в конец списка."),
+        }),
         (_t("Отображение"), {
             "description": _t(
                 "Цены с этого поставщика ликвидности будут отображаться на главной странице. "
@@ -67,9 +73,69 @@ class ExchangeAdmin(admin.ModelAdmin):
         "action_enable_send",
         "action_disable_send",
         "action_healthcheck_now",
+        "action_collect_stats_now",
+        "sync_assets_now",
     ]
-    if DEBUG:
-        actions += ["sync_assets_now", ]
+
+    # ---- helpers (view) ----
+    def stats_runs_count(self, obj: Exchange):
+        cnt = len(obj.stats_history or [])
+        return _t("Снимков: %(n)s") % {"n": cnt}
+
+    stats_runs_count.short_description = _t("Всего снимков")
+
+    def stats_latest_preview(self, obj: Exchange):
+        hist = obj.stats_history or []
+        if not hist:
+            return _t("Ещё нет данных.")
+
+        def render_table_card(title: str, snap: dict):
+            m = snap.get("markets", {}) or {}
+            rows = format_html_join(
+                '',
+                "<tr><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
+                ((i + 1, (row.get('quote') or ''), row.get('pairs', 0))
+                 for i, row in enumerate(list(m.get("quote_popularity") or [])))
+            ) or format_html("<tr><td colspan='3'>—</td></tr>")
+
+            return format_html(
+                """
+                <div style="
+                    flex:0 1 calc((100% - 24px)/3);  /* не растём, чтобы три влезали стабильно */
+                    box-sizing:border-box;           /* ширина учитывает padding/border */
+                    min-width:300px;
+                    border:1px solid #ddd;border-radius:6px;padding:10px;">
+                  <div style="margin-bottom:6px; line-height:1.2;">
+                    <b>{}</b>
+                    <div><small>{}</small></div>
+                  </div>
+                  <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;padding-bottom:4px;">#</th>
+                        <th style="text-align:left;padding-bottom:4px;">Quote</th>
+                        <th style="text-align:left;padding-bottom:4px;">Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>{}</tbody>
+                  </table>
+                </div>
+                """,
+                title, snap.get("run_at", "—"), rows,
+            )
+
+        cards = [render_table_card(_t("Текущий снимок"), hist[-1])]
+        if len(hist) > 1:
+            cards.append(render_table_card(_t("Предыдущий снимок"), hist[-2]))
+        if len(hist) > 2:
+            cards.append(render_table_card(_t("Позапрошлый снимок"), hist[-3]))
+
+        return format_html(
+            '<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;width:100%;">{}</div>',
+            format_html_join('', '{}', ((c,) for c in cards))
+        )
+
+    stats_latest_preview.short_description = _t("Последний снимок")
 
     def partner_link(self, obj):
         url = getattr(obj, "partner_url", "") or ""
@@ -111,7 +177,7 @@ class ExchangeAdmin(admin.ModelAdmin):
                 # LiquidityProvider.BITSTAMP,
                 # LiquidityProvider.BINGX,
                 # LiquidityProvider.BITFINEX,
-                # LiquidityProvider.HTX,
+                LiquidityProvider.HTX,
                 # LiquidityProvider.GATEIO,
                 # LiquidityProvider.BITGET,
                 # LiquidityProvider.OKX,
@@ -159,8 +225,6 @@ class ExchangeAdmin(admin.ModelAdmin):
         field.choices = [g for g in groups if g[1]]
         return field
 
-    # actions impl (без изменений кроме sync_assets_now — как у тебя)
-
     @admin.action(description=_t("Включить приём средств"))
     def action_enable_receive(self, request, queryset):
         updated = queryset.update(can_receive=True)
@@ -193,6 +257,23 @@ class ExchangeAdmin(admin.ModelAdmin):
         msg = _t("Готово: доступно={} недоступно={}.").format(ok, down)
         level = messages.SUCCESS if down == 0 else messages.WARNING
         self.message_user(request, msg + " " + _t("Подробности см. в 'История доступности'."), level)
+
+    @admin.action(description=_t("Собрать статистику сейчас"))
+    def action_collect_stats_now(self, request, queryset):
+        ok = err = 0
+        for ex in queryset.only("id", "provider", "exchange_kind"):
+            try:
+                collect_exchange_stats(ex, timeout=25)
+                # Лаконичное сообщение без цифр:
+                messages.success(request, _t("Статистика по %(ex)s собрана.") % {"ex": ex})
+                ok += 1
+            except Exception as e:
+                messages.error(request, f"{ex}: ошибка сбора статистики: {e}")
+                err += 1
+        if err:
+            messages.warning(request, _t("Готово с ошибками: %(n)s") % {"n": err})
+        else:
+            messages.info(request, _t("Готово: %(n)s провайдер(ов)") % {"n": ok})
 
     @admin.action(description=_t("Синхронизировать активы (загрузить монеты) сейчас"))
     def sync_assets_now(self, request, queryset):
@@ -240,6 +321,9 @@ class ExchangeAdmin(admin.ModelAdmin):
                     request,
                     f"{title}: processed={p}, created={c}, updated={u}, skipped={s}, disabled={d}"
                 )
+                # первый автозапуск статистики (только если её ещё нет)
+                if ensure_initial_stats(ex, timeout=20):
+                    messages.info(request, f"{title}: первичная статистика собрана.")
             except Exception as e:
                 errors += 1
                 messages.error(request, f"{title}: ошибка синхронизации: {e}")
@@ -276,7 +360,7 @@ class ExchangeApiKeyAdminForm(forms.ModelForm):
         fields = (
             "exchange", "label", "is_enabled",
             # readonly views рендерятся из Admin, в форму их не включаем
-            "api_key", "api_secret", "api_passphrase",
+            "api_key", "api_secret", "api_passphrase", "api_broker",
             "clear_api_key", "clear_api_secret", "clear_api_passphrase", "clear_api_broker",
         )
         widgets = {
