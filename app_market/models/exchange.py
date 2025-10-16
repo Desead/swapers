@@ -206,6 +206,7 @@ class Exchange(models.Model):
     stablecoin = models.CharField(
         max_length=40,
         default="USDT",
+        blank=True, null=True,
         verbose_name=_t("Рабочий стейблкоин"),
         help_text=_t("Стейблкоины для расчётов. Заполняются автоматически."),
     )

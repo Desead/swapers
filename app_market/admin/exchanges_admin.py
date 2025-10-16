@@ -56,7 +56,6 @@ class ExchangeAdmin(admin.ModelAdmin):
         (_t("Статистика "), {  #
             "classes": ("wide", "collapse"),
             "fields": ("stats_runs_count", "stats_latest_preview"),
-            "description": _t("История хранится внутри ПЛ. Новый снимок добавляется в конец списка."),
         }),
         (_t("Отображение"), {
             "description": _t(
