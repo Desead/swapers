@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import os
 import random
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 def _configure_logging(verbose: int):
     level = logging.WARNING
@@ -21,36 +22,34 @@ def _configure_logging(verbose: int):
 log = logging.getLogger(__name__)
 
 def _ensure_django():
-    """
-    Готовим Django до любых импортов модулей, которые обращаются к settings.
-    """
-    # Если переменная не задана, по умолчанию берём dev-настройки проекта
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", os.getenv("DJANGO_SETTINGS_MODULE", "swapers.settings.dev"))
-    import django  # импорт только после установки переменной
+    import django
     django.setup()
 
-def _provider_lock_path(provider: str, base_dir: Path) -> Path:
-    base = base_dir / "log" / "locks"
-    base.mkdir(parents=True, exist_ok=True)
-    return base / f"{provider.lower()}.lock"
+def _load_class(dotted: str):
+    """
+    dotted = 'pkg.mod:ClassName'
+    Никаких догадок: жёстко грузим модуль и берём класс.
+    """
+    if ":" not in dotted:
+        raise ValueError(f"Invalid dotted path '{dotted}', expected 'module:Class'")
+    mod_name, cls_name = dotted.split(":", 1)
+    module = importlib.import_module(mod_name)
+    try:
+        return getattr(module, cls_name)
+    except AttributeError as e:
+        raise AttributeError(f"Class '{cls_name}' not found in module '{mod_name}'") from e
 
-def _with_file_lock(lock_path: Path, fn):
-    try:
-        fd = lock_path.open("x")
-    except FileExistsError:
-        log.info("Provider lock busy: %s", lock_path)
-        return False
-    try:
-        try:
-            fn()
-            return True
-        finally:
-            fd.close()
-    finally:
-        try:
-            lock_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+def _iter_enabled_providers(cfg: Dict[str, Dict[str, Any]], only: Optional[List[str]]) -> Iterable[Tuple[str, Dict[str, Any]]]:
+    if only:
+        for name in only:
+            entry = cfg.get(name)
+            if entry and entry.get("enabled", True):
+                yield name, entry
+        return
+    for name, entry in cfg.items():
+        if entry.get("enabled", True):
+            yield name, entry
 
 def _sleep_with_jitter(base_seconds: int):
     jitter = random.uniform(0.05, 0.25) * base_seconds
@@ -58,116 +57,98 @@ def _sleep_with_jitter(base_seconds: int):
 
 def run_once(*, providers: Optional[List[str]], task: str, dump_raw: bool, admin_mirror: bool) -> int:
     """
-    Запускает выбранную задачу последовательно по провайдерам.
-    Внутри провайдера выполняем цепочку (wallet->prices->stats) если task == "all".
+    Последовательный запуск выбранной задачи по включённым провайдерам.
+    НИЧЕГО не берём из collectors.registry — только настройки.
     """
-    # Импорты после django.setup()
     from django.conf import settings
-    from .registry import get_entry, make_adapter, REGISTRY
-    from .sinks import PricesAdminMirror, PricesRedisSink, VoidSink, WalletDBSink
     from .tasks import run_prices, run_stats, run_wallet_assets
-    from .metrics import Counter
-    from .schedules import wallet_interval_seconds, prices_interval_seconds
 
-    def _iterate_providers(selected: Optional[List[str]]) -> Iterable[str]:
-        if selected:
-            for p in selected:
-                yield p
-            return
-        if REGISTRY:
-            for name, entry in REGISTRY.items():
-                if entry.enabled:
-                    yield name
-            return
-        cfg = getattr(settings, "COLLECTORS_PROVIDER_REGISTRY", {})
-        for name, entry in cfg.items():
-            if entry.get("enabled", True):
-                yield name
+    cfg: Dict[str, Dict[str, Any]] = getattr(settings, "COLLECTORS_PROVIDER_REGISTRY", {})
+    if not cfg:
+        log.error("COLLECTORS_PROVIDER_REGISTRY is empty — nothing to run")
+        return 0
 
     ok = 0
     base_dir: Path = getattr(settings, "BASE_DIR", Path.cwd())
 
-    for prov in _iterate_providers(providers):
-        def worker():
+    for prov, entry in _iter_enabled_providers(cfg, providers):
+        path = entry.get("path")
+        needs_api = bool(entry.get("needs_api", False))
+
+        # 1) Создание адаптера
+        adapter = None
+        try:
+            cls = _load_class(path)
+            if needs_api:
+                try:
+                    from .credentials import get as get_credentials
+                    creds = get_credentials(prov)  # может вернуть None — это нормально
+                except Exception:
+                    log.exception("Credentials: unexpected error for %s", prov)
+                    creds = None
+                try:
+                    adapter = cls(credentials=creds)
+                except TypeError:
+                    adapter = cls()
+            else:
+                adapter = cls()
+            log.info("Adapter ready: %s (%s)", prov, path)
+        except Exception:
+            log.exception("Adapter init failed for %s (%s)", prov, path)
+            continue
+
+        # 2) Выполнение задач
+        def _do_wallet():
             nonlocal ok
-            entry = get_entry(prov)
+            try:
+                run_wallet_assets(provider=prov, adapter=adapter, dump_raw=dump_raw)
+                ok += 1
+            except Exception:
+                log.exception("WalletAssetsTask failed for %s", prov)
 
-            # Креды подтянем лениво, только если нужны
-            creds = None
-            if entry.needs_api_key:
-                from .credentials import get as get_credentials
-                creds = get_credentials(prov)
+        def _do_prices():
+            nonlocal ok
+            try:
+                run_prices(provider=prov, dump_raw=dump_raw, mirror_to_admin=admin_mirror)
+                ok += 1
+            except Exception:
+                log.exception("PricesTask failed for %s", prov)
 
-            adapter = make_adapter(prov, credentials=creds)
-            log.info("Adapter ready: %s (%s)", prov, entry.dotted_path)
+        def _do_stats():
+            nonlocal ok
+            try:
+                run_stats(provider=prov, dump_raw=dump_raw)
+                ok += 1
+            except Exception:
+                log.exception("StatsTask failed for %s", prov)
 
-            # Синки/метрики
-            wallet_sink = WalletDBSink()
-            prices_sink = PricesRedisSink()
-            mirror_sink = PricesAdminMirror()
-            void_sink = VoidSink()
-
-            last_wallet = None
-            last_markets = None
-
-            if task in ("wallet-assets", "all") and entry.capabilities.get("wallet_assets", False):
-                c = Counter()
-                try:
-                    last_wallet = run_wallet_assets(
-                        provider=prov, adapter=adapter, db_sink=wallet_sink, dump_raw=dump_raw, counter=c
-                    )
-                    c.log_json(prov, "wallet-assets")
-                    ok += 1
-                except Exception:
-                    log.exception("WalletAssetsTask failed for %s", prov)
-                _sleep_with_jitter(1)
-
-            if task in ("prices", "all") and entry.capabilities.get("prices_spot", False):
-                c = Counter()
-                try:
-                    run_prices(
-                        provider=prov, adapter=adapter, redis_sink=prices_sink,
-                        admin_mirror=mirror_sink, dump_raw=dump_raw,
-                        mirror_to_admin=admin_mirror, counter=c
-                    )
-                    c.log_json(prov, "prices")
-                    ok += 1
-                except Exception:
-                    log.exception("PricesTask failed for %s", prov)
-                _sleep_with_jitter(1)
-
-            if task in ("stats", "all"):
-                c = Counter()
-                try:
-                    run_stats(
-                        provider=prov, adapter=adapter,
-                        wallet_items=last_wallet, market_items=last_markets,
-                        dump_raw=dump_raw, counter=c
-                    )
-                    c.log_json(prov, "stats")
-                    ok += 1
-                except Exception:
-                    log.exception("StatsTask failed for %s", prov)
-
-        lock_path = _provider_lock_path(prov, base_dir)
-        _with_file_lock(lock_path, worker)
+        if task == "wallet-assets":
+            _do_wallet()
+        elif task == "prices":
+            _do_prices()
+        elif task == "stats":
+            _do_stats()
+        else:  # all
+            _do_wallet()
+            _sleep_with_jitter(1)
+            _do_prices()
+            _sleep_with_jitter(1)
+            _do_stats()
 
     return ok
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(description="Unified collectors runner")
+    parser = argparse.ArgumentParser(description="Unified collectors runner (settings-driven)")
     parser.add_argument("--provider", action="append", help="Provider code (repeatable). Default: all enabled")
     parser.add_argument("--task", choices=("wallet-assets", "prices", "stats", "all"), default="all")
     parser.add_argument("--once", action="store_true", help="Run once and exit")
-    parser.add_argument("--loop", action="store_true", help="Run forever with sleep intervals from settings")
-    parser.add_argument("--dump-raw", action="store_true", help="Dump raw API responses once per day")
-    parser.add_argument("--admin-mirror", action="store_true", help="Write prices mirror for admin (no history)")
+    parser.add_argument("--loop", action="store_true", help="Run forever with settings intervals")
+    parser.add_argument("--dump-raw", action="store_true", help="Dump raw JSON once per day")
+    parser.add_argument("--admin-mirror", action="store_true", help="Mirror L1 prices to admin (PriceL1)")
     parser.add_argument("-v", "--verbose", action="count", default=0)
 
     args = parser.parse_args(argv or sys.argv[1:])
     _configure_logging(args.verbose)
-
-    # Готовим Django
     _ensure_django()
 
     if args.once and args.loop:
@@ -178,19 +159,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
         ) else 1
 
-    # loop-режим: повторяем в цикле
-    from . import schedules
+    # loop-режим (используем интервалы из настроек)
+    from django.conf import settings
+    prices_iv = int(getattr(settings, "COLLECTORS_PRICES_INTERVAL_S", 10))
+    wallet_iv = int(getattr(settings, "COLLECTORS_WALLET_INTERVAL_S", 3600))
     try:
         while True:
             rc = run_once(
                 providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
             )
             if args.task == "wallet-assets":
-                time.sleep(schedules.wallet_interval_seconds())
+                time.sleep(wallet_iv)
             elif args.task == "prices":
-                time.sleep(schedules.prices_interval_seconds())
+                time.sleep(prices_iv)
             elif args.task == "stats":
-                time.sleep(max(300, schedules.wallet_interval_seconds()))
+                time.sleep(max(300, wallet_iv))
             else:
                 time.sleep(5)
     except KeyboardInterrupt:
