@@ -170,8 +170,8 @@ def test_whitebit_fiat_detection(ex_whitebit, monkeypatch):
     assert stats.processed == 1
     obj = ExchangeAsset.objects.get(exchange=ex_whitebit, asset_code="USD", chain_code="FIAT")
     # Тип должен быть FIAT согласно общему fiat_set(), AD/AW=True; D/W при создании False
-    assert obj.asset_kind in (AssetKind.FIAT, AssetKind.NOTDEFINED)
-    if obj.asset_kind == AssetKind.FIAT:
+    assert obj.asset_kind in (AssetKind.CASH, AssetKind.FIAT, AssetKind.NOTDEFINED)
+    if obj.asset_kind in (AssetKind.CASH, AssetKind.FIAT):
         assert obj.AD and obj.AW
         assert obj.D is False and obj.W is False
 

@@ -26,6 +26,7 @@ python .\manage.py init_roles
 python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
 pytest -q
 pytest -q app_market/tests
+pytest -q app_market/tests/collectors
 python .\manage.py runserver
 
 # В проде 1 раз до старта:

@@ -1,15 +1,15 @@
 from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Callable, Dict, Any, Optional
+from typing import Callable, Dict, Any
 
+import logging
 from django.db import transaction
 from django.utils import timezone as dj_tz
 
 from app_market.models.exchange import Exchange, LiquidityProvider
 from app_market.models.price import PriceL1
 from .dump import write_daily_dump
-import logging
 
 # ───────────────────────────────────────────────────────────────────────────────
 # ПРАЙС-СБОРЩИКИ (используем твои готовые collect_spot)
@@ -22,6 +22,16 @@ from app_market.prices.price_htx import collect_spot as htx_collect_spot
 from app_market.prices.price_rapira import collect_spot as rapira_collect_spot
 from app_market.prices.price_twelvedata import collect_spot as twelvedata_collect_spot
 from app_market.prices.price_openexchangerates import collect_spot as oer_collect_spot
+
+# --- StatsError alias на уровне модуля (поддаётся monkeypatch) ---
+try:
+    from app_market.services.stats import StatsError as _StatsError
+except Exception:  # на случай, если в раннем окружении класса нет
+    class _StatsError(Exception):
+        pass
+
+# Экспортируем под общим именем, чтобы тесты могли подменять:
+StatsError = _StatsError
 
 PRICE_COLLECTORS: Dict[str, Callable[[Exchange, bool], tuple[int, int]]] = {
     LiquidityProvider.BYBIT: bybit_collect_spot,
@@ -242,7 +252,6 @@ def run_prices(*, provider: str, dump_raw: bool = False, mirror_to_admin: bool =
     }
 
 
-
 def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
     """
     Собираем статистику провайдера и добавляем снимок в Exchange.stats_history.
@@ -250,15 +259,8 @@ def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
     """
     ex = _get_exchange(provider)
 
-    # Импортируем здесь, чтобы не ломать импорт модуля при ранней инициализации
+    # импортируем только функцию; исключение берём из модульного алиаса StatsError
     from app_market.services.stats import collect_exchange_stats
-    try:
-        # StatsError есть в services.stats — используем его, чтобы различать «не реализовано»
-        from app_market.services.stats import StatsError  # type: ignore
-    except Exception:
-        # на крайний случай, если сигнатуры изменятся
-        class StatsError(Exception):  # type: ignore
-            pass
 
     try:
         snap = collect_exchange_stats(ex, timeout=20)
@@ -281,4 +283,3 @@ def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
         "snapshot_at": snap.get("run_at", ""),
         "raw_dump": str(raw_dump_path) if raw_dump_path else "",
     }
-

@@ -1,8 +1,7 @@
-
 from __future__ import annotations
 
 from django.db import models
-from django.db.models import Q, CheckConstraint, Index
+from django.db.models import Q, F, CheckConstraint, Index
 from django.utils import timezone
 from django.core.validators import MinValueValidator
 from django.utils.translation import gettext_lazy as _t
@@ -140,8 +139,14 @@ class PriceL1(models.Model):
             Index(fields=["-ts_ingest"], name="idx_l1_ingest_desc"),
         ]
         constraints = [
-            CheckConstraint(check=Q(ask__gte=models.F("bid")), name="price_l1_ask_ge_bid"),
-            CheckConstraint(check=Q(bid__gte=0) & Q(ask__gte=0), name="price_l1_non_negative"),
+            CheckConstraint(
+                condition=Q(ask__gte=F("bid")),
+                name="price_l1_ask_ge_bid",
+            ),
+            CheckConstraint(
+                condition=Q(bid__gte=0) & Q(ask__gte=0),
+                name="price_l1_non_negative",
+            ),
         ]
         ordering = ["-ts_src", "-id"]
 
