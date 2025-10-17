@@ -1,28 +1,19 @@
-"""
-Django settings — DEV (по умолчанию).
-Без .env. Всё общее + удобные дефолты разработки:
-- БД: SQLite
-- Кэш: LocMem (однопроцессная разработка)
-- Email: console
-В проде используем swapers.settings.prod (см. соседний файл).
-"""
-
 from pathlib import Path
 from datetime import timedelta
 from django.utils.translation import gettext_lazy as _t
+import os
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Базовые параметры проекта
+# БАЗОВОЕ
 # ───────────────────────────────────────────────────────────────────────────────
-# ВНИМАНИЕ: файл лежит в swapers/settings/, поэтому BASE_DIR на уровень выше папки swapers
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # swapers/
 DEBUG = True  # прод переопределит на False
-SECRET_KEY = "CHANGE_ME_IN_PROD"  # прод переопределит реальным ключом
-ALLOWED_HOSTS: list[str] = ["*"]  # dev: удобнее *; в проде — список доменов
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "CHANGE_ME_IN_PROD")
+ALLOWED_HOSTS: list[str] = ["*"]  # dev: удобно *, в prod — список доменов
 CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000", "http://localhost:8000"]
-ALLOW_INDEXING = False  # dev: запрет индексации (наш middleware уважает)
-
+ALLOW_INDEXING = False  # dev: запрещаем индексацию (middleware уважает)
+SECURE_BROWSER_XSS_FILTER = True
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 дней
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -54,7 +45,7 @@ LOCALE_PATHS = [BASE_DIR / "locale"]
 # Приложения
 # ───────────────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
-    # Админка с OTP (наш форк/конфиг)
+    # Админка с OTP (наш конфиг)
     "swapers.admin.OTPAdminConfig",
 
     # Django core
@@ -66,9 +57,9 @@ INSTALLED_APPS = [
 
     # Наши приложения
     "app_library.apps.AppLibraryConfig",
-    "app_main.apps.AxesRusConfig",  # rate-limit/lockout (обёртка над axes)
+    "app_main.apps.AxesRusConfig",          # обёртка над axes
     "app_market.apps.AppMarketConfig",
-    "app_main.apps.AppMainConfig",  # чтобы сработал ready()
+    "app_main.apps.AppMainConfig",          # чтобы сработал ready()
 
     # Сторонние
     "django.contrib.sites",
@@ -79,7 +70,7 @@ INSTALLED_APPS = [
     "parler",
     "django_ckeditor_5",
 ]
-# Dev-only тулзы добавляем отдельным списком — prod их потом срежет
+# Dev-only тулзы
 DEV_ONLY_APPS = ["rosetta"]
 INSTALLED_APPS += DEV_ONLY_APPS
 
@@ -96,7 +87,7 @@ MIDDLEWARE = [
     # Сессии → рефералка → нормализация языка → локализация
     "django.contrib.sessions.middleware.SessionMiddleware",
     "app_main.middleware.ReferralAttributionMiddleware",
-    "app_main.middleware_lang.LanguageVariantNormalizeMiddleware",  # нормализуем ru-ru → ru
+    "app_main.middleware_lang.LanguageVariantNormalizeMiddleware",
     "django.middleware.locale.LocaleMiddleware",
 
     # Блок-лист + Axes (после Session, до Auth)
@@ -105,7 +96,7 @@ MIDDLEWARE = [
 
     # Общие
     "django.middleware.common.CommonMiddleware",
-    "app_main.middleware_noindex.GlobalNoIndexMiddleware",  # уважает ALLOW_INDEXING
+    "app_main.middleware_noindex.GlobalNoIndexMiddleware",
 
     # CSRF → аутентификация → OTP → allauth
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -121,7 +112,7 @@ MIDDLEWARE = [
     "app_main.middleware.Admin2FARedirectMiddleware",
     "app_main.middleware.AdminSessionTimeoutMiddleware",
 
-    # Подстраховка по CSP (костыльный хедер, если кто-то потерялся по пути)
+    # Подстраховка по CSP (fallback-хедер)
     "app_main.middleware_csp_fallback.CSPHeaderEnsureMiddleware",
 ]
 
@@ -162,9 +153,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
-        # Ниже значения совпадают с дефолтами Django; оставлены ради явности:
-        "CONN_MAX_AGE": 0,  # 0 = закрывать соединение после каждого запроса (для SQLite ок)
-        "ATOMIC_REQUESTS": False,  # транзакции контролируем вручную точечно
+        "CONN_MAX_AGE": 0,
+        "ATOMIC_REQUESTS": False,
     }
 }
 
@@ -182,16 +172,16 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Аутентификация / Allauth
 # ───────────────────────────────────────────────────────────────────────────────
 AUTHENTICATION_BACKENDS = [
-    "axes.backends.AxesStandaloneBackend",  # сначала Axes
-    "allauth.account.auth_backends.AuthenticationBackend"  # затем allauth
+    "axes.backends.AxesStandaloneBackend",                # сначала Axes
+    "allauth.account.auth_backends.AuthenticationBackend" # затем allauth
 ]
 
-# Почта по умолчанию (консоль). Прод переопределит SMTP.
+# Почта (DEV — консоль)
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = "no-reply@localhost"
 
 # Cookies
-SESSION_COOKIE_SAMESITE = "Lax"  # баланс безопасности/совместимости
+SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
 # Allauth: логин по email, жёсткая верификация
@@ -201,9 +191,7 @@ ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_USER_MODEL_EMAIL_FIELD = "email"
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_CONFIRM_EMAIL_ON_GET = True
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http"  # dev: удобнее http
-
-# Внутренний троттлинг allauth выключен — используем django-axes как единую политику
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "http"
 ACCOUNT_RATE_LIMITS = {}
 
 # Редиректы
@@ -267,10 +255,8 @@ AXES_USERNAME_CALLABLE = "app_main.axes_handler.axes_get_username"
 
 # Язык-кука
 LANGUAGE_COOKIE_NAME = "sw_lang"
-LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365  # 1 год
+LANGUAGE_COOKIE_AGE = 60 * 60 * 24 * 365
 LANGUAGE_COOKIE_SAMESITE = "Lax"
-
-# Удобства
 FORMS_URLFIELD_ASSUME_HTTPS = True
 
 # CKEditor 5
@@ -291,7 +277,6 @@ SECRETS_DIR = BASE_DIR / ".secrets"
 SECRETS_DIR.mkdir(exist_ok=True)
 FIELD_KEY_FILE = SECRETS_DIR / "field_encryption.key"
 
-
 def _read_or_create_field_key(path: Path) -> str:
     """Храним один Fernet-ключ в файле. Если файла нет — создаём."""
     if path.exists():
@@ -303,7 +288,6 @@ def _read_or_create_field_key(path: Path) -> str:
     key = Fernet.generate_key().decode("utf-8")
     path.write_text(key, encoding="utf-8")
     return key
-
 
 FIELD_ENCRYPTION_KEY = _read_or_create_field_key(FIELD_KEY_FILE)
 
@@ -326,46 +310,37 @@ CRYPTO_WD_FEE_FIX_MAX = 100_000
 # ───────────────────────────────────────────────────────────────────────────────
 # Провайдеры: политика синхронизации (DEV значения)
 # ───────────────────────────────────────────────────────────────────────────────
-# Эти настройки читает app_market.providers.base.UnifiedProviderBase через getattr(settings, ...).
-# В DEV делаем максимально удобные значения, чтобы не мешать отладке/тестам.
-PROVIDER_SYNC_WRITE_ENABLED = True  # писать в БД (выключай при dry-run)
-PROVIDER_SYNC_LOCK_TTL_SECONDS = 120  # lock живёт 2 минуты
-PROVIDER_SYNC_DEBOUNCE_SECONDS = 0  # дебаунс отключён в dev
-PROVIDER_SYNC_DB_CHUNK_SIZE = 200  # поменьше батч для читаемых логов
-PROVIDER_SYNC_FAIL_THRESHOLD = 3  # после 3 подряд фейлов считаем деградацией
-PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 300  # «пробка» на 5 минут
-# Глобальный лимит параллельных синков (dev по умолчанию выключен)
+PROVIDER_SYNC_WRITE_ENABLED = True
+PROVIDER_SYNC_LOCK_TTL_SECONDS = 120
+PROVIDER_SYNC_DEBOUNCE_SECONDS = 0
+PROVIDER_SYNC_DB_CHUNK_SIZE = 200
+PROVIDER_SYNC_FAIL_THRESHOLD = 3
+PROVIDER_SYNC_CIRCUIT_TTL_SECONDS = 300
 PROVIDER_SYNC_GLOBAL_MAX_CONCURRENT = 0
-# TTL одного глобального «слота» (на всякий случай)
 PROVIDER_SYNC_GLOBAL_SLOT_TTL_SECONDS = 1800
-# RECV_WINDOW для подписанных API (dev)
-BYBIT_RECV_WINDOW = 5000  # мс
-MEXC_RECV_WINDOW = 20000  # мс
-
+BYBIT_RECV_WINDOW = 5000  # ms
+MEXC_RECV_WINDOW = 20000  # ms
 PROVIDER_SYNC_GLOBAL_WAIT_SECONDS = 0
 
-# Rapira: добавлять синтетический FIAT RUB в список активов
+# Rapira: добавлять синтетический FIAT RUB в список активов + подтверждения
 RAPIRA_INCLUDE_RUB = True
 RAPIRA_RUB_PRECISION = 2
-# Rapira: подтверждения (chainId из /open/token: ETH/TRX/BSC/OP/TON/BTC/…)
-# Значение применяется и к вводу, и к выводу.
 RAPIRA_CONFIRMATIONS = {
-    ("USDT", "ETH"): 6,  # ERC20
-    ("USDT", "TRX"): 20,  # TRC20
-    ("USDT", "BSC"): 10,  # BEP20
-    ("BTC", "BTC"): 2,  # native BTC
-    ("BTC", "BSC"): 10,  # BTC на BSC (BEP20)
-    ("ETH", "OP"): 6,  # Optimism
-    ("ETH", "ETH"): 6,  # Optimism
-    ("ETH", "BSC"): 10,  # Optimism
-    ("TON", "TON"): 4,  # Toncoin
-    ("USDC", "ETH"): 6,  # ERC20
-    ("USDC", "ETH"): 6,  # ERC20
-    ("USDC", "BSC"): 10,  # ERC20
+    ("USDT", "ETH"): 6,
+    ("USDT", "TRX"): 20,
+    ("USDT", "BSC"): 10,
+    ("BTC", "BTC"): 2,
+    ("BTC", "BSC"): 10,
+    ("ETH", "OP"): 6,
+    ("ETH", "ETH"): 6,
+    ("ETH", "BSC"): 10,
+    ("TON", "TON"): 4,
+    ("USDC", "ETH"): 6,
+    ("USDC", "BSC"): 10,
 }
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Логирование (DEV): минимум — CSP-отчёты в консоль
+# LOGGING (DEV)
 # ───────────────────────────────────────────────────────────────────────────────
 LOGGING = {
     "version": 1,
@@ -374,92 +349,120 @@ LOGGING = {
         "console": {"class": "logging.StreamHandler"},
     },
     "loggers": {
-        # отчёты CSP — в консоль
-        "app_main.views_security": {
-            "handlers": ["console"],
-            "level": "INFO",
-            "propagate": False,
-        },
+        "app_main.views_security": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # Коллекторы — поднимай до DEBUG при отладке
+        "app_market.collectors": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
 
 # ───────────────────────────────────────────────────────────────────────────────
-# Redis / Prices (L1) — горячие ключи и стримы
+# REDIS / КЭШ / CELERY
 # ───────────────────────────────────────────────────────────────────────────────
-REDIS_HOST = "127.0.0.1"
-REDIS_PORT = 6379
-REDIS_PASSWORD = ""  # если в redis.conf включён requirepass — укажи пароль здесь
+REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
-# Логические БД Redis (по номерам держим изоляцию ролей)
-REDIS_DB_CACHE = 0  # Django Cache
+# Логические БД Redis
+REDIS_DB_CACHE = 0
 REDIS_DB_CELERY_BROKER = 1
 REDIS_DB_CELERY_RESULT = 2
-REDIS_DB_PRICES = 3  # Цены/стримы
-
+REDIS_DB_PRICES = 3  # цены/стримы collectors
 
 def _redis_dsn(db: int) -> str:
     auth = f":{REDIS_PASSWORD}@" if REDIS_PASSWORD else ""
     return f"redis://{auth}{REDIS_HOST}:{REDIS_PORT}/{db}"
 
-
 PRICES_REDIS_URL = _redis_dsn(REDIS_DB_PRICES)
-PRICES_L1C_STREAM = "prices:l1c:updates"                       # Stream для событий L1
-PRICES_L1C_KEY_FMT = "price:l1c:{provider}:{base}:{quote}"     # Горячий ключ (TTL)
+# Выровняем фолбэк URL для collectors на случай отсутствия django-redis:
+REDIS_URL = PRICES_REDIS_URL
 
-# SLA/TTL и пороги публикации (по типу площадки)
-PRICES_TTL_SECONDS = {
-    "CEX": 20,
-    "DEX": 90,
-    "PSP": 180,
-    "OTC": 300,
-    "MANUAL": 600,
-}
-PRICES_PUBLISH_EPSILON_PCT = {  # публикуем в Redis/стрим при изменении больше порога
-    "CEX": 0.10,  # 0.10%
-    "DEX": 0.20,
-    "PSP": 0.50,
-    "OTC": 0.50,
-    "MANUAL": 1.00,
-}
-PRICES_MAX_PUBLISH_INTERVAL_SEC = {  # даже без изменений пушим не реже этого
-    "CEX": 3,
-    "DEX": 60,
-    "PSP": 120,
-    "OTC": 120,
-    "MANUAL": 300,
-}
-
-# Сэмплинг в БД (чтобы не писать каждый тик)
-PRICES_DB_SAMPLE_MIN_INTERVAL_SEC = 30  # не чаще чем раз в 30с на пару/ПЛ
-PRICES_DB_SAMPLE_MIN_DELTA_PCT = 0.30  # либо если сдвиг mid ≥ 0.30%
-
-# ───────────────────────────────────────────────────────────────────────────────
-# Кэш (DEV = LocMem; одного процесса достаточно)
-# ───────────────────────────────────────────────────────────────────────────────
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-#         "LOCATION": "swapers-local",
-#         "TIMEOUT": 300,
-#         "KEY_PREFIX": "swapers",
-#     }
-# }
-# Готовые альтернативы (раскомментируешь при надобности):
-# 1) DatabaseCache (кросс-процесс, без Redis). Создать таблицу: `python manage.py createcachetable django_cache`
-# CACHES = {
-#     "default": {
-#         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
-#         "LOCATION": "django_cache",
-#         "TIMEOUT": 300,
-#         "KEY_PREFIX": "swapers",
-#     }
-# }
-# 2) RedisCache (когда поставишь Redis)
+# Django cache → Redis (dev)
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
-        "LOCATION": PRICES_REDIS_URL,  # ← используем redis DB=3 из твоих же настроек
+        "LOCATION": PRICES_REDIS_URL,
         "TIMEOUT": 300,
         "KEY_PREFIX": "swapers",
     },
 }
+
+# Celery (dev): брокер/результаты в Redis
+CELERY_BROKER_URL = _redis_dsn(REDIS_DB_CELERY_BROKER)
+CELERY_RESULT_BACKEND = _redis_dsn(REDIS_DB_CELERY_RESULT)
+CELERY_TASK_ALWAYS_EAGER = False
+CELERY_TIMEZONE = TIME_ZONE
+
+# ───────────────────────────────────────────────────────────────────────────────
+# COLLECTORS: реестр, sinks и интервалы
+# ───────────────────────────────────────────────────────────────────────────────
+
+# Функция idempotent-upsert ассетов кошелька в БД
+COLLECTORS_WALLET_UPSERT_FUNC = "app_market.services.wallet_upsert:upsert_assets"
+
+# Реестр провайдеров (адаптеры и возможности)
+COLLECTORS_PROVIDER_REGISTRY = {
+    # CEX
+    "BYBIT": {
+        "path": "app_market.providers.cex.bybit:BybitAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": True,   # BYBIT часто требует ключи для кошелька
+    },
+    "MEXC": {
+        "path": "app_market.providers.cex.mexc:MexcAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": False,
+    },
+    "KUCOIN": {
+        "path": "app_market.providers.cex.kucoin:KucoinAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": False,
+    },
+    "HTX": {
+        "path": "app_market.providers.cex.htx:HtxAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": False,
+    },
+    "WHITEBIT": {
+        "path": "app_market.providers.cex.whitebit:WhitebitAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": False,
+    },
+    "RAPIRA": {
+        "path": "app_market.providers.cex.rapira:RapiraAdapter",
+        "cap": {"wallet_assets": True, "prices_spot": True, "markets": True},
+        "enabled": True,
+        "needs_api": False,
+    },
+
+    # Cash / FX (не кошелёк, но источники цен)
+    "TWELVEDATA": {
+        "path": "app_market.providers.cex.twelvedata:TwelveDataCashAdapter",
+        "cap": {"wallet_assets": False, "prices_spot": True, "markets": False},
+        "enabled": True,
+        "needs_api": False,
+    },
+    "OPENEXCHANGERATES": {
+        "path": "app_market.providers.cex.openexchangerates:OpenExchangeRatesCashAdapter",
+        "cap": {"wallet_assets": False, "prices_spot": True, "markets": False},
+        "enabled": True,
+        "needs_api": False,
+    },
+}
+
+# Redis-sinks для цен + «зеркало» в админку без истории
+COLLECTORS_PRICES_STREAM = "prices:l1"
+COLLECTORS_PRICES_HASH_PREFIX = "prices:last"
+COLLECTORS_PRICES_HASH_TTL = 3600
+# COLLECTORS_PRICES_STREAM_MAXLEN = 10000
+COLLECTORS_PRICE_FRESHNESS_MINUTES = 10
+
+# Оркестрация/периодичность (Celery подключим в конце)
+COLLECTORS_MAX_PARALLEL_PROVIDERS = 2
+COLLECTORS_WALLET_INTERVAL_S = 3600
+COLLECTORS_PRICES_INTERVAL_S = 10
+COLLECTORS_DUMP_ENABLED = True
