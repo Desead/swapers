@@ -1,4 +1,3 @@
-# app_market/admin/prices_admin.py
 from decimal import Decimal, InvalidOperation
 
 from django.contrib import admin

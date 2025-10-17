@@ -1,12 +1,10 @@
 from django.contrib import admin, messages
 from django import forms
 from django.utils.translation import gettext_lazy as _t
-from django.utils.html import format_html, format_html_join
+from django.utils.html import format_html, format_html_join,mark_safe
 from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
-
-from app_market.services.stats import ensure_initial_stats, collect_exchange_stats
 from django.conf import settings
 import importlib
 from app_market.collectors.credentials import get as get_credentials
@@ -149,18 +147,41 @@ class ExchangeAdmin(admin.ModelAdmin):
 
         def render_table_card(title: str, snap: dict):
             m = snap.get("markets", {}) or {}
-            rows = format_html_join(
-                '',
-                "<tr><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
-                ((i + 1, (row.get('quote') or ''), row.get('pairs', 0))
-                 for i, row in enumerate(list(m.get("quote_popularity") or [])))
-            ) or format_html("<tr><td colspan='3'>—</td></tr>")
+            qp = list(m.get("quote_popularity") or [])
+            total = sum(int(row.get("pairs", 0) or 0) for row in qp)
+
+            if qp:
+                # обычные строки
+                body = [
+                    format_html(
+                        "<tr><td>{}</td><td><code>{}</code></td><td>{}</td></tr>",
+                        i + 1,
+                        (row.get("quote") or ""),
+                        row.get("pairs", 0),
+                    )
+                    for i, row in enumerate(qp)
+                ]
+                # итог — такая же строка, 3 ячейки, только жирным
+                body.append(
+                    format_html(
+                        "<tr>"
+                        "<td></td>"
+                        "<td><b>{}</b></td>"
+                        "<td><b>{}</b></td>"
+                        "</tr>",
+                        _t("Итого"),
+                        total,
+                    )
+                )
+                rows = mark_safe("".join(str(x) for x in body))
+            else:
+                rows = format_html("<tr><td colspan='3'>—</td></tr>")
 
             return format_html(
                 """
                 <div style="
-                    flex:0 1 calc((100% - 24px)/3);  /* не растём, чтобы три влезали стабильно */
-                    box-sizing:border-box;           /* ширина учитывает padding/border */
+                    flex:0 1 calc((100% - 24px)/3);
+                    box-sizing:border-box;
                     min-width:300px;
                     border:1px solid #ddd;border-radius:6px;padding:10px;">
                   <div style="margin-bottom:6px; line-height:1.2;">
