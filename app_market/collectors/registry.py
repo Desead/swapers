@@ -70,16 +70,13 @@ def get_entry(name: str) -> ProviderEntry:
 
 
 def make_adapter(name: str, credentials: Optional[Any] = None, **kwargs: Any) -> ProviderAdapter:
-    """
-    Некоторые адаптеры не принимают credentials в __init__.
-    Пытаемся сначала с credentials=..., если сигнатура не поддерживает — создаём без него.
-    """
     entry = get_entry(name)
     cls = _load_class(entry.dotted_path)
     try:
         adapter = cls(credentials=credentials, **kwargs)
         return adapter
     except TypeError as e:
-        log.debug("Adapter %s init without credentials (signature mismatch): %s", entry.dotted_path, e)
+        log.debug("Adapter %s: init without credentials (signature mismatch): %s", entry.dotted_path, e)
         adapter = cls(**kwargs)
         return adapter
+
