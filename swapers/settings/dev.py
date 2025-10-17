@@ -441,15 +441,15 @@ COLLECTORS_PROVIDER_REGISTRY = {
 
     # Cash / FX (не кошелёк, но источники цен)
     "TWELVEDATA": {
-        "path": "app_market.providers.cex.twelvedata:TwelveDataCashAdapter",
+        "path": "app_market.providers.cash.twelvedata:TwelveDataCashAdapter",
         "cap": {"wallet_assets": False, "prices_spot": True, "markets": False},
-        "enabled": True,
+        "enabled": False,
         "needs_api": False,
     },
     "OPENEXCHANGERATES": {
-        "path": "app_market.providers.cex.openexchangerates:OpenExchangeRatesCashAdapter",
+        "path": "app_market.providers.cash.openexchangerates:OpenExchangeRatesCashAdapter",
         "cap": {"wallet_assets": False, "prices_spot": True, "markets": False},
-        "enabled": True,
+        "enabled": False,
         "needs_api": False,
     },
 }

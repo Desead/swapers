@@ -9,6 +9,7 @@ from django.utils import timezone as dj_tz
 from app_market.models.exchange import Exchange, LiquidityProvider
 from app_market.models.price import PriceL1
 from .dump import write_daily_dump
+import logging
 
 # ───────────────────────────────────────────────────────────────────────────────
 # ПРАЙС-СБОРЩИКИ (используем твои готовые collect_spot)
@@ -34,6 +35,28 @@ PRICE_COLLECTORS: Dict[str, Callable[[Exchange, bool], tuple[int, int]]] = {
     LiquidityProvider.OpExRate: oer_collect_spot,
 }
 
+
+@contextmanager
+def _safe_logrecord_extra_created():
+    """
+    Временный патч logging.Logger.makeRecord:
+    если в extra залетело 'created' — переименуем в '_created', чтобы не падать.
+    """
+    orig = logging.Logger.makeRecord
+
+    def patched(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
+        if extra and isinstance(extra, dict) and "created" in extra:
+            extra = dict(extra)
+            extra["_created"] = extra.pop("created")
+        return orig(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
+
+    logging.Logger.makeRecord = patched
+    try:
+        yield
+    finally:
+        logging.Logger.makeRecord = orig
+
+
 def _get_exchange(provider: str) -> Exchange:
     """
     Берём Exchange по коду провайдера (первый попавшийся, как у тебя в ingest).
@@ -42,6 +65,7 @@ def _get_exchange(provider: str) -> Exchange:
     if not qs.exists():
         raise RuntimeError(f"Exchange с provider={provider} не найден")
     return qs.first()
+
 
 # ───────────────────────────────────────────────────────────────────────────────
 # ЗЕРКАЛО В АДМИНКУ: обёртка над publish_l1_code → PriceL1
@@ -107,10 +131,12 @@ def _mirror_prices_to_admin(exchange: Exchange, enabled: bool):
         # прикрепляем собранную пачку к контексту, чтобы run_prices мог её забрать
         setattr(_mirror_prices_to_admin, "_last_batch", published_batch)
 
+
 def _drain_mirror_batch() -> list[dict[str, Any]]:
     batch = getattr(_mirror_prices_to_admin, "_last_batch", None)
     setattr(_mirror_prices_to_admin, "_last_batch", None)
     return list(batch or [])
+
 
 # ───────────────────────────────────────────────────────────────────────────────
 # PUBLIC API (runner вызывает эти функции)
@@ -137,7 +163,9 @@ def run_wallet_assets(*, provider: str, adapter, dump_raw: bool = False, **_kwar
                 setattr(adapter, "_exchange", None)
 
     # Основной пайплайн записи в БД (upsert, reconcile и т.д. делает база)
-    stats = adapter.sync_assets(exchange=ex, timeout=20, limit=0, reconcile=True, verbose=False)
+    with _safe_logrecord_extra_created():
+        stats = adapter.sync_assets(exchange=ex, timeout=20, limit=0, reconcile=True, verbose=False)
+
     return {
         "provider": provider,
         "exchange_id": ex.id,
@@ -148,6 +176,7 @@ def run_wallet_assets(*, provider: str, adapter, dump_raw: bool = False, **_kwar
         "disabled": getattr(stats, "disabled", 0),
         "raw_dump": str(raw_dump_path) if raw_dump_path else "",
     }
+
 
 def run_prices(*, provider: str, dump_raw: bool = False, mirror_to_admin: bool = False, **_kwargs) -> dict:
     """
@@ -211,6 +240,7 @@ def run_prices(*, provider: str, dump_raw: bool = False, mirror_to_admin: bool =
         "raw_dump": str(raw_dump_path) if raw_dump_path else "",
         "mirrored_to_admin": bool(mirror_to_admin),
     }
+
 
 def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
     """

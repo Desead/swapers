@@ -30,5 +30,5 @@ def write_daily_dump(prefix: str, provider: str, payload: Any) -> Path | None:
         return None
     _ensure_dir(path.parent)
     # json pretty для человекочтения
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
     return path
