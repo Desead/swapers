@@ -93,3 +93,19 @@ python3 -m app_market.collectors.runner \
   --settings swapers.settings.prod \
   --task wallet-assets --once --require-non-debug
 
+```bash
+Короткая памятка по деплою (про новые нюансы)
+
+Раннер требует явный модуль настроек:
+
+dev: --settings swapers.settings.dev
+
+prod: DJANGO_SETTINGS_MODULE=swapers.settings.prod (или через --settings)
+
+при прод-запусках добавляй --require-non-debug.
+
+Если провайдер в реестре с needs_api=True, но ключи не заведены — провайдер пропускается.
+
+Параллельные запуски предотвращаются файлом-локом: <BASE_DIR>/var/collectors.lock.
+Если лок занят, раннер завершится с сообщением: «Another collectors run is in progress».
+```

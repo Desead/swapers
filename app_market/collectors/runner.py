@@ -6,6 +6,8 @@ import logging
 import os
 import sys
 import time
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -47,6 +49,33 @@ def _ensure_django(settings_module: Optional[str], *, require_non_debug: bool = 
     if require_non_debug and dj_settings.DEBUG:
         raise SystemExit("Refusing to run with DEBUG=True while --require-non-debug is set.")
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ФАЙЛОВЫЙ ЛОК (POSIX)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@contextmanager
+def _file_lock(path: Path):
+    """
+    Эксклюзивный неблокирующий лок на файл. Если занят — бросаем SystemExit.
+    """
+    import fcntl  # POSIX
+    path.parent.mkdir(parents=True, exist_ok=True)
+    f = open(path, "a+")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise SystemExit(f"Another collectors run is in progress (lock: {path}).")
+    try:
+        yield
+    finally:
+        try:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        finally:
+            f.close()
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # УТИЛИТЫ
 # ──────────────────────────────────────────────────────────────────────────────
@@ -64,6 +93,7 @@ def _load_class(dotted: str):
     except AttributeError as e:
         raise AttributeError(f"Class '{cls_name}' not found in module '{mod_name}'") from e
 
+
 def _iter_enabled_providers(cfg: Dict[str, Dict[str, Any]], only: Optional[List[str]]) -> Iterable[Tuple[str, Dict[str, Any]]]:
     """
     Итерация по провайдерам в порядке:
@@ -79,6 +109,7 @@ def _iter_enabled_providers(cfg: Dict[str, Dict[str, Any]], only: Optional[List[
     for code, entry in cfg.items():
         if entry.get("enabled", True):
             yield code, entry
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ОСНОВНОЙ ЗАПУСК
@@ -113,21 +144,26 @@ def run_once(*, providers: Optional[List[str]], task: str, dump_raw: bool, admin
             continue
         needs_api = bool(entry.get("needs_api", False))
 
+        # 0) Если нужны ключи — достаём заранее и скипаем при отсутствии
+        creds = None
+        if needs_api:
+            try:
+                from .credentials import get as get_credentials
+                creds = get_credentials(prov)  # может вернуть None
+            except Exception:
+                log.exception("Credentials: unexpected error for %s", prov)
+                creds = None
+            if creds is None:
+                log.error("Skipping %s: credentials required (needs_api=True) but not found.", prov)
+                continue
+
         # 1) Создание адаптера
         try:
             cls = _load_class(path)
-            if needs_api:
-                try:
-                    from .credentials import get as get_credentials
-                    creds = get_credentials(prov)  # может вернуть None — допустимо
-                except Exception:
-                    log.exception("Credentials: unexpected error for %s", prov)
-                    creds = None
-                try:
-                    adapter = cls(credentials=creds)
-                except TypeError:
-                    adapter = cls()
-            else:
+            try:
+                adapter = cls(credentials=creds) if needs_api else cls()
+            except TypeError:
+                # адаптер без параметров
                 adapter = cls()
             log.info("Adapter ready: %s (%s)", prov, path)
         except Exception:
@@ -158,6 +194,7 @@ def run_once(*, providers: Optional[List[str]], task: str, dump_raw: bool, admin
 
     return ok
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
@@ -178,16 +215,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     _configure_logging(args.verbose)
     _ensure_django(args.settings, require_non_debug=args.require_non_debug)
 
+    # Подготавливаем лок-файл после инициализации Django (нужен BASE_DIR)
+    from django.conf import settings
+    lock_path = Path(settings.BASE_DIR) / "var" / "collectors.lock"
+
     if args.once and args.loop:
         parser.error("Use either --once or --loop, not both.")
 
     if args.once or not args.loop:
-        return 0 if run_once(
-            providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
-        ) else 1
+        with _file_lock(lock_path):
+            return 0 if run_once(
+                providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
+            ) else 1
 
-    # loop-режим: интервалы строго из настроек, без getattr
-    from django.conf import settings
+    # loop-режим: интервалы строго из настроек
     try:
         prices_iv = int(settings.COLLECTORS_PRICES_INTERVAL_S)         # type: ignore[attr-defined]
         wallet_iv = int(settings.COLLECTORS_WALLET_INTERVAL_S)         # type: ignore[attr-defined]
@@ -196,21 +237,23 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 1
 
     try:
-        while True:
-            rc = run_once(
-                providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
-            )
-            if args.task == "wallet-assets":
-                time.sleep(wallet_iv)
-            elif args.task == "prices":
-                time.sleep(prices_iv)
-            elif args.task == "stats":
-                time.sleep(max(300, wallet_iv))
-            else:
-                time.sleep(5)
+        with _file_lock(lock_path):
+            while True:
+                rc = run_once(
+                    providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
+                )
+                if args.task == "wallet-assets":
+                    time.sleep(wallet_iv)
+                elif args.task == "prices":
+                    time.sleep(prices_iv)
+                elif args.task == "stats":
+                    time.sleep(max(300, wallet_iv))
+                else:
+                    time.sleep(5)
     except KeyboardInterrupt:
         log.info("Interrupted.")
         return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

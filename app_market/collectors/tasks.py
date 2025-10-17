@@ -28,7 +28,7 @@ from app_market.prices.price_openexchangerates import collect_spot as oer_collec
 try:
     from app_market.services.stats import StatsError as _StatsError
 except Exception:
-    class _StatsError(Exception):  # fallback для раннего импорта в тестах
+    class _StatsError(Exception):
         pass
 StatsError = _StatsError
 
@@ -81,13 +81,14 @@ def _get_exchange(provider: str) -> Exchange:
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ЗЕРКАЛО В АДМИНКУ: publish_l1_code → PriceL1
+# ЗЕРКАЛО В АДМИНКУ: publish_l1_code → PriceL1 (не фатально)
 # ───────────────────────────────────────────────────────────────────────────────
 @contextmanager
 def _mirror_prices_to_admin(exchange: Exchange, enabled: bool):
     """
     Если enabled=True, временно оборачиваем app_market.prices.publisher.publish_l1_code
-    и пишем в PriceL1 синхронно с публикацией в Redis. Возвращаем список нормализованных записей.
+    и пытаемся писать в PriceL1 синхронно с публикацией в Redis.
+    Ошибки БД не ломают публикацию в Redis — только логируются.
     """
     batch: List[dict[str, Any]] = []
     if not enabled:
@@ -96,35 +97,39 @@ def _mirror_prices_to_admin(exchange: Exchange, enabled: bool):
 
     from app_market.prices import publisher as _pub
     original = _pub.publish_l1_code
+    log = logging.getLogger("app_market.mirror")
 
     def _wrapped_publish(*, provider_id: int, exchange_kind: str,
                          base_code: str, quote_code: str,
                          bid, ask, last=None, ts_src_ms: int | None = None,
                          src_symbol: str = "", extras: dict | None = None) -> str:
-        # 1) публикация в Redis
+        # 1) публикация в Redis (критичный канал)
         ev_id = original(provider_id=provider_id, exchange_kind=exchange_kind,
                          base_code=base_code, quote_code=quote_code,
                          bid=bid, ask=ask, last=last, ts_src_ms=ts_src_ms,
                          src_symbol=src_symbol, extras=extras)
 
-        # 2) зеркало в БД
-        ts_src = dj_tz.now()
+        # 2) зеркало в БД (best-effort)
         try:
-            if ts_src_ms:
-                ts_src = datetime.fromtimestamp(ts_src_ms / 1000.0, tz=timezone.utc)
-        except Exception:
             ts_src = dj_tz.now()
+            if ts_src_ms:
+                try:
+                    ts_src = datetime.fromtimestamp(ts_src_ms / 1000.0, tz=timezone.utc)
+                except Exception:
+                    ts_src = dj_tz.now()
 
-        with transaction.atomic():
-            PriceL1.objects.create(
-                provider=exchange,
-                src_symbol=src_symbol or f"{base_code}{quote_code}",
-                src_base_code=base_code,
-                src_quote_code=quote_code,
-                bid=bid, ask=ask, last=last,
-                ts_src=ts_src,
-                extras=extras or {},
-            )
+            with transaction.atomic():
+                PriceL1.objects.create(
+                    provider=exchange,
+                    src_symbol=src_symbol or f"{base_code}{quote_code}",
+                    src_base_code=base_code,
+                    src_quote_code=quote_code,
+                    bid=bid, ask=ask, last=last,
+                    ts_src=ts_src,
+                    extras=extras or {},
+                )
+        except Exception:
+            log.exception("PriceL1 mirror failed for %s %s/%s", exchange, base_code, quote_code)
 
         # 3) нормализованный publish-пакет (для дампа)
         batch.append({
@@ -156,7 +161,7 @@ def run_wallet_assets(*, provider: str, adapter, dump_raw: bool = False, **_kwar
     raw_dump_path = None
     if dump_raw:
         try:
-            setattr(adapter, "_exchange", ex)  # для некоторых адаптеров это контракт
+            setattr(adapter, "_exchange", ex)  # контракт некоторых адаптеров
             payload = adapter.fetch_payload(timeout=20)
             raw_dump_path = write_daily_dump("wallet", provider, payload)
         except Exception:
@@ -169,7 +174,6 @@ def run_wallet_assets(*, provider: str, adapter, dump_raw: bool = False, **_kwar
     with _safe_logrecord_extra_created():
         stats = adapter.sync_assets(exchange=ex, timeout=20, limit=0, reconcile=True, verbose=False)
 
-    # Поля stats — обязательные: жёстко читаем напрямую
     return {
         "provider": provider,
         "exchange_id": ex.id,
