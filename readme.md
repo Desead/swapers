@@ -78,3 +78,18 @@ Get-Content app_library\fixtures\document_templates_ru.json -Raw -Encoding Defau
 | Set-Content app_library\fixtures\document_templates_ru_utf8.json -NoNewline -Encoding UTF8
 # Загрузить данные из фикстуры
 python manage.py loaddata app_library/fixtures/document_templates_ru_utf8.json
+
+Памятка по деплою (про настройки)
+
+Идея: раннер не «угадывает» dev/prod. Модуль настроек задаётся явно — либо через флаг --settings, либо через переменную окружения DJANGO_SETTINGS_MODULE.
+
+DEV (локально):
+python3 -m app_market.collectors.runner \
+  --settings swapers.settings.dev \
+  --task all --once --admin-mirror -v
+
+PROD через флаг:
+python3 -m app_market.collectors.runner \
+  --settings swapers.settings.prod \
+  --task wallet-assets --once --require-non-debug
+

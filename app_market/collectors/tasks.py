@@ -1,18 +1,19 @@
 from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Callable, Dict, Any
+from typing import Callable, Dict, Any, List
 
 import logging
 from django.db import transaction
 from django.utils import timezone as dj_tz
+from django.core.exceptions import MultipleObjectsReturned, ObjectDoesNotExist
 
 from app_market.models.exchange import Exchange, LiquidityProvider
 from app_market.models.price import PriceL1
 from .dump import write_daily_dump
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ПРАЙС-СБОРЩИКИ (используем твои готовые collect_spot)
+# ПРАЙС-СБОРЩИКИ
 # ───────────────────────────────────────────────────────────────────────────────
 from app_market.prices.price_bybit import collect_spot as bybit_collect_spot
 from app_market.prices.price_whitebit import collect_spot as whitebit_collect_spot
@@ -26,11 +27,9 @@ from app_market.prices.price_openexchangerates import collect_spot as oer_collec
 # --- StatsError alias на уровне модуля (поддаётся monkeypatch) ---
 try:
     from app_market.services.stats import StatsError as _StatsError
-except Exception:  # на случай, если в раннем окружении класса нет
-    class _StatsError(Exception):
+except Exception:
+    class _StatsError(Exception):  # fallback для раннего импорта в тестах
         pass
-
-# Экспортируем под общим именем, чтобы тесты могли подменять:
 StatsError = _StatsError
 
 PRICE_COLLECTORS: Dict[str, Callable[[Exchange, bool], tuple[int, int]]] = {
@@ -45,6 +44,7 @@ PRICE_COLLECTORS: Dict[str, Callable[[Exchange, bool], tuple[int, int]]] = {
     LiquidityProvider.OpExRate: oer_collect_spot,
 }
 
+# ───────────────────────────────────────────────────────────────────────────────
 
 @contextmanager
 def _safe_logrecord_extra_created():
@@ -69,42 +69,45 @@ def _safe_logrecord_extra_created():
 
 def _get_exchange(provider: str) -> Exchange:
     """
-    Берём Exchange по коду провайдера (первый попавшийся, как у тебя в ingest).
+    Берём Exchange строго по полю provider.
+    Если конфигурация нарушена (0 или >1 записей), падаем явно.
     """
-    qs = Exchange.objects.filter(provider=provider).order_by("id")
-    if not qs.exists():
-        raise RuntimeError(f"Exchange с provider={provider} не найден")
-    return qs.first()
+    try:
+        return Exchange.objects.get(provider=provider)
+    except ObjectDoesNotExist as e:
+        raise RuntimeError(f"Exchange с provider={provider} не найден") from e
+    except MultipleObjectsReturned as e:
+        raise RuntimeError(f"Найдено несколько Exchange с provider={provider}") from e
 
 
 # ───────────────────────────────────────────────────────────────────────────────
-# ЗЕРКАЛО В АДМИНКУ: обёртка над publish_l1_code → PriceL1
+# ЗЕРКАЛО В АДМИНКУ: publish_l1_code → PriceL1
 # ───────────────────────────────────────────────────────────────────────────────
 @contextmanager
 def _mirror_prices_to_admin(exchange: Exchange, enabled: bool):
     """
     Если enabled=True, временно оборачиваем app_market.prices.publisher.publish_l1_code
-    и пишем в PriceL1 синхронно с публикацией в Redis.
+    и пишем в PriceL1 синхронно с публикацией в Redis. Возвращаем список нормализованных записей.
     """
+    batch: List[dict[str, Any]] = []
     if not enabled:
-        yield
+        yield batch
         return
 
     from app_market.prices import publisher as _pub
     original = _pub.publish_l1_code
-    published_batch: list[dict[str, Any]] = []
 
     def _wrapped_publish(*, provider_id: int, exchange_kind: str,
                          base_code: str, quote_code: str,
                          bid, ask, last=None, ts_src_ms: int | None = None,
                          src_symbol: str = "", extras: dict | None = None) -> str:
-        # 1) оригинальная публикация в Redis
+        # 1) публикация в Redis
         ev_id = original(provider_id=provider_id, exchange_kind=exchange_kind,
                          base_code=base_code, quote_code=quote_code,
                          bid=bid, ask=ask, last=last, ts_src_ms=ts_src_ms,
                          src_symbol=src_symbol, extras=extras)
 
-        # 2) зеркало в БД (без истории комиссий — они опциональны)
+        # 2) зеркало в БД
         ts_src = dj_tz.now()
         try:
             if ts_src_ms:
@@ -122,30 +125,22 @@ def _mirror_prices_to_admin(exchange: Exchange, enabled: bool):
                 ts_src=ts_src,
                 extras=extras or {},
             )
-        # 3) аккумулируем «нормализованный» publish-пакет — пригодится для dump
-        published_batch.append({
+
+        # 3) нормализованный publish-пакет (для дампа)
+        batch.append({
             "base": base_code, "quote": quote_code,
             "bid": str(bid), "ask": str(ask),
             "last": "" if last is None else str(last),
             "ts_src_ms": ts_src_ms, "src_symbol": src_symbol,
             "extras": extras or {},
         })
-
         return ev_id
 
     _pub.publish_l1_code = _wrapped_publish  # patch
     try:
-        yield
+        yield batch
     finally:
         _pub.publish_l1_code = original
-        # прикрепляем собранную пачку к контексту, чтобы run_prices мог её забрать
-        setattr(_mirror_prices_to_admin, "_last_batch", published_batch)
-
-
-def _drain_mirror_batch() -> list[dict[str, Any]]:
-    batch = getattr(_mirror_prices_to_admin, "_last_batch", None)
-    setattr(_mirror_prices_to_admin, "_last_batch", None)
-    return list(batch or [])
 
 
 # ───────────────────────────────────────────────────────────────────────────────
@@ -153,93 +148,60 @@ def _drain_mirror_batch() -> list[dict[str, Any]]:
 # ───────────────────────────────────────────────────────────────────────────────
 def run_wallet_assets(*, provider: str, adapter, dump_raw: bool = False, **_kwargs) -> dict:
     """
-    Синхронизируем активы по провайдеру (используем твой UnifiedProviderBase.sync_assets()).
+    Синхронизируем активы по провайдеру (UnifiedProviderBase.sync_assets()).
     """
     ex = _get_exchange(provider)
 
-    # Dump RAW до/после — используем провайдерский fetch_payload (для некоторых нужен exchange)
+    # Сырой дамп: если адаптер поддерживает fetch_payload (части нужен ._exchange)
     raw_dump_path = None
     if dump_raw:
         try:
-            # аккуратно: некоторым адаптерам нужен ._exchange для fetch_payload (см. Bybit) :contentReference[oaicite:4]{index=4}
-            setattr(adapter, "_exchange", ex)
+            setattr(adapter, "_exchange", ex)  # для некоторых адаптеров это контракт
             payload = adapter.fetch_payload(timeout=20)
             raw_dump_path = write_daily_dump("wallet", provider, payload)
         except Exception:
             raw_dump_path = None
         finally:
-            # вернуть guard-ссылку
             if hasattr(adapter, "_exchange"):
                 setattr(adapter, "_exchange", None)
 
-    # Основной пайплайн записи в БД (upsert, reconcile и т.д. делает база)
+    # Основной пайплайн записи в БД
     with _safe_logrecord_extra_created():
         stats = adapter.sync_assets(exchange=ex, timeout=20, limit=0, reconcile=True, verbose=False)
 
+    # Поля stats — обязательные: жёстко читаем напрямую
     return {
         "provider": provider,
         "exchange_id": ex.id,
-        "processed": getattr(stats, "processed", 0),
-        "created": getattr(stats, "created", 0),
-        "updated": getattr(stats, "updated", 0),
-        "skipped": getattr(stats, "skipped", 0),
-        "disabled": getattr(stats, "disabled", 0),
+        "processed": stats.processed,
+        "created": stats.created,
+        "updated": stats.updated,
+        "skipped": stats.skipped,
+        "disabled": stats.disabled,
         "raw_dump": str(raw_dump_path) if raw_dump_path else "",
     }
 
 
 def run_prices(*, provider: str, dump_raw: bool = False, mirror_to_admin: bool = False, **_kwargs) -> dict:
     """
-    Собираем ВСЕ L1 цены для провайдера (через твои price_*:collect_spot), публикуем в Redis,
-    опционально зеркалим их в БД для админки (PriceL1), и при необходимости кладём JSON-дамп.
+    Собираем ВСЕ L1-цены для провайдера (price_*:collect_spot), публикуем в Redis,
+    опционально зеркалим их в БД (PriceL1), и при необходимости кладём JSON-дамп.
     """
     ex = _get_exchange(provider)
     collector = PRICE_COLLECTORS.get(provider)
     if not collector:
         raise RuntimeError(f"{provider}: для цен нет коллектор-функции")
 
-    # Включаем зеркало в админку (патчим publisher на время выполнения)
-    with _mirror_prices_to_admin(ex, enabled=bool(mirror_to_admin)):
+    # Зеркало в админку — получаем ссылку на «живой» список batch
+    with _mirror_prices_to_admin(ex, enabled=bool(mirror_to_admin)) as batch:
         pushed, skipped = collector(ex, dry_run=False)
 
-    # Если просили — кладём дамп. Истинный «raw от API» у разных модулей разный;
-    # соберём максимум доступного без инвазии: нормализованные publish-записи +,
-    # если удастся — дернём «внутренние» _tickers/_symbols функции модуля.
-    batch = _drain_mirror_batch()
     raw_dump_path = None
     if dump_raw:
         payload: dict[str, Any] = {
             "published": batch,
             "meta": {"provider": provider, "generated_at": dj_tz.now().isoformat()},
-            "sources": {},
         }
-        # попробовать добрать «сырые» выдачи из модулей (best effort)
-        try:
-            mod_map = {
-                LiquidityProvider.BYBIT: "app_market.prices.price_bybit",
-                LiquidityProvider.WHITEBIT: "app_market.prices.price_whitebit",
-                LiquidityProvider.KUCOIN: "app_market.prices.price_kucoin",
-                LiquidityProvider.MEXC: "app_market.prices.price_mexc",
-                LiquidityProvider.HTX: "app_market.prices.price_htx",
-                LiquidityProvider.RAPIRA: "app_market.prices.price_rapira",
-                LiquidityProvider.TWELVEDATA: "app_market.prices.price_twelvedata",
-                LiquidityProvider.OpExRate: "app_market.prices.price_openexchangerates",
-            }
-            import importlib
-            mod = importlib.import_module(mod_map[provider])
-            for name in dir(mod):
-                if not name.startswith("_"):
-                    continue
-                if "cached" in name:  # пропустим кэши
-                    continue
-                fn = getattr(mod, name, None)
-                if callable(fn) and fn.__code__.co_argcount == 0:
-                    try:
-                        payload["sources"][name] = fn()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
         raw_dump_path = write_daily_dump("prices", provider, payload)
 
     return {
@@ -258,14 +220,11 @@ def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
     Если для провайдера статистика ещё не реализована (StatsError) — аккуратно пропускаем.
     """
     ex = _get_exchange(provider)
-
-    # импортируем только функцию; исключение берём из модульного алиаса StatsError
     from app_market.services.stats import collect_exchange_stats
 
     try:
         snap = collect_exchange_stats(ex, timeout=20)
     except StatsError as e:
-        # мягкий скип только для «не реализовано»
         payload = {
             "provider": provider,
             "exchange_id": ex.id,

@@ -1,15 +1,16 @@
-# app_market/collectors/runner.py
 from __future__ import annotations
 
 import argparse
 import importlib
 import logging
 import os
-import random
 import sys
 import time
-from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ЛОГИРОВАНИЕ / DJANGO
+# ──────────────────────────────────────────────────────────────────────────────
 
 def _configure_logging(verbose: int):
     level = logging.WARNING
@@ -21,15 +22,38 @@ def _configure_logging(verbose: int):
 
 log = logging.getLogger(__name__)
 
-def _ensure_django():
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", os.getenv("DJANGO_SETTINGS_MODULE", "swapers.settings.dev"))
+def _ensure_django(settings_module: Optional[str], *, require_non_debug: bool = False):
+    """
+    Не гадаем модуль настроек.
+    - Если передали --settings, используем его.
+    - Если нет — требуем DJANGO_SETTINGS_MODULE в окружении.
+    После setup() логируем DEBUG и (опционально) отказываемся работать при DEBUG=True.
+    """
+    if settings_module:
+        os.environ["DJANGO_SETTINGS_MODULE"] = settings_module
+    if "DJANGO_SETTINGS_MODULE" not in os.environ:
+        raise SystemExit(
+            "DJANGO_SETTINGS_MODULE is not set. "
+            "Pass --settings swapers.settings.dev|swapers.settings.prod "
+            "or export DJANGO_SETTINGS_MODULE in the environment."
+        )
+
     import django
     django.setup()
 
+    from django.conf import settings as dj_settings
+    log.info("Using settings: %s (DEBUG=%s)", os.environ["DJANGO_SETTINGS_MODULE"], dj_settings.DEBUG)
+
+    if require_non_debug and dj_settings.DEBUG:
+        raise SystemExit("Refusing to run with DEBUG=True while --require-non-debug is set.")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# УТИЛИТЫ
+# ──────────────────────────────────────────────────────────────────────────────
+
 def _load_class(dotted: str):
     """
-    dotted = 'pkg.mod:ClassName'
-    Никаких догадок: жёстко грузим модуль и берём класс.
+    dotted = 'pkg.mod:ClassName' — жёсткая загрузка без эвристик.
     """
     if ":" not in dotted:
         raise ValueError(f"Invalid dotted path '{dotted}', expected 'module:Class'")
@@ -41,48 +65,61 @@ def _load_class(dotted: str):
         raise AttributeError(f"Class '{cls_name}' not found in module '{mod_name}'") from e
 
 def _iter_enabled_providers(cfg: Dict[str, Dict[str, Any]], only: Optional[List[str]]) -> Iterable[Tuple[str, Dict[str, Any]]]:
+    """
+    Итерация по провайдерам в порядке:
+      - если указан фильтр 'only' — в том же порядке, что и в списке 'only';
+      - иначе — по всем enabled в словаре cfg.
+    """
     if only:
-        for name in only:
-            entry = cfg.get(name)
+        for code in only:
+            entry = cfg.get(code)
             if entry and entry.get("enabled", True):
-                yield name, entry
+                yield code, entry
         return
-    for name, entry in cfg.items():
+    for code, entry in cfg.items():
         if entry.get("enabled", True):
-            yield name, entry
+            yield code, entry
 
-def _sleep_with_jitter(base_seconds: int):
-    jitter = random.uniform(0.05, 0.25) * base_seconds
-    time.sleep(base_seconds + jitter)
+# ──────────────────────────────────────────────────────────────────────────────
+# ОСНОВНОЙ ЗАПУСК
+# ──────────────────────────────────────────────────────────────────────────────
 
 def run_once(*, providers: Optional[List[str]], task: str, dump_raw: bool, admin_mirror: bool) -> int:
     """
     Последовательный запуск выбранной задачи по включённым провайдерам.
-    НИЧЕГО не берём из collectors.registry — только настройки.
+    Ничего не берём из registry-модулей — только из настроек.
     """
     from django.conf import settings
     from .tasks import run_prices, run_stats, run_wallet_assets
 
-    cfg: Dict[str, Dict[str, Any]] = getattr(settings, "COLLECTORS_PROVIDER_REGISTRY", {})
-    if not cfg:
-        log.error("COLLECTORS_PROVIDER_REGISTRY is empty — nothing to run")
+    # Строго берём реестр из настроек; если отсутствует — это ошибка конфигурации.
+    try:
+        cfg: Dict[str, Dict[str, Any]] = settings.COLLECTORS_PROVIDER_REGISTRY  # type: ignore[attr-defined]
+    except AttributeError:
+        log.error("Missing settings.COLLECTORS_PROVIDER_REGISTRY")
+        return 0
+    if not isinstance(cfg, dict) or not cfg:
+        log.error("COLLECTORS_PROVIDER_REGISTRY is empty or invalid — nothing to run")
         return 0
 
     ok = 0
-    base_dir: Path = getattr(settings, "BASE_DIR", Path.cwd())
 
     for prov, entry in _iter_enabled_providers(cfg, providers):
-        path = entry.get("path")
+        # path — обязательный ключ, без .get()
+        try:
+            path = entry["path"]
+        except KeyError:
+            log.error("Provider '%s' misconfigured: 'path' is required", prov)
+            continue
         needs_api = bool(entry.get("needs_api", False))
 
         # 1) Создание адаптера
-        adapter = None
         try:
             cls = _load_class(path)
             if needs_api:
                 try:
                     from .credentials import get as get_credentials
-                    creds = get_credentials(prov)  # может вернуть None — это нормально
+                    creds = get_credentials(prov)  # может вернуть None — допустимо
                 except Exception:
                     log.exception("Credentials: unexpected error for %s", prov)
                     creds = None
@@ -97,59 +134,49 @@ def run_once(*, providers: Optional[List[str]], task: str, dump_raw: bool, admin
             log.exception("Adapter init failed for %s (%s)", prov, path)
             continue
 
-        # 2) Выполнение задач
-        def _do_wallet():
-            nonlocal ok
-            try:
+        # 2) Выполнение задач (строго и просто)
+        try:
+            if task == "wallet-assets":
                 run_wallet_assets(provider=prov, adapter=adapter, dump_raw=dump_raw)
                 ok += 1
-            except Exception:
-                log.exception("WalletAssetsTask failed for %s", prov)
-
-        def _do_prices():
-            nonlocal ok
-            try:
+            elif task == "prices":
                 run_prices(provider=prov, dump_raw=dump_raw, mirror_to_admin=admin_mirror)
                 ok += 1
-            except Exception:
-                log.exception("PricesTask failed for %s", prov)
-
-        def _do_stats():
-            nonlocal ok
-            try:
+            elif task == "stats":
                 run_stats(provider=prov, dump_raw=dump_raw)
                 ok += 1
-            except Exception:
-                log.exception("StatsTask failed for %s", prov)
-
-        if task == "wallet-assets":
-            _do_wallet()
-        elif task == "prices":
-            _do_prices()
-        elif task == "stats":
-            _do_stats()
-        else:  # all
-            _do_wallet()
-            _sleep_with_jitter(1)
-            _do_prices()
-            _sleep_with_jitter(1)
-            _do_stats()
+            else:  # all
+                run_wallet_assets(provider=prov, adapter=adapter, dump_raw=dump_raw)
+                time.sleep(0.5)  # минимальная пауза, чтобы не «стрелять очередями» вплотную
+                run_prices(provider=prov, dump_raw=dump_raw, mirror_to_admin=admin_mirror)
+                time.sleep(0.5)
+                run_stats(provider=prov, dump_raw=dump_raw)
+                ok += 3
+        except Exception:
+            log.exception("Task '%s' failed for %s", task, prov)
+            # продолжаем к следующему провайдеру
 
     return ok
 
+# ──────────────────────────────────────────────────────────────────────────────
+# CLI
+# ──────────────────────────────────────────────────────────────────────────────
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Unified collectors runner (settings-driven)")
+    parser.add_argument("--settings", help="Django settings module, e.g. swapers.settings.dev or swapers.settings.prod")
+    parser.add_argument("--require-non-debug", action="store_true", help="Abort if DEBUG=True (safety for prod)")
     parser.add_argument("--provider", action="append", help="Provider code (repeatable). Default: all enabled")
     parser.add_argument("--task", choices=("wallet-assets", "prices", "stats", "all"), default="all")
     parser.add_argument("--once", action="store_true", help="Run once and exit")
     parser.add_argument("--loop", action="store_true", help="Run forever with settings intervals")
-    parser.add_argument("--dump-raw", action="store_true", help="Dump raw JSON once per day")
+    parser.add_argument("--dump-raw", action="store_true", help="Dump raw JSON once (single file per provider/type)")
     parser.add_argument("--admin-mirror", action="store_true", help="Mirror L1 prices to admin (PriceL1)")
     parser.add_argument("-v", "--verbose", action="count", default=0)
 
     args = parser.parse_args(argv or sys.argv[1:])
     _configure_logging(args.verbose)
-    _ensure_django()
+    _ensure_django(args.settings, require_non_debug=args.require_non_debug)
 
     if args.once and args.loop:
         parser.error("Use either --once or --loop, not both.")
@@ -159,10 +186,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             providers=args.provider, task=args.task, dump_raw=args.dump_raw, admin_mirror=args.admin_mirror
         ) else 1
 
-    # loop-режим (используем интервалы из настроек)
+    # loop-режим: интервалы строго из настроек, без getattr
     from django.conf import settings
-    prices_iv = int(getattr(settings, "COLLECTORS_PRICES_INTERVAL_S", 10))
-    wallet_iv = int(getattr(settings, "COLLECTORS_WALLET_INTERVAL_S", 3600))
+    try:
+        prices_iv = int(settings.COLLECTORS_PRICES_INTERVAL_S)         # type: ignore[attr-defined]
+        wallet_iv = int(settings.COLLECTORS_WALLET_INTERVAL_S)         # type: ignore[attr-defined]
+    except AttributeError as e:
+        log.error("Missing interval settings: %s", e)
+        return 1
+
     try:
         while True:
             rc = run_once(

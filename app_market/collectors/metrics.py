@@ -1,4 +1,3 @@
-# app_market/collectors/metrics.py
 from __future__ import annotations
 
 import json
