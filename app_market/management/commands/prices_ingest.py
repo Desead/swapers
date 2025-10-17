@@ -9,6 +9,9 @@ from app_market.prices.price_whitebit import collect_spot as whitebit_collect_sp
 from app_market.prices.price_kucoin import collect_spot as kucoin_collect_spot
 from app_market.prices.price_mexc import collect_spot as mexc_collect_spot
 from app_market.prices.price_htx import collect_spot as htx_collect_spot
+from app_market.prices.price_rapira import collect_spot as rapira_collect_spot
+from app_market.prices.price_twelvedata import collect_spot as twelvedata_collect_spot
+from app_market.prices.price_openexchangerates import collect_spot as oer_collect_spot
 
 CollectorFn = Callable[[Exchange, bool], Tuple[int, int]]  # (pushed, skipped)
 
@@ -19,6 +22,9 @@ PROVIDER_MAP: dict[str, dict[str, CollectorFn]] = {
     "kucoin": {"spot": kucoin_collect_spot},
     "mexc": {"spot": mexc_collect_spot},
     "htx": {"spot": htx_collect_spot},
+    "rapira": {"spot": rapira_collect_spot},
+    "twelvedata": {"spot": twelvedata_collect_spot},
+    "openexchangerates": {"spot": oer_collect_spot},
 }
 
 LP_ENUM_MAP: dict[str, LiquidityProvider] = {
@@ -27,6 +33,9 @@ LP_ENUM_MAP: dict[str, LiquidityProvider] = {
     "kucoin": LiquidityProvider.KUCOIN,
     "mexc": LiquidityProvider.MEXC,
     "htx": LiquidityProvider.HTX,
+    "rapira": LiquidityProvider.RAPIRA,
+    "twelvedata": LiquidityProvider.TWELVEDATA,
+    "openexchangerates": LiquidityProvider.OpExRate,
 }
 
 
@@ -40,6 +49,7 @@ class Command(BaseCommand):
         parser.add_argument("--loop", action="store_true", help="крутить в цикле")
         parser.add_argument("--sleep", type=float, default=10.0, help="пауза между проходами при --loop")
         parser.add_argument("--dry-run", action="store_true", help="не публиковать, только считать")
+        parser.add_argument("--dump-json-dir", dest="dump_json_dir", default=None, help="Если указан, сборщик будет сохранять сырые ответы в каталог", )
 
     def handle(self, *args, **opts):
         provider = (opts["provider"] or "").strip().lower()
