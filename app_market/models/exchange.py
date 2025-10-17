@@ -205,7 +205,7 @@ class Exchange(models.Model):
 
     stablecoin = models.CharField(
         max_length=40,
-        default="USDT",
+        default="",
         blank=True, null=True,
         verbose_name=_t("Рабочий стейблкоин"),
         help_text=_t("Стейблкоины для расчётов. Заполняются автоматически."),
@@ -383,10 +383,19 @@ class Exchange(models.Model):
             if self.fee_withdraw_max < self.fee_withdraw_min:
                 raise ValidationError({"fee_withdraw_max": _t("Максимум не может быть меньше минимума.")})
 
+
     def save(self, *args, **kwargs):
         mapped_kind = self._auto_kind_from_provider()
         if mapped_kind != self.exchange_kind:
             self.exchange_kind = mapped_kind
+
+        creating = self.pk is None
+        # Только при создании, и только если поле пустое — подставляем умолчание
+        if creating and not (self.stablecoin and self.stablecoin.strip()):
+            if mapped_kind in {ExchangeKind.PSP, ExchangeKind.BANK, ExchangeKind.CASH}:
+                self.stablecoin = "USD"   # автозначение для PSP/BANK/CASH
+            else:
+                self.stablecoin = ""      # для остальных — пусто
 
         if self.stablecoin:
             self.stablecoin = self.stablecoin.strip().upper()
