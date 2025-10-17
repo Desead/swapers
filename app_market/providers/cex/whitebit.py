@@ -172,14 +172,6 @@ class WhitebitAdapter(UnifiedProviderBase):
         if not isinstance(assets, dict):
             assets = {}
 
-        # DEBUG: сохраняем полный дамп в файл (не в консоль)
-        try:
-            path = os.path.join(os.getcwd(), "whitebit_assets_debug.json")
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(assets, f, ensure_ascii=False)
-        except Exception:
-            pass
-
         # fees (public)
         r_fee = SESSION.get(FEE_URL, timeout=timeout)
         r_fee.raise_for_status()

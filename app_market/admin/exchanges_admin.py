@@ -1,4 +1,3 @@
-import json
 from django.contrib import admin, messages
 from django import forms
 from django.utils.translation import gettext_lazy as _t
@@ -6,9 +5,69 @@ from django.utils.html import format_html, format_html_join
 from app_market.models import Exchange, ExchangeApiKey
 from app_market.models.exchange import LiquidityProvider
 from app_market.services.health import check_exchange
-from app_market.providers import get_adapter, has_adapter
-from app_market.services.stats import ensure_initial_stats, collect_exchange_stats
 
+from app_market.services.stats import ensure_initial_stats, collect_exchange_stats
+from django.conf import settings
+import importlib
+from app_market.collectors.credentials import get as get_credentials
+
+import logging
+from contextlib import contextmanager
+
+def _load_adapter_for(provider_code: str):
+    """
+    Загружаем класс адаптера строго по реестру из settings.COLLECTORS_PROVIDER_REGISTRY
+    и создаём инстанс (с credentials, если needs_api=True).
+    """
+    cfg = getattr(settings, "COLLECTORS_PROVIDER_REGISTRY", {}).get(provider_code)
+    if not cfg or not cfg.get("enabled", True):
+        return None, "провайдер отключён или не сконфигурирован"
+
+    mod_cls = cfg.get("path", "")
+    if ":" not in mod_cls:
+        return None, f"некорректный path='{mod_cls}'"
+
+    mod_name, cls_name = mod_cls.split(":", 1)
+    try:
+        module = importlib.import_module(mod_name)
+        cls = getattr(module, cls_name)
+    except Exception as e:
+        return None, f"импорт провалился: {e}"
+
+    adapter = None
+    try:
+        if cfg.get("needs_api", False):
+            creds = get_credentials(provider_code)  # может вернуть None
+            try:
+                adapter = cls(credentials=creds)
+            except TypeError:
+                adapter = cls()
+        else:
+            adapter = cls()
+    except Exception as e:
+        return None, f"инициализация адаптера провалилась: {e}"
+
+    return adapter, None
+
+@contextmanager
+def _safe_logrecord_extra_created():
+    """
+    Временный патч logging.Logger.makeRecord:
+    если в extra залетело 'created' — переименуем в '_created', чтобы logging не падал.
+    """
+    orig = logging.Logger.makeRecord
+
+    def patched(self, name, level, fn, lno, msg, args, exc_info, func=None, extra=None, sinfo=None):
+        if extra and isinstance(extra, dict) and "created" in extra:
+            extra = dict(extra)
+            extra["_created"] = extra.pop("created")
+        return orig(self, name, level, fn, lno, msg, args, exc_info, func, extra, sinfo)
+
+    logging.Logger.makeRecord = patched
+    try:
+        yield
+    finally:
+        logging.Logger.makeRecord = orig
 
 @admin.register(Exchange)
 class ExchangeAdmin(admin.ModelAdmin):
@@ -259,51 +318,63 @@ class ExchangeAdmin(admin.ModelAdmin):
 
     @admin.action(description=_t("Собрать статистику сейчас"))
     def action_collect_stats_now(self, request, queryset):
-        ok = err = 0
+        ok = err = skipped = 0
+        # импорт здесь, чтобы ловить StatsError, если есть
+        from app_market.services.stats import collect_exchange_stats
+        try:
+            from app_market.services.stats import StatsError  # у некоторых провайдеров может быть не реализовано
+        except Exception:
+            class StatsError(Exception):
+                pass
+
         for ex in queryset.only("id", "provider", "exchange_kind"):
             try:
                 collect_exchange_stats(ex, timeout=25)
-                # Лаконичное сообщение без цифр:
                 messages.success(request, _t("Статистика по %(ex)s собрана.") % {"ex": ex})
                 ok += 1
+            except StatsError as e:
+                skipped += 1
+                messages.info(request, f"{ex}: пропуск — {e}")
             except Exception as e:
                 messages.error(request, f"{ex}: ошибка сбора статистики: {e}")
                 err += 1
+
         if err:
             messages.warning(request, _t("Готово с ошибками: %(n)s") % {"n": err})
+        elif skipped and not ok:
+            messages.info(request, _t("Ничего не собрано: %(n)s провайдер(ов) пока без реализации") % {"n": skipped})
         else:
             messages.info(request, _t("Готово: %(n)s провайдер(ов)") % {"n": ok})
 
     @admin.action(description=_t("Синхронизировать активы (загрузить монеты) сейчас"))
     def sync_assets_now(self, request, queryset):
-        """
-        Админ-экшен: для выделенных ПЛ запускает загрузку монет через адаптеры.
-        Использует тот же pipeline, что и management-команда.
-        """
         total_processed = total_created = total_updated = total_skipped = total_disabled = 0
         errors = 0
-        # Берём только нужные поля; поля 'name' у модели нет.
+
         for ex in queryset.only("id", "provider"):
             code = ex.provider
             title = str(ex)
 
-            if not has_adapter(code):
-                messages.warning(request, f"{title}: адаптер не найден — пропущено.")
+            adapter, err = _load_adapter_for(code)
+            if not adapter:
+                messages.warning(request, f"{title}: {err or 'адаптер не найден'} — пропущено.")
                 continue
 
-            adapter = get_adapter(code)
             if not hasattr(adapter, "sync_assets"):
                 messages.error(request, f"{title}: некорректный адаптер (нет метода sync_assets).")
                 errors += 1
                 continue
 
             try:
-                stats = adapter.sync_assets(
-                    exchange=ex,
-                    timeout=15,
-                    reconcile=False,
-                    verbose=False,  # в админку не спамим помонетно
-                )
+                # патч логов, чтобы не падать из-за extra['created']
+                with _safe_logrecord_extra_created():
+                    stats = adapter.sync_assets(
+                        exchange=ex,
+                        timeout=15,
+                        reconcile=False,
+                        verbose=False,  # в админку не спамим
+                    )
+
                 p = getattr(stats, "processed", 0)
                 c = getattr(stats, "created", 0)
                 u = getattr(stats, "updated", 0)
@@ -321,8 +392,12 @@ class ExchangeAdmin(admin.ModelAdmin):
                     f"{title}: processed={p}, created={c}, updated={u}, skipped={s}, disabled={d}"
                 )
                 # первый автозапуск статистики (только если её ещё нет)
-                if ensure_initial_stats(ex, timeout=20):
-                    messages.info(request, f"{title}: первичная статистика собрана.")
+                try:
+                    from app_market.services.stats import ensure_initial_stats
+                    if ensure_initial_stats(ex, timeout=20):
+                        messages.info(request, f"{title}: первичная статистика собрана.")
+                except Exception:
+                    pass
             except Exception as e:
                 errors += 1
                 messages.error(request, f"{title}: ошибка синхронизации: {e}")
@@ -340,6 +415,7 @@ class ExchangeAdmin(admin.ModelAdmin):
                 f"Итого: processed={total_processed}, created={total_created}, "
                 f"updated={total_updated}, skipped={total_skipped}, disabled={total_disabled}"
             )
+
 
 
 class ExchangeApiKeyAdminForm(forms.ModelForm):
