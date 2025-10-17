@@ -242,13 +242,37 @@ def run_prices(*, provider: str, dump_raw: bool = False, mirror_to_admin: bool =
     }
 
 
+
 def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
     """
     Собираем статистику провайдера и добавляем снимок в Exchange.stats_history.
+    Если для провайдера статистика ещё не реализована (StatsError) — аккуратно пропускаем.
     """
     ex = _get_exchange(provider)
+
+    # Импортируем здесь, чтобы не ломать импорт модуля при ранней инициализации
     from app_market.services.stats import collect_exchange_stats
-    snap = collect_exchange_stats(ex, timeout=20)
+    try:
+        # StatsError есть в services.stats — используем его, чтобы различать «не реализовано»
+        from app_market.services.stats import StatsError  # type: ignore
+    except Exception:
+        # на крайний случай, если сигнатуры изменятся
+        class StatsError(Exception):  # type: ignore
+            pass
+
+    try:
+        snap = collect_exchange_stats(ex, timeout=20)
+    except StatsError as e:
+        # мягкий скип только для «не реализовано»
+        payload = {
+            "provider": provider,
+            "exchange_id": ex.id,
+            "skipped": True,
+            "reason": str(e),
+        }
+        if dump_raw:
+            write_daily_dump("stats", provider, payload)
+        return payload
 
     raw_dump_path = write_daily_dump("stats", provider, snap) if dump_raw else None
     return {
@@ -257,3 +281,4 @@ def run_stats(*, provider: str, dump_raw: bool = False, **_kwargs) -> dict:
         "snapshot_at": snap.get("run_at", ""),
         "raw_dump": str(raw_dump_path) if raw_dump_path else "",
     }
+
