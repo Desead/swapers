@@ -56,6 +56,9 @@ class PriceL1Admin(admin.ModelAdmin):
         "extras",
         "created_at",
         "updated_at",
+
+        # Волатильность
+        "wv", "dv", "hv", "mv",
     )
 
     fieldsets = (
@@ -67,12 +70,19 @@ class PriceL1Admin(admin.ModelAdmin):
             )
         }),
         (_t("Цены (L1)"), {
-            "fields": ("bid_display", "ask_display", "last_display", "mid_display"),
+            "classes": ("collapse",),
+            "fields": (("bid_display", "ask_display",), ("last_display", "mid_display",),),
+        }),
+        (_t("Волатильность (WV/DV/HV/MV)"), {
+            "classes": ("collapse",),
+            "fields": (("wv", "dv", "hv", "mv"),),
         }),
         (_t("Комиссии"), {
+            "classes": ("collapse",),
             "fields": ("fee_taker_bps", "fee_maker_bps", "fee_source"),
         }),
         (_t("Время и последовательность"), {
+            "classes": ("collapse",),
             # ts_src не показываем; в списке есть age
             "fields": ("ts_ingest", "seq", "latency_ms"),
         }),

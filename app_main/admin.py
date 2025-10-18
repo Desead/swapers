@@ -348,6 +348,12 @@ class SiteSetupAdmin(ParlerLanguageChipsMixin, DecimalFormatMixin, TranslatableA
                 ("open_time_sun", "close_time_sun"),
             ),
         }),
+        (_t("Режимы работы"), {
+            "classes": ("wide", "collapse"),
+            "fields": (
+                "exchange_mode", "price_ttl_minutes",
+            ),
+        }),
         (_t("Контакты и соцсети"), {
             "classes": ("wide", "collapse"),
             "fields": (

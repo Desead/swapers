@@ -91,7 +91,40 @@ class PriceL1(models.Model):
         default=FeeSource.UNKNOWN,
         verbose_name=_t("Источник комиссий"),
     )
-
+    # -- ВОЛАТИЛЬНОСТЬ (без логики; значения ≥ 0) --
+    # Храним как Decimal; по умолчанию 0.
+    wv = models.DecimalField(  # Weekly Volatility
+        max_digits=20,
+        decimal_places=10,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_t("WV"),
+        help_text=_t("Недельная"),
+    )
+    dv = models.DecimalField(  # Daily Volatility
+        max_digits=20,
+        decimal_places=10,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_t("DV"),
+        help_text=_t("Дневная"),
+    )
+    hv = models.DecimalField(  # Hourly Volatility
+        max_digits=20,
+        decimal_places=10,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_t("HV"),
+        help_text=_t("Часовая"),
+    )
+    mv = models.DecimalField(  # Minute Volatility
+        max_digits=20,
+        decimal_places=10,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_t("MV"),
+        help_text=_t("Минутная"),
+    )
     # -- Тайминги/последовательность --
     ts_src = models.DateTimeField(
         db_index=True,

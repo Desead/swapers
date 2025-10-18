@@ -142,6 +142,35 @@ class SiteSetup(TranslatableModel):
     """Singleton with site settings."""
     singleton = models.CharField(max_length=16, unique=True, default="main", editable=False)
 
+    # ──────────────────────────────────────────────────────────────────────
+    # Режим работы обменника
+    # ──────────────────────────────────────────────────────────────────────
+    class ExchangeMode(models.TextChoices):
+        ALL_TO_ALL = "ALL", _t("Обмен всё-на-всё")
+        WHITELIST  = "WL",  _t("Только явно разрешённые направления")
+
+    exchange_mode = models.CharField(
+        verbose_name=_t("Режим работы обменника"),
+        max_length=3,
+        choices=ExchangeMode.choices,
+        default=ExchangeMode.ALL_TO_ALL,
+        help_text=_t(
+            "ALL — все доступные активы можно менять между собой. "
+            "WL — по умолчанию ничего не меняется; разрешены только направления, указанные явным образом."
+        ),
+    )
+
+    # ──────────────────────────────────────────────────────────────────────
+    # TTL котировок
+    # ──────────────────────────────────────────────────────────────────────
+    price_ttl_minutes = models.PositiveIntegerField(
+        verbose_name=_t("Время жизни котировки (минуты)"),
+        default=0,
+        help_text=_t(
+            "0 — не проверять свежесть. >0 — если последняя котировка старше этого порога, "
+            "актив автоматически считается временно недоступным для ввода/вывода."
+        ),
+    )
     # домен и отображаемое имя сайта
     domain = models.CharField(
         verbose_name=_t("Домен (без http/https)"),
