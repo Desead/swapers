@@ -3,7 +3,8 @@ from decimal import Decimal, InvalidOperation
 from django.contrib import admin
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _t
-
+from django.contrib import admin, messages
+from django.db import transaction
 from app_market.models.price import PriceL1
 
 
@@ -60,6 +61,9 @@ class PriceL1Admin(admin.ModelAdmin):
         # Волатильность
         "wv", "dv", "hv", "mv",
     )
+    actions = [
+        'action_delete_l1_fast',  # ← наш быстрый экшн без подтверждения
+    ]
 
     fieldsets = (
         (_t("Источник"), {
@@ -148,6 +152,32 @@ class PriceL1Admin(admin.ModelAdmin):
     def last_display(self, obj: PriceL1) -> str:
         return self._fmt5(obj.last)
 
+    # ───────── экшн: «удалить без подтверждения (быстро)» ─────────
+
+    @admin.action(description=_t("Удалить выбранные L1 БЕЗ подтверждения (быстро)"))
+    def action_delete_l1_fast(modeladmin, request, queryset):
+        if not request.user.has_perm("app_market.delete_pricel1"):
+            modeladmin.message_user(
+                request,
+                _t("Недостаточно прав для удаления записей PriceL1."),
+                level=messages.ERROR,
+            )
+            return
+
+        total = queryset.count()
+        if total == 0:
+            modeladmin.message_user(request, _t("Нечего удалять: выборка пуста."), level=messages.INFO)
+            return
+
+        # Прямая массовая очистка без подтверждения
+        with transaction.atomic():
+            deleted, per_model = queryset.delete()
+
+        modeladmin.message_user(
+            request,
+            _t("Удалено записей: %(n)s") % {"n": deleted},
+            level=messages.SUCCESS,
+        )
     def _fmt5(self, val) -> str:
         if val is None:
             return "—"

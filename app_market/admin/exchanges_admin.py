@@ -11,6 +11,15 @@ from app_market.collectors.credentials import get as get_credentials
 
 import logging
 from contextlib import contextmanager
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import json
+
+import redis
+from django.db import transaction
+from django.utils import timezone as dj_tz
+
+from app_market.models.price import PriceL1
 
 def _load_adapter_for(provider_code: str):
     """
@@ -131,6 +140,7 @@ class ExchangeAdmin(admin.ModelAdmin):
         "action_healthcheck_now",
         "action_collect_stats_now",
         "sync_assets_now",
+        "action_snapshot_prices_from_redis",
     ]
 
     # ---- helpers (view) ----
@@ -366,6 +376,186 @@ class ExchangeAdmin(admin.ModelAdmin):
             messages.info(request, _t("Ничего не собрано: %(n)s провайдер(ов) пока без реализации") % {"n": skipped})
         else:
             messages.info(request, _t("Готово: %(n)s провайдер(ов)") % {"n": ok})
+
+    # ───────────────────────────────────────────────────────────────────────────────
+    # ADMIN ACTION: Снимок L1 цен из Redis → PriceL1 (upsert, без удалений)
+    # ───────────────────────────────────────────────────────────────────────────────
+
+    @admin.action(description="Сделать снимок L1 цен из Redis → PriceL1 (upsert)")
+    def action_snapshot_prices_from_redis(modeladmin, request, queryset):
+        """
+        Для каждого выбранного Exchange:
+          - читает из Redis все хэши L1 по префиксу {HASH_PREFIX}:{PROVIDER}:*
+          - материализует в PriceL1: upsert по (provider, src_base_code, src_quote_code)
+          - ничего не удаляет, только создаёт/обновляет
+        """
+        prefix = getattr(settings, "COLLECTORS_PRICES_HASH_PREFIX", "").strip()
+        redis_url = getattr(settings, "PRICES_REDIS_URL", "").strip()
+        if not prefix or not redis_url:
+            modeladmin.message_user(
+                request,
+                "Не заданы PRICES_REDIS_URL или COLLECTORS_PRICES_HASH_PREFIX в настройках.",
+                level=messages.ERROR,
+            )
+            return
+
+        r = redis.from_url(redis_url, decode_responses=True)
+        total_created = 0
+        total_updated = 0
+        total_pairs = 0
+        providers_processed = 0
+
+        for ex in queryset:
+            prov = ex.provider  # строковый код (BYBIT/MEXC/…)
+            pattern = f"{prefix}:{prov}:*"
+
+            # — собираем пары из Redis —
+            items = []
+            pipe = r.pipeline()
+            try:
+                # SCAN пакетно, без блокировки Redis
+                for key in r.scan_iter(match=pattern, count=1000):
+                    pipe.hgetall(key)
+                raw_hashes = pipe.execute()
+            except Exception as e:
+                modeladmin.message_user(
+                    request,
+                    f"[{prov}] Ошибка чтения Redis: {e}",
+                    level=messages.ERROR,
+                )
+                continue
+
+            now = dj_tz.now()
+            for row in raw_hashes:
+                if not row:
+                    continue
+                # ожидаемые поля в хэше: base, quote, bid, ask, last, ts_src_ms, src_symbol, extras
+                base = (row.get("base") or row.get("src_base_code") or "").upper()
+                quote = (row.get("quote") or row.get("src_quote_code") or "").upper()
+                if not base or not quote:
+                    continue
+
+                def _to_decimal(v):
+                    if v is None or v == "":
+                        return None
+                    try:
+                        return Decimal(str(v))
+                    except (InvalidOperation, ValueError, TypeError):
+                        return None
+
+                bid = _to_decimal(row.get("bid"))
+                ask = _to_decimal(row.get("ask"))
+                last = _to_decimal(row.get("last"))
+
+                ts_src_ms = row.get("ts_src_ms")
+                try:
+                    if ts_src_ms is None:
+                        ts_src = now
+                    else:
+                        ts_src = datetime.fromtimestamp(int(ts_src_ms) / 1000.0, tz=timezone.utc)
+                except Exception:
+                    ts_src = now
+
+                src_symbol = row.get("src_symbol") or f"{base}{quote}"
+
+                # extras может быть JSON-строкой или отсутствовать
+                extras = row.get("extras", {})
+                if isinstance(extras, str):
+                    try:
+                        extras = json.loads(extras)
+                    except Exception:
+                        extras = {"raw_extras": extras}
+
+                latency_ms = int((now - ts_src).total_seconds() * 1000)
+                items.append({
+                    "base": base,
+                    "quote": quote,
+                    "bid": bid,
+                    "ask": ask,
+                    "last": last,
+                    "ts_src": ts_src,
+                    "src_symbol": src_symbol,
+                    "latency_ms": max(0, latency_ms),
+                    "extras": extras or {},
+                })
+
+            if not items:
+                modeladmin.message_user(request, f"[{prov}] В Redis не найдено пар по шаблону {pattern}", level=messages.WARNING)
+                continue
+
+            # — upsert в БД по (provider, base, quote) —
+            # читаем текущие записи для провайдера
+            existing = {
+                (obj.src_base_code, obj.src_quote_code): obj
+                for obj in PriceL1.objects.filter(provider=ex)
+                .only("id", "src_base_code", "src_quote_code")
+            }
+
+            to_create = []
+            to_update = []
+            for it in items:
+                key = (it["base"], it["quote"])
+                obj = existing.get(key)
+                if obj is None:
+                    to_create.append(PriceL1(
+                        provider=ex,
+                        src_symbol=it["src_symbol"],
+                        src_base_code=it["base"],
+                        src_quote_code=it["quote"],
+                        bid=it["bid"] or Decimal(0),
+                        ask=it["ask"] or Decimal(0),
+                        last=it["last"],
+                        ts_src=it["ts_src"],
+                        ts_ingest=now,
+                        latency_ms=it["latency_ms"],
+                        extras=it["extras"],
+                        # комиссии/волатильности остаются по умолчанию (0)
+                    ))
+                    continue
+
+                    # существовал — обновляем поля
+                obj.src_symbol = it["src_symbol"]
+                if it["bid"] is not None:
+                    obj.bid = it["bid"]
+                if it["ask"] is not None:
+                    obj.ask = it["ask"]
+                obj.last = it["last"]
+                obj.ts_src = it["ts_src"]
+                obj.ts_ingest = now
+                obj.latency_ms = it["latency_ms"]
+                obj.extras = it["extras"]
+                to_update.append(obj)
+
+            created = 0
+            updated = 0
+            with transaction.atomic():
+                if to_create:
+                    PriceL1.objects.bulk_create(to_create, batch_size=1000)
+                    created = len(to_create)
+                if to_update:
+                    PriceL1.objects.bulk_update(
+                        to_update,
+                        fields=["src_symbol", "bid", "ask", "last", "ts_src", "ts_ingest", "latency_ms", "extras"],
+                        batch_size=1000,
+                    )
+                    updated = len(to_update)
+
+            total_created += created
+            total_updated += updated
+            total_pairs += len(items)
+            providers_processed += 1
+
+            modeladmin.message_user(
+                request,
+                f"[{prov}] снимок: всего={len(items)}, создано={created}, обновлено={updated}",
+                level=messages.INFO,
+            )
+
+        modeladmin.message_user(
+            request,
+            f"Готово. Провайдеров: {providers_processed}, пар прочитано: {total_pairs}, создано: {total_created}, обновлено: {total_updated}.",
+            level=messages.SUCCESS,
+        )
 
     @admin.action(description=_t("Синхронизировать активы (загрузить монеты) сейчас"))
     def sync_assets_now(self, request, queryset):
